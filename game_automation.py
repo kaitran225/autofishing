@@ -13,8 +13,9 @@ import win32api
 import ctypes
 import statistics
 import queue
+import ttkbootstrap as tb
 
-# --- CYBERPUNK THEME COLORS ---
+# --- MODERN NFT LANDING PAGE INSPIRED COLORS ---
 BG_BLACK = '#101014'         # 70% black
 NEON_PURPLE = '#a259ff'     # 20% neon purple
 MATCHA_GREEN = '#b6ff68'    # 10% matcha green
@@ -27,8 +28,8 @@ class GameAutomationGUI:
         self.root = root
         self.root.title("Game Automation Tool")
         self.root.configure(bg=BG_BLACK)
-        self.root.geometry("900x700")
-        self.root.minsize(700, 500)
+        self.root.geometry("600x900")
+        self.root.minsize(400, 700)
         self.root.grid_rowconfigure(1, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
         
@@ -56,104 +57,89 @@ class GameAutomationGUI:
         self.click_cooldown = 0.1
         self.click_sequence = 0
         self.sequence_start_time = 0
-        self.canvas_width = 600
-        self.canvas_height = 340
+        self.canvas_width = 520
+        self.canvas_height = 260
         self.detection_state = 'Idle'
         self.current_difference = 0
         self.current_brightness = 0
         self.detection_queue = queue.Queue()
         self.detection_thread = None
         self.stop_event = threading.Event()
+        self.periodic_compare_running = False
         
-        # --- STYLES ---
-        style = ttk.Style()
-        style.theme_use('clam')
-        style.configure('TFrame', background=BG_BLACK)
-        style.configure('Card.TFrame', background=CARD_BG, borderwidth=2, relief='ridge')
-        style.configure('TLabel', background=BG_BLACK, foreground=NEON_PURPLE, font=('Orbitron', 11, 'bold'))
-        style.configure('Card.TLabel', background=CARD_BG, foreground=NEON_PURPLE, font=('Orbitron', 11, 'bold'))
-        style.configure('Accent.TLabel', background=BG_BLACK, foreground=MATCHA_GREEN, font=('Orbitron', 12, 'bold'))
-        style.configure('TButton', background=NEON_PURPLE, foreground=BG_BLACK, font=('Orbitron', 10, 'bold'), borderwidth=0, focusthickness=3, focuscolor=MATCHA_GREEN)
-        style.map('TButton', background=[('active', MATCHA_GREEN)])
-        style.configure('TCombobox', fieldbackground=BG_BLACK, background=BG_BLACK, foreground=NEON_PURPLE, font=('Orbitron', 10))
-        
-        # --- LAYOUT ---
-        self.main_frame = ttk.Frame(self.root, padding=10, style='Card.TFrame')
-        self.main_frame.grid(row=0, column=0, sticky='nsew')
-        self.main_frame.grid_rowconfigure(1, weight=1)
-        self.main_frame.grid_columnconfigure(0, weight=1)
-        
-        # Window selection
-        self.window_frame = ttk.Frame(self.main_frame, style='Card.TFrame')
-        self.window_frame.grid(row=0, column=0, columnspan=2, sticky='ew', pady=4)
+        # --- WINDOW SELECTION (TOP) ---
+        self.window_frame = tb.Frame(self.root, bootstyle="dark")
+        self.window_frame.grid(row=0, column=0, sticky='ew', pady=(8, 4))
         self.window_frame.grid_columnconfigure(1, weight=1)
-        ttk.Label(self.window_frame, text="Select Window:", style='Card.TLabel').pack(side=tk.LEFT, padx=4)
-        self.window_combo = ttk.Combobox(self.window_frame, width=28)
+        tb.Label(self.window_frame, text="Select Window:", bootstyle="dark").pack(side=tk.LEFT, padx=4)
+        self.window_combo = tb.Combobox(self.window_frame, width=18)
         self.window_combo.pack(side=tk.LEFT, padx=4)
         self.window_combo.bind('<<ComboboxSelected>>', self.on_window_select)
-        self.refresh_button = ttk.Button(self.window_frame, text="⟳", width=2, command=self.refresh_windows)
+        self.refresh_button = tb.Button(self.window_frame, text="⟳", width=2, command=self.refresh_windows)
         self.refresh_button.pack(side=tk.LEFT, padx=4)
-        self.focus_button = ttk.Button(self.window_frame, text="Focus", width=6, command=self.focus_selected_window)
+        self.focus_button = tb.Button(self.window_frame, text="Focus", width=6, command=self.focus_selected_window)
         self.focus_button.pack(side=tk.LEFT, padx=4)
-        
-        # Main Preview (top, full width)
-        self.canvas = tk.Canvas(self.main_frame, width=self.canvas_width, height=self.canvas_height, bg=BG_BLACK, highlightthickness=4, bd=0, highlightbackground=NEON_PURPLE)
-        self.canvas.grid(row=1, column=0, columnspan=2, sticky='nsew', pady=(10, 6), padx=10)
-        
-        # Initial/Current Previews (below, side by side)
-        self.subpreview_frame = ttk.Frame(self.main_frame, style='Card.TFrame')
-        self.subpreview_frame.grid(row=2, column=0, columnspan=2, sticky='ew', pady=2)
-        self.subpreview_frame.grid_columnconfigure(0, weight=1)
-        self.subpreview_frame.grid_columnconfigure(1, weight=1)
-        self.initial_preview = tk.Canvas(self.subpreview_frame, width=220, height=120, bg=BG_BLACK, highlightthickness=2, bd=0, highlightbackground=NEON_PURPLE)
-        self.initial_preview.grid(row=0, column=0, padx=8, sticky='ew')
-        self.current_preview = tk.Canvas(self.subpreview_frame, width=220, height=120, bg=BG_BLACK, highlightthickness=2, bd=0, highlightbackground=NEON_PURPLE)
-        self.current_preview.grid(row=0, column=1, padx=8, sticky='ew')
-        ttk.Label(self.subpreview_frame, text="Initial", style='Card.TLabel').grid(row=1, column=0, sticky=tk.N)
-        ttk.Label(self.subpreview_frame, text="Current", style='Card.TLabel').grid(row=1, column=1, sticky=tk.N)
-        
-        # Controls (below previews)
-        self.control_card = ttk.Frame(self.main_frame, style='Card.TFrame', padding=10)
-        self.control_card.grid(row=3, column=0, columnspan=2, sticky='ew', pady=10)
-        self.start_button = ttk.Button(self.control_card, text="▶ Start", width=10, command=self.toggle_capture)
-        self.start_button.grid(row=0, column=0, padx=6, pady=4)
-        self.set_zone_button = ttk.Button(self.control_card, text="✎ Edit Zone", width=10, command=self.set_detection_zone)
-        self.set_zone_button.grid(row=0, column=1, padx=6, pady=4)
-        self.set_button_button = ttk.Button(self.control_card, text="🎯 Set Button", width=10, command=self.set_button_location)
-        self.set_button_button.grid(row=0, column=2, padx=6, pady=4)
-        self.capture_initial_button = ttk.Button(self.control_card, text="⏺ Capture State", width=14, command=self.capture_initial_state)
-        self.capture_initial_button.grid(row=0, column=3, padx=6, pady=4)
-        self.threshold_minus = ttk.Button(self.control_card, text="-", width=2, command=lambda: self.adjust_threshold(-5))
-        self.threshold_minus.grid(row=0, column=4, padx=2)
-        self.threshold_value = ttk.Label(self.control_card, text=str(self.difference_threshold), style='Accent.TLabel')
-        self.threshold_value.grid(row=0, column=5, padx=2)
-        self.threshold_plus = ttk.Button(self.control_card, text="+", width=2, command=lambda: self.adjust_threshold(5))
-        self.threshold_plus.grid(row=0, column=6, padx=2)
-        
-        # Ambience/Data Panel (below controls)
-        self.data_card = ttk.Frame(self.main_frame, style='Card.TFrame', padding=10)
-        self.data_card.grid(row=4, column=0, columnspan=2, sticky='ew', pady=6)
-        self.state_label = ttk.Label(self.data_card, text="Detection: Idle", style='Card.TLabel')
-        self.state_label.grid(row=0, column=0, sticky=tk.W)
-        self.diff_label = ttk.Label(self.data_card, text="Difference: 0", style='Card.TLabel')
-        self.diff_label.grid(row=1, column=0, sticky=tk.W)
-        self.bright_label = ttk.Label(self.data_card, text="Brightness: 0", style='Card.TLabel')
-        self.bright_label.grid(row=2, column=0, sticky=tk.W)
-        self.zone_label = ttk.Label(self.data_card, text="Zone: -", style='Card.TLabel')
-        self.zone_label.grid(row=3, column=0, sticky=tk.W)
-        self.button_label = ttk.Label(self.data_card, text="Button: -", style='Card.TLabel')
-        self.button_label.grid(row=4, column=0, sticky=tk.W)
-        
-        # Status (bottom, matcha green)
-        self.status_label = ttk.Label(self.main_frame, text="Status: Ready", style='Accent.TLabel')
-        self.status_label.grid(row=5, column=0, columnspan=2, pady=8)
-        
-        # Responsive weights
-        for i in range(6):
-            self.main_frame.grid_rowconfigure(i, weight=0)
+        # --- MAIN FRAME (VERTICAL STACK) ---
+        self.main_frame = tb.Frame(self.root, bootstyle="dark", padding=10)
+        self.main_frame.grid(row=1, column=0, sticky='nsew')
         self.main_frame.grid_rowconfigure(1, weight=1)
         self.main_frame.grid_columnconfigure(0, weight=1)
-        self.main_frame.grid_columnconfigure(1, weight=1)
+        # --- DETECTION STATE INDICATOR BAR ---
+        self.detection_indicator = tk.Canvas(self.main_frame, height=8, width=self.canvas_width, highlightthickness=0, bd=0, bg=NEON_PURPLE)
+        self.detection_indicator.grid(row=0, column=0, sticky='ew', pady=(0, 0))
+        # --- MAIN PREVIEW ---
+        self.canvas = tk.Canvas(self.main_frame, width=self.canvas_width, height=self.canvas_height, bg=BG_BLACK, highlightthickness=4, bd=0, highlightbackground=NEON_PURPLE)
+        self.canvas.grid(row=1, column=0, sticky='ew', pady=(8, 8))
+        # --- SUB-PREVIEWS (ROW) ---
+        self.subpreview_frame = tb.Frame(self.main_frame, bootstyle="dark")
+        self.subpreview_frame.grid(row=2, column=0, sticky='ew', pady=(0, 8))
+        self.subpreview_frame.grid_columnconfigure(0, weight=1)
+        self.subpreview_frame.grid_columnconfigure(1, weight=1)
+        tb.Label(self.subpreview_frame, text="Initial", font=("Orbitron", 11, "bold"), foreground=NEON_PURPLE, background=BG_BLACK).grid(row=0, column=0, sticky='w', pady=(0, 2))
+        tb.Label(self.subpreview_frame, text="Current", font=("Orbitron", 11, "bold"), foreground=NEON_PURPLE, background=BG_BLACK).grid(row=0, column=1, sticky='w', pady=(0, 2))
+        self.initial_preview = tk.Canvas(self.subpreview_frame, width=120, height=80, bg=BG_BLACK, highlightthickness=2, bd=0, highlightbackground=NEON_PURPLE)
+        self.initial_preview.grid(row=1, column=0, padx=8, sticky='ew')
+        self.current_preview = tk.Canvas(self.subpreview_frame, width=120, height=80, bg=BG_BLACK, highlightthickness=2, bd=0, highlightbackground=NEON_PURPLE)
+        self.current_preview.grid(row=1, column=1, padx=8, sticky='ew')
+        # --- CONTROLS ---
+        self.control_card = tb.Frame(self.main_frame, bootstyle="dark", padding=10)
+        self.control_card.grid(row=3, column=0, sticky='ew', pady=(0, 8))
+        self.control_card.grid_columnconfigure((0,1,2,3,4,5,6), weight=1)
+        self.start_button = tb.Button(self.control_card, text="▶ Start", bootstyle="success-outline", width=10, command=self.toggle_capture)
+        self.start_button.grid(row=0, column=0, padx=4, pady=4)
+        self.set_zone_button = tb.Button(self.control_card, text="✎ Edit Zone", bootstyle="info-outline", width=10, command=self.set_detection_zone)
+        self.set_zone_button.grid(row=0, column=1, padx=4, pady=4)
+        self.set_button_button = tb.Button(self.control_card, text="🎯 Set Button", bootstyle="info-outline", width=10, command=self.set_button_location)
+        self.set_button_button.grid(row=0, column=2, padx=4, pady=4)
+        self.capture_initial_button = tb.Button(self.control_card, text="⏺ Capture State", bootstyle="info-outline", width=12, command=self.capture_initial_state)
+        self.capture_initial_button.grid(row=0, column=3, padx=4, pady=4)
+        self.threshold_minus = tb.Button(self.control_card, text="-", bootstyle="warning-outline", width=3, command=lambda: self.adjust_threshold(-1))
+        self.threshold_minus.grid(row=0, column=4, padx=2, pady=4)
+        self.threshold_value = tb.Label(self.control_card, text=str(self.difference_threshold), font=("Orbitron", 12, "bold"), foreground=MATCHA_GREEN, background=BG_BLACK)
+        self.threshold_value.grid(row=0, column=5, padx=2, pady=4)
+        self.threshold_plus = tb.Button(self.control_card, text="+", bootstyle="warning-outline", width=3, command=lambda: self.adjust_threshold(1))
+        self.threshold_plus.grid(row=0, column=6, padx=2, pady=4)
+        # --- DATA PANEL ---
+        self.data_card = tb.Frame(self.main_frame, bootstyle="dark", padding=10)
+        self.data_card.grid(row=4, column=0, sticky='ew', pady=(0, 8))
+        self.data_card.grid_columnconfigure(0, weight=1)
+        tb.Label(self.data_card, text="Detection Data", font=("Orbitron", 11, "bold"), foreground=NEON_PURPLE, background=BG_BLACK).grid(row=0, column=0, sticky='w', pady=(0, 2))
+        self.state_label = tb.Label(self.data_card, text="Detection: Idle", font=("Orbitron", 10), foreground=NEON_PURPLE, background=BG_BLACK)
+        self.state_label.grid(row=1, column=0, sticky='w')
+        self.diff_label = tb.Label(self.data_card, text="Difference: 0", font=("Orbitron", 10), foreground=NEON_PURPLE, background=BG_BLACK)
+        self.diff_label.grid(row=2, column=0, sticky='w')
+        self.bright_label = tb.Label(self.data_card, text="Brightness: 0", font=("Orbitron", 10), foreground=NEON_PURPLE, background=BG_BLACK)
+        self.bright_label.grid(row=3, column=0, sticky='w')
+        self.zone_label = tb.Label(self.data_card, text="Zone: -", font=("Orbitron", 10), foreground=NEON_PURPLE, background=BG_BLACK)
+        self.zone_label.grid(row=4, column=0, sticky='w')
+        self.button_label = tb.Label(self.data_card, text="Button: -", font=("Orbitron", 10), foreground=NEON_PURPLE, background=BG_BLACK)
+        self.button_label.grid(row=5, column=0, sticky='w')
+        # --- STATUS ---
+        self.status_label = tb.Label(self.main_frame, text="Status: Ready", font=("Orbitron", 11, "bold"), foreground=MATCHA_GREEN, background=BG_BLACK)
+        self.status_label.grid(row=5, column=0, sticky='ew', pady=8)
+        # --- LOG AREA ---
+        self.log_text = tk.Text(self.main_frame, height=6, bg=BG_BLACK, fg=MATCHA_GREEN, font=("Consolas", 9), state='disabled', wrap='word', borderwidth=0, highlightthickness=0)
+        self.log_text.grid(row=6, column=0, sticky='ew', pady=(4, 8), padx=8)
         
         # Init
         self.refresh_windows()
@@ -418,87 +404,95 @@ class GameAutomationGUI:
 
     def update_preview(self):
         """Update the canvas with current screen capture"""
-        if not self.is_capturing:
-            current_time = time.time()
-            if current_time - self.last_capture_time >= self.capture_interval:
-                screenshot = self.get_window_screenshot()
-                if screenshot:
-                    # Calculate aspect ratio
-                    window_ratio = screenshot.width / screenshot.height
-                    canvas_ratio = self.canvas_width / self.canvas_height
-                    
-                    if window_ratio > canvas_ratio:
-                        new_width = self.canvas_width
-                        new_height = int(self.canvas_width / window_ratio)
+        current_time = time.time()
+        if current_time - self.last_capture_time >= self.capture_interval:
+            screenshot = self.get_window_screenshot()
+            if screenshot:
+                window_ratio = screenshot.width / screenshot.height
+                canvas_ratio = self.canvas_width / self.canvas_height
+                if window_ratio > canvas_ratio:
+                    new_width = self.canvas_width
+                    new_height = int(self.canvas_width / window_ratio)
+                else:
+                    new_height = self.canvas_height
+                    new_width = int(self.canvas_height * window_ratio)
+                screenshot = screenshot.resize((new_width, new_height))
+                background = Image.new('RGB', (self.canvas_width, self.canvas_height), 'black')
+                background.paste(screenshot, ((self.canvas_width-new_width)//2, (self.canvas_height-new_height)//2))
+                self.photo = ImageTk.PhotoImage(background)
+                self.canvas.create_image(0, 0, image=self.photo, anchor=tk.NW)
+                # --- DYNAMICALLY UPDATE PREVIEW CANVAS SIZE TO MATCH DETECTION BOX RATIO ---
+                if self.detection_zone:
+                    x1, y1, x2, y2 = map(int, self.detection_zone)
+                    crop_w = max(1, x2 - x1)
+                    crop_h = max(1, y2 - y1)
+                    # Set preview size to match detection box aspect ratio, max 120x80
+                    max_w, max_h = 120, 80
+                    aspect = crop_w / crop_h if crop_h != 0 else 1
+                    if aspect > max_w / max_h:
+                        preview_w = max_w
+                        preview_h = int(max_w / aspect)
                     else:
-                        new_height = self.canvas_height
-                        new_width = int(self.canvas_height * window_ratio)
-                    
-                    # Resize screenshot maintaining aspect ratio
-                    screenshot = screenshot.resize((new_width, new_height))
-                    
-                    # Create new image with black background
-                    background = Image.new('RGB', (self.canvas_width, self.canvas_height), 'black')
-                    # Paste screenshot in center
-                    background.paste(screenshot, ((self.canvas_width-new_width)//2, (self.canvas_height-new_height)//2))
-                    
-                    self.photo = ImageTk.PhotoImage(background)
-                    self.canvas.create_image(0, 0, image=self.photo, anchor=tk.NW)
-                    
-                    # Update current state preview if detection zone exists
-                    if self.detection_zone:
-                        frame = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
-                        x1, y1, x2, y2 = self.detection_zone
-                        try:
-                            cropped = frame[int(y1):int(y2), int(x1):int(x2)]
-                            current_gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
-                            current_preview = Image.fromarray(current_gray)
-                            current_preview = current_preview.resize((220, 120))
-                            self.current_photo = ImageTk.PhotoImage(current_preview)
-                            self.current_preview.create_image(0, 0, image=self.current_photo, anchor=tk.NW)
-                        except Exception as e:
-                            print(f"Error updating current preview: {str(e)}")
-                    
-                    # Redraw detection zone and handles if they exist
-                    if self.zone_rect:
-                        self.canvas.tag_raise(self.zone_rect)
-                        for handle in self.resize_handles:
-                            self.canvas.tag_raise(handle)
-                
-                self.last_capture_time = current_time
-            
-            self.update_ambience_data()
-            self.root.after(50, self.update_preview)
+                        preview_h = max_h
+                        preview_w = int(max_h * aspect)
+                    # Crop and show current state
+                    cropped = np.array(background)[y1:y2, x1:x2]
+                    if cropped.size > 0:
+                        current_gray = cv2.cvtColor(cropped, cv2.COLOR_RGB2GRAY)
+                        current_preview = Image.fromarray(current_gray)
+                        current_preview = current_preview.resize((preview_w, preview_h))
+                        self.current_preview.config(width=preview_w, height=preview_h)
+                        self.current_photo = ImageTk.PhotoImage(current_preview)
+                        self.current_preview.create_image(0, 0, image=self.current_photo, anchor=tk.NW)
+                # Redraw detection zone and handles if they exist
+                if self.zone_rect:
+                    self.canvas.tag_raise(self.zone_rect)
+                    for handle in self.resize_handles:
+                        self.canvas.tag_raise(handle)
+            self.last_capture_time = current_time
+        self.root.after(50, self.update_preview)
 
     def capture_initial_state(self):
         """Capture the initial state of the detection zone"""
         if not self.detection_zone:
             self.status_label.config(text="Status: Error - Set detection zone first!")
             return
-        
         try:
-            # Capture the initial state
             screenshot = self.get_window_screenshot()
             if screenshot is None:
                 self.status_label.config(text="Status: Error - No window selected!")
                 return
-            
-            # Convert to numpy array and then to grayscale
-            frame = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
-            
-            # Crop to detection zone
-            x1, y1, x2, y2 = self.detection_zone
-            cropped = frame[int(y1):int(y2), int(x1):int(x2)]
-            self.initial_state = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
-            
-            # Update initial state preview
-            initial_preview = Image.fromarray(self.initial_state)
-            initial_preview = initial_preview.resize((220, 120))
-            self.initial_photo = ImageTk.PhotoImage(initial_preview)
-            self.initial_preview.create_image(0, 0, image=self.initial_photo, anchor=tk.NW)
-            
+            window_ratio = screenshot.width / screenshot.height
+            canvas_ratio = self.canvas_width / self.canvas_height
+            if window_ratio > canvas_ratio:
+                new_width = self.canvas_width
+                new_height = int(self.canvas_width / window_ratio)
+            else:
+                new_height = self.canvas_height
+                new_width = int(self.canvas_height * window_ratio)
+            screenshot = screenshot.resize((new_width, new_height))
+            background = Image.new('RGB', (self.canvas_width, self.canvas_height), 'black')
+            background.paste(screenshot, ((self.canvas_width-new_width)//2, (self.canvas_height-new_height)//2))
+            x1, y1, x2, y2 = map(int, self.detection_zone)
+            crop_w = max(1, x2 - x1)
+            crop_h = max(1, y2 - y1)
+            max_w, max_h = 120, 80
+            aspect = crop_w / crop_h if crop_h != 0 else 1
+            if aspect > max_w / max_h:
+                preview_w = max_w
+                preview_h = int(max_w / aspect)
+            else:
+                preview_h = max_h
+                preview_w = int(max_h * aspect)
+            cropped = np.array(background)[y1:y2, x1:x2]
+            self.initial_state = cv2.cvtColor(cropped, cv2.COLOR_RGB2GRAY)
+            if cropped.size > 0:
+                initial_preview = Image.fromarray(self.initial_state)
+                initial_preview = initial_preview.resize((preview_w, preview_h))
+                self.initial_preview.config(width=preview_w, height=preview_h)
+                self.initial_photo = ImageTk.PhotoImage(initial_preview)
+                self.initial_preview.create_image(0, 0, image=self.initial_photo, anchor=tk.NW)
             self.status_label.config(text="Status: Initial state captured!")
-            
         except Exception as e:
             self.status_label.config(text=f"Status: Error capturing initial state - {str(e)}")
     
@@ -611,36 +605,130 @@ class GameAutomationGUI:
         self.canvas.unbind("<Button-1>")
     
     def toggle_capture(self):
-        """Start/Stop the capture and detection process"""
         if not self.is_capturing:
+            # Validate all required components are set
+            if not self.selected_window:
+                self.status_label.config(text="Status: Error - Please select a window first!")
+                self.log_event("Error: No window selected")
+                return
+                
+            if not self.detection_zone:
+                self.status_label.config(text="Status: Error - Please set detection zone first!")
+                self.log_event("Error: No detection zone set")
+                return
+                
+            if not self.initial_state is not None:
+                self.status_label.config(text="Status: Error - Please capture initial state first!")
+                self.log_event("Error: No initial state captured")
+                return
+                
+            if not self.button_location:
+                self.status_label.config(text="Status: Error - Please set button location first!")
+                self.log_event("Error: No button location set")
+                return
+
+            # All validations passed, start capturing
             self.is_capturing = True
             self.start_button.config(text="■ Stop")
             self.detection_state = 'Detecting'
-            self.stop_event.clear()
-            self.detection_thread = threading.Thread(target=self.capture_and_detect_thread, daemon=True)
-            self.detection_thread.start()
-            self.canvas.config(highlightbackground=MATCHA_GREEN)  # Neon border when active
+            self.canvas.config(highlightbackground=MATCHA_GREEN)
+            self.detection_indicator.config(bg=MATCHA_GREEN)
+            if not self.periodic_compare_running:
+                self.start_periodic_compare()
+            self.log_event("Detection started successfully.")
         else:
             self.is_capturing = False
             self.start_button.config(text="▶ Start")
             self.detection_state = 'Idle'
-            self.stop_event.set()
-            if self.detection_thread:
-                self.detection_thread.join(timeout=1)
             self.canvas.config(highlightbackground=NEON_PURPLE)
+            self.detection_indicator.config(bg=NEON_PURPLE)
+            self.stop_periodic_compare()
+            self.log_event("Detection stopped.")
 
-    def capture_and_detect_thread(self):
-        while not self.stop_event.is_set():
+    def start_periodic_compare(self):
+        if not self.periodic_compare_running:
+            self.periodic_compare_running = True
+            self.periodic_compare()
+
+    def stop_periodic_compare(self):
+        self.periodic_compare_running = False
+
+    def periodic_compare(self):
+        if not self.periodic_compare_running:
+            return
+            
+        if self.is_capturing and self.detection_zone and self.initial_state is not None:
             try:
-                # ... detection logic, do NOT update UI here ...
-                # Instead, put results in the queue:
-                # self.detection_queue.put({'difference': diff, 'brightness': bright, ...})
-                # For example:
-                # self.detection_queue.put({'difference': 42, 'brightness': 88, 'state': 'Detecting'})
-                pass  # Replace with actual detection logic
+                screenshot = self.get_window_screenshot()
+                if screenshot is None:
+                    self.log_event("Error: Failed to capture screenshot")
+                    self.toggle_capture()  # Stop detection on error
+                    return
+
+                # Convert screenshot to numpy array
+                screenshot_np = np.array(screenshot)
+                
+                # Get detection zone coordinates
+                x1, y1, x2, y2 = map(int, self.detection_zone)
+                
+                # Validate coordinates
+                if x1 < 0 or y1 < 0 or x2 > screenshot_np.shape[1] or y2 > screenshot_np.shape[0]:
+                    self.log_event("Error: Detection zone out of bounds")
+                    self.toggle_capture()
+                    return
+                
+                # Crop and process current frame
+                cropped = screenshot_np[y1:y2, x1:x2]
+                if cropped.size == 0:
+                    self.log_event("Error: Empty detection zone")
+                    self.toggle_capture()
+                    return
+                
+                # Convert to grayscale
+                current_gray = cv2.cvtColor(cropped, cv2.COLOR_RGB2GRAY)
+                
+                # Ensure same size as initial state
+                if current_gray.shape != self.initial_state.shape:
+                    current_gray = cv2.resize(current_gray, (self.initial_state.shape[1], self.initial_state.shape[0]))
+                
+                # Calculate difference
+                diff = cv2.absdiff(current_gray, self.initial_state)
+                mean_diff = np.mean(diff)
+                self.current_difference = mean_diff
+                self.current_brightness = np.mean(current_gray)
+                
+                # Update UI
+                self.update_ambience_data()
+                
+                # Check for significant change
+                if mean_diff > self.difference_threshold:
+                    self.status_label.config(text=f"Status: Change detected! Difference: {mean_diff:.2f}")
+                    self.log_event(f"Change detected! Difference: {mean_diff:.2f}")
+                    
+                    # Perform click if button location is set
+                    if self.button_location:
+                        bx, by = self.button_location
+                        bxw, byw = self.canvas_to_window(bx, by)
+                        try:
+                            # Get window position
+                            window_rect = win32gui.GetWindowRect(self.selected_window)
+                            # Calculate absolute screen coordinates
+                            abs_x = window_rect[0] + self.window_border[0] + bxw
+                            abs_y = window_rect[1] + self.window_border[1] + byw
+                            # Perform click
+                            pyautogui.click(abs_x, abs_y)
+                            self.log_event(f"Clicked at window coordinates: ({bxw}, {byw})")
+                        except Exception as e:
+                            self.log_event(f"Error performing click: {str(e)}")
+                
             except Exception as e:
-                self.detection_queue.put({'error': str(e)})
-                break
+                self.log_event(f"Error in detection: {str(e)}")
+                self.toggle_capture()  # Stop detection on error
+                return
+                
+        # Schedule next check if still running
+        if self.periodic_compare_running:
+            self.root.after(100, self.periodic_compare)  # Reduced interval for more responsive detection
 
     def poll_detection_queue(self):
         try:
@@ -648,6 +736,7 @@ class GameAutomationGUI:
                 result = self.detection_queue.get_nowait()
                 if 'error' in result:
                     self.status_label.config(text=f"Error: {result['error']}")
+                    self.log_event(f"Error: {result['error']}")
                     self.toggle_capture()
                 else:
                     # Update UI with detection results
@@ -680,8 +769,15 @@ class GameAutomationGUI:
         scale_y = self.canvas_height / client_h
         return int(x * scale_x), int(y * scale_y)
 
+    def log_event(self, msg):
+        timestamp = time.strftime("%H:%M:%S")
+        self.log_text.config(state='normal')
+        self.log_text.insert('end', f"[{timestamp}] {msg}\n")
+        self.log_text.see('end')
+        self.log_text.config(state='disabled')
+
 def main():
-    root = tk.Tk()
+    root = tb.Window(themename="cyborg")  # or "superhero", "darkly", etc.
     app = GameAutomationGUI(root)
     root.mainloop()
 
