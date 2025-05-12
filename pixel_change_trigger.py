@@ -525,29 +525,6 @@ class PixelChangeDetectorGUI:
         self.size_entry.pack(side=tk.LEFT, padx=5)
         ttk.Label(size_frame, text="px", style='Term.TLabel').pack(side=tk.LEFT)
         
-        # Training mode toggle
-        training_frame = ttk.Frame(settings_frame, style='Term.TFrame')
-        training_frame.pack(fill=tk.X, pady=3)
-        
-        ttk.Label(training_frame, text="> training_mode:", style='Term.TLabel').pack(side=tk.LEFT, padx=(5, 0))
-        self.training_var = tk.BooleanVar(value=False)
-        
-        # Custom checkbox with black background
-        training_check = tk.Checkbutton(
-            training_frame, 
-            text="enabled",
-            variable=self.training_var,
-            command=self.toggle_training_mode,
-            bg=self.colors['bg_dark'],
-            fg=self.colors['text'],
-            activebackground=self.colors['bg_dark'],
-            activeforeground=self.colors['green'],
-            selectcolor=self.colors['bg_dark'],
-            highlightthickness=0,
-            font=('Consolas', 10)
-        )
-        training_check.pack(side=tk.LEFT, padx=5)
-        
         # Section 2: Region Selection
         region_frame = ttk.LabelFrame(left_panel, text="MONITORING", style='Terminal.TLabelframe')
         region_frame.pack(fill=tk.X, pady=(0, 5), padx=0)
@@ -576,30 +553,12 @@ class PixelChangeDetectorGUI:
         )
         self.region_button.pack(side=tk.LEFT, padx=(0, 5))
         
-        # Custom button for reset region
-        self.reset_region_button = tk.Button(
-            region_buttons, 
-            text="reset",
-            command=self.reset_region,
-            bg=self.colors['bg_dark'],
-            fg=self.colors['accent'],
-            activebackground=self.colors['bg_lighter'],
-            activeforeground=self.colors['accent_alt'],
-            relief="flat",
-            bd=1,
-            highlightthickness=0,
-            padx=10,
-            pady=6,
-            font=('Consolas', 10)
-        )
-        self.reset_region_button.pack(side=tk.LEFT)
-        
         # Status label
         region_info_frame = ttk.Frame(region_frame, style='Term.TFrame')
         region_info_frame.pack(fill=tk.X, pady=3)
         
         ttk.Label(region_info_frame, text="> status:", style='Term.TLabel').pack(side=tk.LEFT, padx=(5, 0))
-        self.region_info_label = ttk.Label(region_info_frame, text="full_screen_monitoring", style='Term.TLabel')
+        self.region_info_label = ttk.Label(region_info_frame, text="waiting_for_region_selection", style='Term.TLabel')
         self.region_info_label.pack(side=tk.LEFT, padx=5)
         
         # Section 3: Control Buttons
@@ -755,12 +714,16 @@ class PixelChangeDetectorGUI:
         self.fig = plt.Figure(figsize=(8, 6), dpi=100, facecolor=self.colors['bg_dark'])
         
         # Use GridSpec for better control over subplot sizing
-        gs = plt.GridSpec(2, 1, height_ratios=[3, 1], hspace=0.2)
+        gs = plt.GridSpec(2, 1, height_ratios=[4, 1], hspace=0.2)
         
-        # Current frame subplot - larger with correct ratio
+        # Combined frame subplot - larger with correct ratio
         self.current_ax = self.fig.add_subplot(gs[0])
-        self.current_ax.set_title("FEED", color=self.colors['green'], fontsize=9, fontweight='normal')
+        self.current_ax.set_title("OVERLAID FEED", color=self.colors['green'], fontsize=9, fontweight='normal')
         self.current_image = self.current_ax.imshow(np.zeros((100, 150, 3)), cmap='gray')
+        
+        # Create an overlay image for differences with alpha transparency
+        self.diff_overlay = self.current_ax.imshow(np.zeros((100, 150, 4)), alpha=0.5)
+        
         self.current_ax.set_xticks([])
         self.current_ax.set_yticks([])
         self.current_ax.set_facecolor(self.colors['bg_dark'])
@@ -774,24 +737,7 @@ class PixelChangeDetectorGUI:
                            transform=self.current_ax.transAxes, clip_on=False)
         self.current_ax.add_patch(rect)
         
-        # Difference frame subplot
-        self.diff_ax = self.fig.add_subplot(gs[1])
-        self.diff_ax.set_title("DIFF", color=self.colors['green'], fontsize=9, fontweight='normal')
-        self.diff_image = self.diff_ax.imshow(np.zeros((100, 150)), cmap='inferno')
-        self.diff_ax.set_xticks([])
-        self.diff_ax.set_yticks([])
-        self.diff_ax.set_facecolor(self.colors['bg_dark'])
-        
-        # Clean up borders
-        for spine in self.diff_ax.spines.values():
-            spine.set_visible(False)
-        
-        # Add thin border around diff visualization
-        rect = plt.Rectangle((0, 0), 1, 1, fill=False, ec=self.colors['border'], 
-                           transform=self.diff_ax.transAxes, clip_on=False)
-        self.diff_ax.add_patch(rect)
-        
-        # Create a small timeline below the diff frame
+        # Create a small timeline below the main frame
         self.timeline_height = 0.10  # Height of timeline in figure fraction
         timeline_bottom = 0.05  # Bottom position in figure fraction
         self.timeline_ax = self.fig.add_axes([0.1, timeline_bottom, 0.8, self.timeline_height])
@@ -859,17 +805,6 @@ class PixelChangeDetectorGUI:
     def update_threshold_label(self, value=None):
         self.threshold_label.config(text=f"{float(self.threshold_var.get()):.2f}")
         
-    def toggle_training_mode(self):
-        """Toggle training mode on/off"""
-        is_training = self.training_var.get()
-        if is_training:
-            self.log("Training mode ENABLED - Detection will not trigger key presses")
-        else:
-            self.log("Training mode DISABLED - Detection will trigger key presses")
-            
-        if self.detector:
-            self.detector.training_mode = is_training
-            
     def update_logs(self):
         """Process any new log messages from the queue"""
         try:
@@ -911,7 +846,7 @@ class PixelChangeDetectorGUI:
                 self.current_ax.set_xlim(0, gray_display.shape[1])
                 self.current_ax.set_ylim(gray_display.shape[0], 0)
                 
-            # Update difference frame
+            # Create overlay for difference frame
             if hasattr(self.detector, 'diff_frame') and self.detector.diff_frame is not None:
                 # Make a copy to avoid modifying the original
                 diff_display = self.detector.diff_frame.copy()
@@ -925,18 +860,28 @@ class PixelChangeDetectorGUI:
                 # Convert from BGR to RGB for display in matplotlib
                 colored_diff = cv2.cvtColor(diff_colored, cv2.COLOR_BGR2RGB)
                 
-                # Update the display
-                self.diff_image.set_data(colored_diff)
+                # Add alpha channel for transparency
+                colored_diff_alpha = np.zeros((colored_diff.shape[0], colored_diff.shape[1], 4), dtype=np.uint8)
+                colored_diff_alpha[..., :3] = colored_diff
+                
+                # Set alpha based on intensity for better visualization
+                # Only show differences above a certain threshold for cleaner look
+                alpha_threshold = 30
+                for i in range(diff_display.shape[0]):
+                    for j in range(diff_display.shape[1]):
+                        if diff_display[i, j] > alpha_threshold:
+                            colored_diff_alpha[i, j, 3] = min(255, int(diff_display[i, j] * 2))
+                        else:
+                            colored_diff_alpha[i, j, 3] = 0
+                
+                # Update the overlay display
+                self.diff_overlay.set_data(colored_diff_alpha)
                 
                 # Update title with current change percentage
                 if hasattr(self.detector, 'change_history') and len(self.detector.change_history) > 0:
                     latest_change = self.detector.change_history[-1]
-                    self.diff_ax.set_title(f"DIFF [{latest_change:.2%}]", 
+                    self.current_ax.set_title(f"FEED+DIFF OVERLAY [{latest_change:.2%}]", 
                                          color=self.colors['green'], fontsize=9, fontweight='normal')
-                    
-                # Set axis limits to match the image
-                self.diff_ax.set_xlim(0, colored_diff.shape[1])
-                self.diff_ax.set_ylim(colored_diff.shape[0], 0)
                 
             # Update timeline activity
             if hasattr(self.detector, 'change_history'):
@@ -1230,7 +1175,7 @@ class PixelChangeDetectorGUI:
                     text=f"region({left},{top},{width}x{height})"
                 )
             else:
-                self.region_info_label.config(text="full_screen_monitoring")
+                self.region_info_label.config(text="waiting_for_region_selection")
         
     def capture_reference(self):
         """Capture a reference frame for comparison"""
@@ -1254,9 +1199,13 @@ class PixelChangeDetectorGUI:
                 self.detector = PixelChangeDetector(self.log_queue)
                 self.detector.gui = self
                 
+            # Check if region is selected
+            if not self.detector.region:
+                self.log("You must select a region first")
+                return
+                
             # Update detector settings from UI
             self.detector.THRESHOLD = self.threshold_var.get()
-            self.detector.training_mode = self.training_var.get()
             
             # Reset thread control variables
             self.thread_control = {
@@ -1338,22 +1287,14 @@ class PixelChangeDetectorGUI:
         """Clear the log console"""
         self.log_console.delete(1.0, tk.END)
 
-    def reset_region(self):
-        """Reset to full screen monitoring"""
-        if self.detector:
-            self.detector.region = None
-            self.log("Reset to full screen monitoring")
-            self.update_region_label()
-
 class PixelChangeDetector:
     def __init__(self, log_queue=None):
         self.THRESHOLD = 0.05  # Default threshold for pixel change
         self.is_running = False
         self.log_queue = log_queue
         self.gui = None
-        self.training_mode = False
         
-        # Screen capture region (default to full screen)
+        # Screen capture region (required)
         self.region = None  # (left, top, right, bottom)
         
         # Initialize visualization data
@@ -1606,15 +1547,15 @@ class PixelChangeDetector:
                 height = bottom - top
                 
                 if width < 10 or height < 10:
-                    self.log("Invalid region size detected. Resetting to full screen.")
-                    self.region = None
-                    screenshot = ImageGrab.grab()
+                    self.log("Invalid region size detected. Please select a new region.")
+                    return None
                 else:
                     # Capture specific region
                     screenshot = ImageGrab.grab(bbox=self.region)
             else:
-                # Capture full screen
-                screenshot = ImageGrab.grab()
+                # Region is required
+                self.log("No region selected. Please select a region first.")
+                return None
                 
             # Convert to numpy array for processing
             frame = np.array(screenshot)
@@ -1640,8 +1581,6 @@ class PixelChangeDetector:
         except Exception as e:
             self.log(f"Error capturing screen: {e}")
             self.consecutive_failures += 1
-            # Reset to full screen on error
-            self.region = None
             return None
             
     def calculate_frame_difference(self, frame1, frame2):
@@ -1756,18 +1695,14 @@ class PixelChangeDetector:
                     if self.gui:
                         self.gui.root.after(0, self.gui.increment_detection_count)
                     
-                    # Skip key press if in training mode
-                    if self.training_mode:
-                        self.log("Training mode active - skipping key press")
+                    # Quick focus and key press
+                    if self.focus_play_together_window():
+                        self.send_f_key()
+                        
+                        # Capture new reference frame after detection
+                        time.sleep(0.2)  # Reduced from 1.0 to 0.2 seconds
                     else:
-                        # Quick focus and key press
-                        if self.focus_play_together_window():
-                            self.send_f_key()
-                            
-                            # Capture new reference frame after detection
-                            time.sleep(0.2)  # Reduced from 1.0 to 0.2 seconds
-                        else:
-                            self.log("Failed to focus window, skipping key press")
+                        self.log("Failed to focus window, skipping key press")
                     
                     # Pause detection for 5 seconds after detection
                     pause_start = time.time()
