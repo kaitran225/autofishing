@@ -668,9 +668,11 @@ class PixelChangeDetector:
         
     def log(self, message):
         """Log a message to the queue if it exists"""
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        formatted_message = f"[{timestamp}] {message}"
         if self.log_queue:
-            self.log_queue.put(message)
-        print(message)
+            self.log_queue.put(formatted_message)
+        print(formatted_message)
         
     def reset_state(self):
         """Reset detector state to handle recovery"""
@@ -986,17 +988,33 @@ class PixelChangeDetector:
                     # Skip key press if in training mode
                     if self.training_mode:
                         self.log("Training mode active - skipping key press")
-                        continue
-                    
-                    # Quick focus and key press
-                    if self.focus_play_together_window():
-                        self.send_f_key()
-                        
-                        # Capture new reference frame after detection
-                        time.sleep(0.2)  # Reduced from 1.0 to 0.2 seconds
-                        self.capture_reference()
                     else:
-                        self.log("Failed to focus window, skipping key press")
+                        # Quick focus and key press
+                        if self.focus_play_together_window():
+                            self.send_f_key()
+                            
+                            # Capture new reference frame after detection
+                            time.sleep(0.2)  # Reduced from 1.0 to 0.2 seconds
+                            self.capture_reference()
+                        else:
+                            self.log("Failed to focus window, skipping key press")
+                    
+                    # Pause detection for 5 seconds after detection
+                    self.log("Pausing detection for 5 seconds...")
+                    pause_start = time.time()
+                    while time.time() - pause_start < 5 and self.is_running:
+                        # Update UI during pause
+                        if self.gui:
+                            self.gui.root.after(0, lambda: self.gui.update_status(f"Paused: {int(5 - (time.time() - pause_start))}s remaining"))
+                        time.sleep(0.1)
+                    
+                    if self.gui:
+                        self.gui.root.after(0, lambda: self.gui.update_status("Running"))
+                    
+                    # Reset state after pause
+                    self.reset_state()
+                    self.capture_reference()
+                    continue
                 
                 # Store current frame as previous for next comparison if not using reference
                 if self.reference_frame is None:
