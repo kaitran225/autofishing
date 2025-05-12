@@ -12,11 +12,13 @@ import win32api
 import ctypes
 import psutil
 import matplotlib.pyplot as plt
+import matplotlib.collections
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import queue
 import datetime
 from PIL import ImageGrab, Image
 import cv2
+from tkinter import font as tkfont  # For custom fonts
 
 # For direct key simulation and window focus
 user32 = ctypes.WinDLL('user32', use_last_error=True)
@@ -159,9 +161,16 @@ def direct_key_press(key_char):
 class PixelChangeDetectorGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Play Together Pixel Change Detector")
-        self.root.geometry("700x600")
+        self.root.title("Pixel Change Detector")
+        self.root.geometry("900x700")
+        self.root.minsize(800, 600)
         self.root.resizable(True, True)
+        
+        # Set app icon and configure style
+        self.configure_style()
+        
+        # Set window background explicitly
+        self.root.configure(background=self.colors['bg_dark'])
         
         # Create message queue for logging
         self.log_queue = queue.Queue()
@@ -169,6 +178,14 @@ class PixelChangeDetectorGUI:
         # Initialize detector
         self.detector = None
         self.is_running = False
+        
+        # Thread control variables
+        self.thread_control = {
+            "detection_thread": None,
+            "running": False,
+            "paused": False,
+            "stop_requested": False
+        }
         
         # Pixel visualization data
         self.change_history = []
@@ -183,132 +200,661 @@ class PixelChangeDetectorGUI:
         # Setup periodic updates
         self.update_logs()
         
+    def configure_style(self):
+        """Configure the app style with a clean minimalist terminal-inspired theme"""
+        # Configure ttk style with a terminal theme
+        style = ttk.Style()
+        
+        # Define color scheme with colors from App.xaml
+        self.colors = {
+            # Main black colors
+            'bg_dark': '#050505',       # PrimaryBlackColor
+            'bg_term': '#0E0E0E',       # PrimaryBackgroundDarkColor
+            'bg_lighter': '#1A1A1A',    # SecondaryBlackColor
+            'bg_alt': '#191919',        # AlternativeDarkColor
+            'bg_matte': '#121212',      # MatteBlackColor
+            
+            # Text colors
+            'text': '#F8F5FF',          # PrimaryTextColor
+            'text_bright': '#FFFFFF',   # WhiteColor
+            'text_dim': '#999999',      # SecondaryTextColor
+            'text_tertiary': '#616161', # TertiaryTextColor
+            
+            # Accent colors
+            'accent': '#A280FF',        # PrimaryPurpleColor
+            'accent_alt': '#8F66FF',    # SecondaryPurpleColor
+            'accent_bright': '#7C4CFF',  # TertiaryPurpleColor
+            'accent_special': '#6933FF', # SpecialPurpleColor
+            
+            # Green colors
+            'green': '#C4E6B5',         # PrimaryGreenColor
+            'green_alt': '#A8D699',     # SecondaryGreenColor
+            'green_matcha': '#BCD9B4',  # MatchaGreenColor
+            
+            # Status colors
+            'success': '#47D068',       # SuccessColor
+            'border': '#222222',        # TertiaryBlackColor
+            'border_light': '#2A2A2A',  # QuaternaryBlackColor
+            'cursor': '#C4E6B5',        # Using PrimaryGreenColor
+            'alert': '#FF4D4D',         # ErrorColor
+            'warning': '#FFB940',       # WarningColor
+            'selection': '#264F78'      # Keep existing selection color
+        }
+        
+        # Define custom fonts
+        default_font = tkfont.nametofont("TkDefaultFont")
+        default_font.configure(size=10, family="Consolas")
+        term_font = tkfont.Font(family="Consolas", size=10)
+        heading_font = tkfont.Font(family="Consolas", size=11, weight="bold")
+        
+        # Configure base styles
+        style.configure('TFrame', background=self.colors['bg_dark'])
+        style.configure('Term.TFrame', background=self.colors['bg_dark'])
+        
+        # Add separator style
+        style.configure('Separator.TFrame', background=self.colors['border'])
+        
+        # Add border style
+        style.configure('Border.TFrame', 
+                       background=self.colors['bg_dark'],
+                       borderwidth=1,
+                       relief="solid")
+        
+        style.configure('TLabel', 
+                       background=self.colors['bg_dark'], 
+                       foreground=self.colors['text'],
+                       font=term_font)
+        
+        style.configure('Term.TLabel', 
+                       background=self.colors['bg_dark'], 
+                       foreground=self.colors['text'],
+                       font=term_font)
+        
+        style.configure('Heading.TLabel', 
+                       font=heading_font, 
+                       background=self.colors['bg_dark'], 
+                       foreground=self.colors['text_bright'])
+        
+        # Status indicators
+        style.configure('Status.TLabel', 
+                       font=term_font, 
+                       background=self.colors['bg_dark'],
+                       foreground=self.colors['text_dim'])
+        
+        style.configure('Running.Status.TLabel', 
+                       foreground=self.colors['green'],
+                       background=self.colors['bg_dark'])
+        
+        style.configure('Stopped.Status.TLabel', 
+                       foreground=self.colors['alert'],
+                       background=self.colors['bg_dark'])
+        
+        style.configure('Paused.Status.TLabel', 
+                       foreground=self.colors['warning'],
+                       background=self.colors['bg_dark'])
+        
+        # Define custom button layout with rounded corners
+        self.root.tk.eval("""
+            ttk::style layout Custom.TButton {
+                Custom.Button.focus -children {
+                    Custom.Button.padding -children {
+                        Custom.Button.label
+                    }
+                }
+            }
+            ttk::style configure Custom.TButton -background %(bg_term)s -foreground %(text)s -padding {8 6}
+            ttk::style map Custom.TButton -background [list active %(bg_lighter)s] -foreground [list active %(text_bright)s]
+        """ % self.colors)
+        
+        # Configure standard buttons with material-inspired styling
+        style.configure('TButton', 
+                       background=self.colors['bg_dark'],
+                       foreground=self.colors['text'],
+                       borderwidth=0,
+                       focusthickness=0,
+                       relief="flat",
+                       padding=(8, 6),
+                       font=term_font)
+        
+        style.map('TButton',
+                 background=[('active', self.colors['bg_lighter']), ('pressed', self.colors['bg_alt'])],
+                 foreground=[('active', self.colors['text_bright']), ('pressed', self.colors['accent'])])
+        
+        # Primary command button style (green-accented with black bg)
+        style.configure('Command.TButton', 
+                       background=self.colors['bg_dark'],
+                       foreground=self.colors['green'],
+                       borderwidth=1,
+                       focusthickness=0,
+                       relief="flat",
+                       padding=(10, 6),
+                       font=term_font)
+        
+        style.map('Command.TButton',
+                 background=[('active', self.colors['bg_lighter']), ('pressed', self.colors['bg_alt'])],
+                 foreground=[('active', self.colors['green_alt']), ('pressed', self.colors['green'])])
+        
+        # Warning style button (red accent)
+        style.configure('Warning.TButton', 
+                       background=self.colors['bg_dark'],
+                       foreground=self.colors['alert'],
+                       borderwidth=1,
+                       focusthickness=0,
+                       relief="flat",
+                       padding=(10, 6),
+                       font=term_font)
+        
+        style.map('Warning.TButton',
+                 background=[('active', self.colors['bg_lighter']), ('pressed', self.colors['bg_alt'])],
+                 foreground=[('active', self.colors['alert']), ('pressed', self.colors['text_bright'])])
+        
+        # Secondary button style (purple accent)
+        style.configure('Secondary.TButton', 
+                       background=self.colors['bg_dark'],
+                       foreground=self.colors['accent'],
+                       borderwidth=1,
+                       focusthickness=0,
+                       relief="flat", 
+                       padding=(10, 6),
+                       font=term_font)
+        
+        style.map('Secondary.TButton',
+                 background=[('active', self.colors['bg_lighter']), ('pressed', self.colors['bg_alt'])],
+                 foreground=[('active', self.colors['accent_alt']), ('pressed', self.colors['text_bright'])])
+        
+        # Frame containers with minimal borders
+        style.configure('Panel.TFrame', 
+                       padding=8, 
+                       relief="flat", 
+                       borderwidth=0,
+                       background=self.colors['bg_dark'])
+        
+        # LabelFrame with subtle border
+        style.configure('Terminal.TLabelframe', 
+                       padding=8, 
+                       relief="solid", 
+                       borderwidth=1,
+                       bordercolor=self.colors['border_light'],
+                       background=self.colors['bg_dark'])
+        
+        style.configure('Terminal.TLabelframe.Label', 
+                       font=heading_font,
+                       background=self.colors['bg_dark'],
+                       foreground=self.colors['green'],
+                       padding=(5, 0))
+        
+        # Entry, Checkbutton, Scale styles
+        style.configure('TEntry', 
+                       fieldbackground=self.colors['bg_dark'],
+                       foreground=self.colors['text'],
+                       insertcolor=self.colors['cursor'],
+                       borderwidth=1,
+                       relief="solid",
+                       font=term_font)
+        
+        style.configure('TCheckbutton', 
+                       background=self.colors['bg_dark'],
+                       foreground=self.colors['text'],
+                       font=term_font)
+        
+        style.map('TCheckbutton',
+                 background=[('active', self.colors['bg_dark'])],
+                 foreground=[('active', self.colors['green'])])
+        
+        style.configure('TScale', 
+                       background=self.colors['bg_dark'],
+                       troughcolor=self.colors['bg_dark'],
+                       slidercolor=self.colors['accent'],
+                       borderwidth=0)
+        
+        # Apply overall tkinter styling
+        self.root.configure(background=self.colors['bg_dark'])
+        
     def log(self, message):
-        """Add timestamped message to log queue"""
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        self.log_queue.put(f"[{timestamp}] {message}") 
+        """Add timestamped message to log queue in minimal format"""
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        self.log_queue.put(f"[{timestamp}] {message}")
         
     def create_widgets(self):
-        # Style configuration
-        style = ttk.Style()
-        style.configure('TButton', padding=5)
-        style.configure('TLabel', padding=5)
+        """Create all GUI widgets with modern minimal terminal design"""
+        # Main container with minimal padding
+        main_container = ttk.Frame(self.root, padding="5", style='TFrame')
+        main_container.pack(fill=tk.BOTH, expand=True)
         
-        # Main frame
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        # Top command line prompt
+        cmd_frame = ttk.Frame(main_container, style='Term.TFrame')
+        cmd_frame.pack(fill=tk.X, pady=(0, 5))
         
-        # Left panel for controls
-        left_panel = ttk.Frame(main_frame)
-        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        # Command prompt symbol
+        cmd_prompt = ttk.Label(cmd_frame, text="> ", style='Term.TLabel')
+        cmd_prompt.pack(side=tk.LEFT, padx=(5, 0))
         
-        # Right panel for visualization
-        right_panel = ttk.Frame(main_frame)
+        # Status as command output
+        self.status_label = ttk.Label(cmd_frame, text="system:monitor.idle", style='Status.TLabel')
+        self.status_label.pack(side=tk.LEFT)
+        
+        # Blinking cursor at end of command
+        self.cursor_label = ttk.Label(cmd_frame, text="_", style='Term.TLabel')
+        self.cursor_label.pack(side=tk.LEFT)
+        self.cursor_visible = True
+        self.blink_cursor()
+        
+        # Detection counter in command line style
+        count_frame = ttk.Frame(cmd_frame, style='Term.TFrame')
+        count_frame.pack(side=tk.RIGHT, padx=(0, 5))
+        
+        self.detection_count = 0
+        self.count_label = ttk.Label(count_frame, text="detections: 0", style='Term.TLabel')
+        self.count_label.pack(side=tk.RIGHT)
+        
+        # Thin separator line
+        separator = ttk.Frame(main_container, height=1, style='Separator.TFrame')
+        separator.pack(fill=tk.X, pady=(0, 5))
+        
+        # Split into left and right panels
+        panel_container = ttk.Frame(main_container, style='TFrame')
+        panel_container.pack(fill=tk.BOTH, expand=True)
+        
+        # Left control panel (fixed width)
+        left_panel = ttk.Frame(panel_container, width=300, style='TFrame')
+        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 5))
+        left_panel.pack_propagate(False)  # Fix the width
+        
+        # Right visualization panel (expanding)
+        right_panel = ttk.Frame(panel_container, style='TFrame')
         right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
         
-        # Top control panel
-        self.control_frame = ttk.LabelFrame(left_panel, text="Controls", padding="10")
-        self.control_frame.pack(fill=tk.X, pady=5)
+        # Section 1: Detection Settings
+        settings_frame = ttk.LabelFrame(left_panel, text="SETTINGS", style='Terminal.TLabelframe')
+        settings_frame.pack(fill=tk.X, pady=(0, 5), padx=0)
         
-        # Status label
-        self.status_label = ttk.Label(self.control_frame, text="Status: Not Running", font=('Arial', 10))
-        self.status_label.grid(row=0, column=0, columnspan=2, pady=5, sticky=tk.W)
+        # Threshold control with clean minimal slider
+        threshold_frame = ttk.Frame(settings_frame, style='Term.TFrame')
+        threshold_frame.pack(fill=tk.X, pady=3)
         
-        # Region size input
-        size_frame = ttk.Frame(self.control_frame)
-        size_frame.grid(row=1, column=0, columnspan=4, pady=5, sticky=tk.W)
+        ttk.Label(threshold_frame, text="> threshold:", style='Term.TLabel').pack(side=tk.LEFT, padx=(5, 0))
         
-        ttk.Label(size_frame, text="Region Size (pixels):").pack(side=tk.LEFT, padx=(0, 5))
-        self.size_var = tk.StringVar(value="50")
-        self.size_entry = ttk.Entry(size_frame, textvariable=self.size_var, width=6)
-        self.size_entry.pack(side=tk.LEFT)
+        threshold_value_frame = ttk.Frame(settings_frame, style='Term.TFrame')
+        threshold_value_frame.pack(fill=tk.X, pady=(0, 5))
         
-        # Threshold slider
-        ttk.Label(self.control_frame, text="Change Threshold:").grid(row=2, column=0, sticky=tk.W)
-        self.threshold_var = tk.DoubleVar(value=0.05)  # Default threshold for pixel change
-        self.threshold_slider = ttk.Scale(self.control_frame, from_=0.01, to=0.5, 
-                                        variable=self.threshold_var, orient=tk.HORIZONTAL, length=200)
-        self.threshold_slider.grid(row=2, column=1, sticky=(tk.W, tk.E), pady=5)
-        self.threshold_label = ttk.Label(self.control_frame, text="0.05")
-        self.threshold_label.grid(row=2, column=2, padx=5)
+        self.threshold_var = tk.DoubleVar(value=0.05)
+        
+        # Custom slider with black background
+        slider_frame = tk.Frame(threshold_value_frame, bg=self.colors['bg_dark'])
+        slider_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 5))
+        
+        self.threshold_slider = tk.Scale(
+            slider_frame, 
+            from_=0.01, to=0.5,
+            resolution=0.01,
+            orient=tk.HORIZONTAL,
+            variable=self.threshold_var,
+            command=self.update_threshold_label,
+            bg=self.colors['bg_dark'],
+            fg=self.colors['text'],
+            highlightthickness=0,
+            troughcolor=self.colors['bg_lighter'],
+            activebackground=self.colors['accent'],
+            sliderrelief="flat"
+        )
+        self.threshold_slider.pack(fill=tk.X, expand=True)
+        
+        self.threshold_label = ttk.Label(threshold_value_frame, text="0.05", width=4, style='Term.TLabel')
+        self.threshold_label.pack(side=tk.RIGHT, padx=(0, 5))
         self.threshold_slider.config(command=self.update_threshold_label)
         
-        # Region selection
-        region_frame = ttk.Frame(self.control_frame)
-        region_frame.grid(row=3, column=0, columnspan=4, pady=5, sticky=tk.W)
+        # Region size input
+        size_frame = ttk.Frame(settings_frame, style='Term.TFrame')
+        size_frame.pack(fill=tk.X, pady=3)
         
-        ttk.Label(region_frame, text="Monitoring Region:").grid(row=0, column=0, sticky=tk.W)
-        self.region_button = ttk.Button(region_frame, text="Select Region", command=self.select_region)
-        self.region_button.grid(row=0, column=1, padx=5, sticky=tk.W)
+        ttk.Label(size_frame, text="> region_size:", style='Term.TLabel').pack(side=tk.LEFT, padx=(5, 0))
+        self.size_var = tk.StringVar(value="50")
+        self.size_entry = tk.Entry(
+            size_frame, 
+            textvariable=self.size_var, 
+            width=5,
+            bg=self.colors['bg_dark'],
+            fg=self.colors['text'],
+            insertbackground=self.colors['cursor'],
+            highlightthickness=1,
+            highlightbackground=self.colors['border'],
+            highlightcolor=self.colors['accent'],
+            relief="flat",
+            font=('Consolas', 10)
+        )
+        self.size_entry.pack(side=tk.LEFT, padx=5)
+        ttk.Label(size_frame, text="px", style='Term.TLabel').pack(side=tk.LEFT)
         
-        self.reset_region_button = ttk.Button(region_frame, text="Reset to Full Screen", command=self.reset_region)
-        self.reset_region_button.grid(row=0, column=2, padx=5, sticky=tk.W)
+        # Training mode toggle
+        training_frame = ttk.Frame(settings_frame, style='Term.TFrame')
+        training_frame.pack(fill=tk.X, pady=3)
         
-        # Add region info label 
-        self.region_info_label = ttk.Label(self.control_frame, text="No region selected (monitoring full screen)")
-        self.region_info_label.grid(row=4, column=0, columnspan=4, padx=5, sticky=tk.W)
-        
-        # Training mode 
+        ttk.Label(training_frame, text="> training_mode:", style='Term.TLabel').pack(side=tk.LEFT, padx=(5, 0))
         self.training_var = tk.BooleanVar(value=False)
-        training_check = ttk.Checkbutton(self.control_frame, text="Training Mode", 
-                                        variable=self.training_var,
-                                        command=self.toggle_training_mode)
-        training_check.grid(row=1, column=3, padx=10)
         
-        # Start/Stop buttons
-        button_frame = ttk.Frame(self.control_frame)
-        button_frame.grid(row=5, column=0, columnspan=4, pady=5)
+        # Custom checkbox with black background
+        training_check = tk.Checkbutton(
+            training_frame, 
+            text="enabled",
+            variable=self.training_var,
+            command=self.toggle_training_mode,
+            bg=self.colors['bg_dark'],
+            fg=self.colors['text'],
+            activebackground=self.colors['bg_dark'],
+            activeforeground=self.colors['green'],
+            selectcolor=self.colors['bg_dark'],
+            highlightthickness=0,
+            font=('Consolas', 10)
+        )
+        training_check.pack(side=tk.LEFT, padx=5)
         
-        self.start_button = ttk.Button(button_frame, text="Start Detection", command=self.start_detection)
-        self.start_button.grid(row=0, column=0, padx=5)
+        # Section 2: Region Selection
+        region_frame = ttk.LabelFrame(left_panel, text="MONITORING", style='Terminal.TLabelframe')
+        region_frame.pack(fill=tk.X, pady=(0, 5), padx=0)
         
-        self.stop_button = ttk.Button(button_frame, text="Stop Detection", command=self.stop_detection, state=tk.DISABLED)
-        self.stop_button.grid(row=0, column=1, padx=5)
+        # Region buttons in command line style
+        region_buttons = ttk.Frame(region_frame, style='Term.TFrame')
+        region_buttons.pack(fill=tk.X, pady=3)
         
-        self.capture_button = ttk.Button(button_frame, text="Capture Reference", command=self.capture_reference)
-        self.capture_button.grid(row=0, column=2, padx=5)
+        ttk.Label(region_buttons, text=">", style='Term.TLabel').pack(side=tk.LEFT, padx=(5, 5))
         
-        # Detection count
-        self.detection_count = 0
-        self.count_label = ttk.Label(self.control_frame, text="Detections: 0")
-        self.count_label.grid(row=6, column=0, columnspan=3, pady=5, sticky=tk.W)
+        # Custom button for region selection
+        self.region_button = tk.Button(
+            region_buttons, 
+            text="select-region",
+            command=self.select_region,
+            bg=self.colors['bg_dark'],
+            fg=self.colors['green'],
+            activebackground=self.colors['bg_lighter'],
+            activeforeground=self.colors['green_alt'],
+            relief="flat",
+            bd=1,
+            highlightthickness=0,
+            padx=10,
+            pady=6,
+            font=('Consolas', 10)
+        )
+        self.region_button.pack(side=tk.LEFT, padx=(0, 5))
         
-        # Log console
-        log_frame = ttk.LabelFrame(left_panel, text="Console Log", padding="10")
-        log_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+        # Custom button for reset region
+        self.reset_region_button = tk.Button(
+            region_buttons, 
+            text="reset",
+            command=self.reset_region,
+            bg=self.colors['bg_dark'],
+            fg=self.colors['accent'],
+            activebackground=self.colors['bg_lighter'],
+            activeforeground=self.colors['accent_alt'],
+            relief="flat",
+            bd=1,
+            highlightthickness=0,
+            padx=10,
+            pady=6,
+            font=('Consolas', 10)
+        )
+        self.reset_region_button.pack(side=tk.LEFT)
         
-        self.log_console = scrolledtext.ScrolledText(log_frame, height=10, width=40)
+        # Status label
+        region_info_frame = ttk.Frame(region_frame, style='Term.TFrame')
+        region_info_frame.pack(fill=tk.X, pady=3)
+        
+        ttk.Label(region_info_frame, text="> status:", style='Term.TLabel').pack(side=tk.LEFT, padx=(5, 0))
+        self.region_info_label = ttk.Label(region_info_frame, text="full_screen_monitoring", style='Term.TLabel')
+        self.region_info_label.pack(side=tk.LEFT, padx=5)
+        
+        # Section 3: Control Buttons
+        control_frame = ttk.LabelFrame(left_panel, text="CONTROL", style='Terminal.TLabelframe')
+        control_frame.pack(fill=tk.X, pady=(0, 5), padx=0)
+        
+        button_frame = ttk.Frame(control_frame, style='Term.TFrame')
+        button_frame.pack(fill=tk.X, pady=3)
+        
+        ttk.Label(button_frame, text=">", style='Term.TLabel').pack(side=tk.LEFT, padx=(5, 5))
+        
+        # Main control buttons with custom tk styling
+        self.start_button = tk.Button(
+            button_frame, 
+            text="start",
+            command=self.start_detection,
+            bg=self.colors['bg_dark'],
+            fg=self.colors['green'],
+            activebackground=self.colors['bg_lighter'],
+            activeforeground=self.colors['green_alt'],
+            relief="flat",
+            bd=1,
+            highlightthickness=0,
+            padx=10,
+            pady=6,
+            font=('Consolas', 10)
+        )
+        self.start_button.pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.stop_button = tk.Button(
+            button_frame, 
+            text="stop",
+            command=self.stop_detection,
+            state=tk.DISABLED,
+            bg=self.colors['bg_dark'],
+            fg=self.colors['alert'],
+            activebackground=self.colors['bg_lighter'],
+            activeforeground=self.colors['alert'],
+            relief="flat",
+            bd=1,
+            highlightthickness=0,
+            padx=10,
+            pady=6,
+            font=('Consolas', 10),
+            disabledforeground='grey'
+        )
+        self.stop_button.pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.pause_button = tk.Button(
+            button_frame, 
+            text="pause",
+            command=self.toggle_pause,
+            state=tk.DISABLED,
+            bg=self.colors['bg_dark'],
+            fg=self.colors['warning'],
+            activebackground=self.colors['bg_lighter'],
+            activeforeground=self.colors['warning'],
+            relief="flat",
+            bd=1,
+            highlightthickness=0,
+            padx=10,
+            pady=6,
+            font=('Consolas', 10),
+            disabledforeground='grey'
+        )
+        self.pause_button.pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Second row of buttons
+        button_frame2 = ttk.Frame(control_frame, style='Term.TFrame')
+        button_frame2.pack(fill=tk.X, pady=3)
+        
+        ttk.Label(button_frame2, text=">", style='Term.TLabel').pack(side=tk.LEFT, padx=(5, 5))
+        
+        # Capture reference button
+        self.ref_button = tk.Button(
+            button_frame2, 
+            text="capture-reference",
+            command=self.capture_reference,
+            bg=self.colors['bg_dark'],
+            fg=self.colors['accent'],
+            activebackground=self.colors['bg_lighter'],
+            activeforeground=self.colors['accent_alt'],
+            relief="flat",
+            bd=1,
+            highlightthickness=0,
+            padx=10,
+            pady=6,
+            font=('Consolas', 10)
+        )
+        self.ref_button.pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Clear logs button
+        self.clear_button = tk.Button(
+            button_frame2, 
+            text="clear-logs",
+            command=self.clear_logs,
+            bg=self.colors['bg_dark'],
+            fg=self.colors['text_dim'],
+            activebackground=self.colors['bg_lighter'],
+            activeforeground=self.colors['text'],
+            relief="flat",
+            bd=1,
+            highlightthickness=0,
+            padx=10,
+            pady=6,
+            font=('Consolas', 10)
+        )
+        self.clear_button.pack(side=tk.LEFT)
+        
+        # Section 4: Log Display
+        log_frame = ttk.LabelFrame(left_panel, text="LOGS", style='Terminal.TLabelframe')
+        log_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 0), padx=0)
+        
+        # Log console with retro terminal styling
+        self.log_console = scrolledtext.ScrolledText(
+            log_frame,
+            bg=self.colors['bg_dark'],
+            fg=self.colors['text'],
+            font=('Consolas', 9),
+            relief="flat",
+            borderwidth=0
+        )
         self.log_console.pack(fill=tk.BOTH, expand=True)
         
-        # Visualization frame
-        viz_frame = ttk.LabelFrame(right_panel, text="Visual Monitoring", padding="10")
+        # Configure visualization panel
+        viz_frame = ttk.LabelFrame(right_panel, text="VISUALIZATION", style='Terminal.TLabelframe')
         viz_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Create matplotlib figure for visualization
-        self.fig = plt.Figure(figsize=(6, 6), dpi=100)
+        # Create matplotlib figure for monitoring
+        self.create_monitoring_figure(viz_frame)
         
-        # Current frame subplot
-        self.current_ax = self.fig.add_subplot(311)
-        self.current_ax.set_title("Current Frame")
-        self.current_image = self.current_ax.imshow(np.zeros((100, 100, 3)), cmap='gray')
+    def blink_cursor(self):
+        """Create a blinking cursor effect for the terminal style"""
+        self.cursor_visible = not self.cursor_visible
+        self.cursor_label.config(text="_" if self.cursor_visible else " ")
+        self.root.after(500, self.blink_cursor)  # Blink every half second
+        
+    def create_monitoring_figure(self, parent_frame):
+        """Create the monitoring visualization with minimal command-line style"""
+        # Create frame for matplotlib with border
+        viz_content_frame = ttk.Frame(parent_frame, style='Border.TFrame')
+        viz_content_frame.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+        
+        canvas_frame = ttk.Frame(viz_content_frame, style='Term.TFrame')
+        canvas_frame.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
+        
+        # Configure figure with a clean minimal appearance
+        plt.rcParams['text.color'] = self.colors['text']
+        plt.rcParams['axes.labelcolor'] = self.colors['text']
+        plt.rcParams['xtick.color'] = self.colors['text_dim']
+        plt.rcParams['ytick.color'] = self.colors['text_dim']
+        
+        self.fig = plt.Figure(figsize=(8, 6), dpi=100, facecolor=self.colors['bg_dark'])
+        
+        # Use GridSpec for better control over subplot sizing
+        gs = plt.GridSpec(2, 1, height_ratios=[3, 1], hspace=0.2)
+        
+        # Current frame subplot - larger with correct ratio
+        self.current_ax = self.fig.add_subplot(gs[0])
+        self.current_ax.set_title("FEED", color=self.colors['green'], fontsize=9, fontweight='normal')
+        self.current_image = self.current_ax.imshow(np.zeros((100, 150, 3)), cmap='gray')
+        self.current_ax.set_xticks([])
+        self.current_ax.set_yticks([])
+        self.current_ax.set_facecolor(self.colors['bg_dark'])
+        
+        # Clean up borders
+        for spine in self.current_ax.spines.values():
+            spine.set_visible(False)
+        
+        # Add thin border around feed
+        rect = plt.Rectangle((0, 0), 1, 1, fill=False, ec=self.colors['border'], 
+                           transform=self.current_ax.transAxes, clip_on=False)
+        self.current_ax.add_patch(rect)
         
         # Difference frame subplot
-        self.diff_ax = self.fig.add_subplot(312)
-        self.diff_ax.set_title("Difference Frame")
-        self.diff_image = self.diff_ax.imshow(np.zeros((100, 100)), cmap='hot')
+        self.diff_ax = self.fig.add_subplot(gs[1])
+        self.diff_ax.set_title("DIFF", color=self.colors['green'], fontsize=9, fontweight='normal')
+        self.diff_image = self.diff_ax.imshow(np.zeros((100, 150)), cmap='inferno')
+        self.diff_ax.set_xticks([])
+        self.diff_ax.set_yticks([])
+        self.diff_ax.set_facecolor(self.colors['bg_dark'])
         
-        # Change history subplot
-        self.change_ax = self.fig.add_subplot(313)
-        self.change_ax.set_title("Change Percentage History")
-        self.change_ax.axhline(y=0.05, color='r', linestyle='--', alpha=0.5)  # Threshold line
-        self.change_line, = self.change_ax.plot(np.zeros(100))
-        self.change_ax.set_ylim(0, 0.5)
+        # Clean up borders
+        for spine in self.diff_ax.spines.values():
+            spine.set_visible(False)
         
-        self.fig.tight_layout()
+        # Add thin border around diff visualization
+        rect = plt.Rectangle((0, 0), 1, 1, fill=False, ec=self.colors['border'], 
+                           transform=self.diff_ax.transAxes, clip_on=False)
+        self.diff_ax.add_patch(rect)
         
-        # Embed figure in tkinter
-        self.canvas = FigureCanvasTkAgg(self.fig, viz_frame)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        # Create a small timeline below the diff frame
+        self.timeline_height = 0.10  # Height of timeline in figure fraction
+        timeline_bottom = 0.05  # Bottom position in figure fraction
+        self.timeline_ax = self.fig.add_axes([0.1, timeline_bottom, 0.8, self.timeline_height])
+        
+        # Create a clean, minimal timeline
+        self.timeline_ax.set_title("ACTIVITY", color=self.colors['green'], fontsize=8, fontweight='normal')
+        self.timeline_ax.axhline(y=0.5, color=self.colors['border'], linestyle='-', alpha=0.3, linewidth=0.5)
+        
+        # Create the timeline with a flat line initially
+        x_data = np.arange(100)
+        y_data = np.ones(100) * 0.5  # Middle line
+        self.activity_line, = self.timeline_ax.plot(x_data, y_data, color=self.colors['accent'], linewidth=1)
+        
+        # Add threshold marker (horizontal line)
+        self.threshold_line = self.timeline_ax.axhline(
+            y=0.05, color=self.colors['alert'], linestyle='--', alpha=0.5, linewidth=0.5
+        )
+        
+        # Clean up timeline appearance
+        self.timeline_ax.set_ylim(0, 1)
+        self.timeline_ax.set_xlim(0, 99)
+        self.timeline_ax.set_facecolor(self.colors['bg_dark'])
+        self.timeline_ax.set_xticks([])
+        self.timeline_ax.set_yticks([])
+        
+        # Remove spines for cleaner look
+        for spine in self.timeline_ax.spines.values():
+            spine.set_visible(False)
+        
+        # Add minimal tick marks on left side
+        self.timeline_ax.set_yticks([0, 0.5, 1])
+        self.timeline_ax.set_yticklabels(['0', '', '1'])
+        self.timeline_ax.tick_params(axis='y', colors=self.colors['text_dim'], labelsize=6)
+        
+        # Add thin border around timeline
+        rect = plt.Rectangle((0, 0), 1, 1, fill=False, ec=self.colors['border'], alpha=0.3,
+                           transform=self.timeline_ax.transAxes, clip_on=False)
+        self.timeline_ax.add_patch(rect)
+        
+        # We're not using tight_layout to avoid warnings
+        # Instead, manually adjust the figure spacing
+        self.fig.subplots_adjust(left=0.10, right=0.95, top=0.95, bottom=0.15)
+        
+        # Embed figure in tkinter with proper padding
+        self.canvas = FigureCanvasTkAgg(self.fig, canvas_frame)
+        self.canvas.get_tk_widget().configure(bg=self.colors['bg_dark'], highlightthickness=0)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+        
+        # Initial status update for visualization
+        self.fig.text(0.5, 0.5, "awaiting data", color=self.colors['text_dim'], 
+                     fontsize=10, ha='center', va='center', fontfamily='Consolas')
+
+    def set_status_indicator(self, status):
+        """Update the status indicator in minimal terminal style"""
+        if status == "running":
+            self.status_label.config(text="system:monitor.active", style="Running.Status.TLabel")
+        elif status == "stopped":
+            self.status_label.config(text="system:monitor.stopped", style="Stopped.Status.TLabel")
+        elif status == "paused":
+            self.status_label.config(text="system:monitor.paused", style="Paused.Status.TLabel")
+        else:
+            # Default to just updating the text
+            self.status_label.config(text=f"system:monitor.{status}", style="Status.TLabel")
         
     def update_threshold_label(self, value=None):
         self.threshold_label.config(text=f"{float(self.threshold_var.get()):.2f}")
@@ -320,6 +866,9 @@ class PixelChangeDetectorGUI:
             self.log("Training mode ENABLED - Detection will not trigger key presses")
         else:
             self.log("Training mode DISABLED - Detection will trigger key presses")
+            
+        if self.detector:
+            self.detector.training_mode = is_training
             
     def update_logs(self):
         """Process any new log messages from the queue"""
@@ -339,73 +888,130 @@ class PixelChangeDetectorGUI:
         self.root.after(100, self.update_logs)
         
     def update_visualization(self):
-        """Update the visualization with current frames"""
-        # Update current frame
-        if hasattr(self.detector, 'color_frame') and self.detector.color_frame is not None:
-            # Use color frame if available
-            self.current_image.set_data(self.detector.color_frame)
-        elif hasattr(self.detector, 'current_frame') and self.detector.current_frame is not None:
-            # Fallback to grayscale
-            self.current_image.set_data(self.detector.current_frame)
+        """Update the visualization with current frames in minimal style"""
+        try:
+            # Clear any initial status text
+            for txt in self.fig.texts:
+                txt.remove()
             
-        # Update difference frame
-        if hasattr(self.detector, 'diff_frame') and self.detector.diff_frame is not None:
-            # Make a copy to avoid modifying the original
-            diff_display = self.detector.diff_frame.copy()
-            
-            # Enhance contrast for better visibility
-            # Scale up differences that are above the detection threshold (typically 30)
-            diff_display = cv2.convertScaleAbs(diff_display, alpha=2)
-            
-            # Apply color map for visualization
-            colored_diff = cv2.applyColorMap(diff_display, cv2.COLORMAP_JET)
-            
-            # Highlight significant changes (over threshold) with white outlines
-            if hasattr(self.detector, 'current_frame') and self.detector.current_frame is not None:
-                # Find contours of significant changes
-                significant_changes = (self.detector.diff_frame > 30).astype(np.uint8) * 255
-                contours, _ = cv2.findContours(significant_changes, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            # Update current frame
+            if hasattr(self.detector, 'color_frame') and self.detector.color_frame is not None:
+                # Use color frame if available
+                self.current_image.set_data(self.detector.color_frame)
                 
-                # Draw contours on the colored diff image
-                cv2.drawContours(colored_diff, contours, -1, (255, 255, 255), 1)
-            
-            # Convert from BGR to RGB for display in matplotlib
-            colored_diff = cv2.cvtColor(colored_diff, cv2.COLOR_BGR2RGB)
-            
-            # Update the display
-            self.diff_image.set_data(colored_diff)
-            
-            # Update title with current change percentage
-            if hasattr(self.detector, 'change_history') and len(self.detector.change_history) > 0:
-                latest_change = self.detector.change_history[-1]
-                self.diff_ax.set_title(f"Difference Frame (Change: {latest_change:.2%})")
+                # Set axis limits to match the image
+                self.current_ax.set_xlim(0, self.detector.color_frame.shape[1])
+                self.current_ax.set_ylim(self.detector.color_frame.shape[0], 0)
+            elif hasattr(self.detector, 'current_frame') and self.detector.current_frame is not None:
+                # Fallback to grayscale
+                gray_display = cv2.cvtColor(self.detector.current_frame, cv2.COLOR_GRAY2RGB)
+                self.current_image.set_data(gray_display)
                 
-            # Reset axes limits to match the image
-            self.diff_ax.set_xlim(0, colored_diff.shape[1])
-            self.diff_ax.set_ylim(colored_diff.shape[0], 0)  # Invert Y for proper image display
+                # Set axis limits to match the image
+                self.current_ax.set_xlim(0, gray_display.shape[1])
+                self.current_ax.set_ylim(gray_display.shape[0], 0)
+                
+            # Update difference frame
+            if hasattr(self.detector, 'diff_frame') and self.detector.diff_frame is not None:
+                # Make a copy to avoid modifying the original
+                diff_display = self.detector.diff_frame.copy()
+                
+                # Enhance contrast for better visibility
+                diff_display = cv2.convertScaleAbs(diff_display, alpha=3)  # Less extreme contrast
+                
+                # Convert to heat map with inferno colormap (cleaner look)
+                diff_colored = cv2.applyColorMap(diff_display, cv2.COLORMAP_INFERNO)
+                
+                # Convert from BGR to RGB for display in matplotlib
+                colored_diff = cv2.cvtColor(diff_colored, cv2.COLOR_BGR2RGB)
+                
+                # Update the display
+                self.diff_image.set_data(colored_diff)
+                
+                # Update title with current change percentage
+                if hasattr(self.detector, 'change_history') and len(self.detector.change_history) > 0:
+                    latest_change = self.detector.change_history[-1]
+                    self.diff_ax.set_title(f"DIFF [{latest_change:.2%}]", 
+                                         color=self.colors['green'], fontsize=9, fontweight='normal')
+                    
+                # Set axis limits to match the image
+                self.diff_ax.set_xlim(0, colored_diff.shape[1])
+                self.diff_ax.set_ylim(colored_diff.shape[0], 0)
+                
+            # Update timeline activity
+            if hasattr(self.detector, 'change_history'):
+                history = self.detector.change_history[-100:] if len(self.detector.change_history) > 0 else [0]
+                # Normalize values to 0-1 range for clean display
+                max_val = max(history) if max(history) > 0 else 1
+                normalized_history = [min(h / max_val, 1.0) for h in history]
+                
+                # Pad with zeros if needed
+                if len(normalized_history) < 100:
+                    normalized_history = [0] * (100 - len(normalized_history)) + normalized_history
+                
+                # Update the line data
+                self.activity_line.set_ydata(normalized_history)
+                
+                # Update threshold line position (normalized to the same scale)
+                threshold_value = min(self.detector.THRESHOLD / max_val, 1.0)
+                self.threshold_line.set_ydata([threshold_value, threshold_value])
+                
+                # Update title with threshold value in minimal format
+                self.timeline_ax.set_title(f"ACTIVITY [t:{self.detector.THRESHOLD:.2f}]", 
+                                         color=self.colors['green'], fontsize=8, fontweight='normal')
             
-        # Update change history plot
-        if hasattr(self.detector, 'change_history'):
-            history = self.detector.change_history[-100:] if len(self.detector.change_history) > 0 else [0]
-            self.change_line.set_ydata(history)
-            self.change_line.set_xdata(np.arange(len(history)))
-            self.change_ax.set_xlim(0, len(history))
-            
-            # Update threshold line
-            for line in self.change_ax.get_lines():
-                if line.get_linestyle() == '--':
-                    line.set_ydata([self.detector.THRESHOLD, self.detector.THRESHOLD])
-            
-        # Redraw canvas
-        self.fig.tight_layout()
-        self.canvas.draw_idle()
+            # Redraw canvas
+            self.canvas.draw_idle()
+        except Exception as e:
+            self.log(f"Error updating visualization: {e}")
         
-    def update_status(self, message):
-        self.status_label.config(text=f"Status: {message}")
-        self.root.update()
+    def increment_detection_count(self):
+        """Increment detection counter and update UI"""
+        self.detection_count += 1
+        self.count_label.config(text=f"detections: {self.detection_count}")
+        
+        # Add minimal timeline marker at the detection point
+        if hasattr(self.detector, 'change_history') and len(self.detector.change_history) > 0:
+            idx = len(self.detector.change_history) - 1
+            if idx >= 0 and hasattr(self, 'timeline_ax'):
+                # Remove any previous markers
+                for artist in self.timeline_ax.get_lines():
+                    if hasattr(artist, 'detection_marker'):
+                        artist.remove()
+                
+                # Add vertical line marker
+                marker = self.timeline_ax.axvline(
+                    x=idx if idx < 100 else 99, 
+                    color=self.colors['alert'], 
+                    linewidth=1, 
+                    alpha=0.7
+                )
+                setattr(marker, 'detection_marker', True)
+                
+                # Add dot marker
+                y_val = self.activity_line.get_ydata()[idx if idx < 100 else 99]
+                dot = self.timeline_ax.plot(
+                    idx if idx < 100 else 99, 
+                    y_val, 
+                    'o', 
+                    color=self.colors['success'], 
+                    markersize=4
+                )[0]
+                setattr(dot, 'detection_marker', True)
+                
+                # Schedule removal after a delay
+                self.root.after(2000, lambda: self._clean_markers())
+    
+    def _clean_markers(self):
+        """Remove detection markers from timeline"""
+        if hasattr(self, 'timeline_ax'):
+            for artist in self.timeline_ax.get_lines():
+                if hasattr(artist, 'detection_marker'):
+                    artist.remove()
+            self.canvas.draw_idle()
         
     def select_region(self):
-        """Allow the user to select a region of the screen to monitor"""
+        """Allow the user to select a region of the screen to monitor with minimal styling"""
         try:
             # Get the size from the input field
             size = int(self.size_var.get())
@@ -417,7 +1023,7 @@ class PixelChangeDetectorGUI:
             size = 50
             self.size_var.set("50")
             
-        self.log("Starting region selection - click to place the region")
+        self.log("Starting region selection...")
         
         # Calculate region dimensions based on 1.5:1 ratio
         width = int(size * 1.5)
@@ -430,18 +1036,21 @@ class PixelChangeDetectorGUI:
         # Create a fullscreen transparent window for selection
         selection_window = tk.Toplevel(self.root)
         selection_window.attributes('-fullscreen', True)
-        selection_window.attributes('-alpha', 0.3)  # Set transparency
+        selection_window.attributes('-alpha', 0.2)  # Slightly more transparent
         selection_window.attributes('-topmost', True)
+        selection_window.configure(bg=self.colors['bg_dark'])  # Use black from our color palette
         
         # Create canvas for drawing the selection rectangle
-        canvas = tk.Canvas(selection_window, cursor="cross", bg="grey")
+        canvas = tk.Canvas(selection_window, cursor="cross", bg=self.colors['bg_dark'])
         canvas.pack(fill=tk.BOTH, expand=True)
         
         # Variables to track selection rectangle
         preview_rect = None
+        outline_rect = None
+        grid_lines = []
         
         def update_preview(event):
-            nonlocal preview_rect
+            nonlocal preview_rect, outline_rect, grid_lines
             
             # Calculate region coordinates centered on mouse position
             left = event.x - width // 2
@@ -467,20 +1076,67 @@ class PixelChangeDetectorGUI:
                 bottom = screen_height
                 top = bottom - height
             
-            # Create or update preview rectangle
+            # Clear previous shapes
             if preview_rect:
                 canvas.delete(preview_rect)
-            preview_rect = canvas.create_rectangle(
-                left, top, right, bottom,
-                outline="red", width=2,
-                fill="red", stipple="gray50"  # Semi-transparent fill
+            if outline_rect:
+                canvas.delete(outline_rect)
+            for line in grid_lines:
+                canvas.delete(line)
+            grid_lines = []
+            
+            # Draw a clean, minimal border
+            outline_rect = canvas.create_rectangle(
+                left-1, top-1, right+1, bottom+1,
+                outline=self.colors['accent'], width=1
             )
             
-            # Update size label position
-            size_label.place(x=event.x + 10, y=event.y + 10)
+            # Draw the inner rectangle with minimal styling
+            preview_rect = canvas.create_rectangle(
+                left, top, right, bottom,
+                outline=self.colors['green'], width=1,
+                fill=self.colors['accent'], stipple="gray12"  # Sparse fill
+            )
+            
+            # Add minimal grid lines
+            cell_width = width // 3
+            cell_height = height // 3
+            
+            # Vertical grid lines
+            for i in range(1, 3):
+                line = canvas.create_line(
+                    left + i * cell_width, top,
+                    left + i * cell_width, bottom,
+                    fill=self.colors['green'], width=1, dash=(1, 3)
+                )
+                grid_lines.append(line)
+                
+            # Horizontal grid lines
+            for i in range(1, 3):
+                line = canvas.create_line(
+                    left, top + i * cell_height,
+                    right, top + i * cell_height,
+                    fill=self.colors['green'], width=1, dash=(1, 3)
+                )
+                grid_lines.append(line)
+            
+            # Update coordinate display with minimal styling
+            canvas.delete("coords")
+            
+            # Create minimal coordinate display
+            coord_text = f"pos: ({left},{top}) • size: {width}×{height}"
+            
+            # Simple text - no background
+            coords_text = canvas.create_text(
+                screen_width // 2, screen_height - 20,
+                text=coord_text, 
+                fill=self.colors['text_bright'],
+                font=("Consolas", 9),
+                tags="coords"
+            )
         
         def on_mouse_click(event):
-            nonlocal preview_rect
+            nonlocal preview_rect, outline_rect, grid_lines
             
             # Calculate region coordinates centered on click
             left = event.x - width // 2
@@ -506,22 +1162,13 @@ class PixelChangeDetectorGUI:
                 bottom = screen_height
                 top = bottom - height
             
-            # Create final rectangle
-            if preview_rect:
-                canvas.delete(preview_rect)
-            preview_rect = canvas.create_rectangle(
-                left, top, right, bottom,
-                outline="red", width=2,
-                fill="red", stipple="gray50"
-            )
-            
             # Close selection window
             selection_window.destroy()
             
             # Set region in detector
             if self.detector:
                 self.detector.region = (left, top, right, bottom)
-                self.log(f"Region selected: {self.detector.region} ({width}x{height})")
+                self.log(f"Region selected: ({left},{top}) {width}×{height}")
                 
                 # Update UI to show selected region
                 self.update_region_label()
@@ -529,27 +1176,40 @@ class PixelChangeDetectorGUI:
             # Restore main window
             self.root.deiconify()
         
-        # Create size label
-        size_label = tk.Label(
-            canvas,
-            text=f"{width}x{height}",
-            font=("Arial", 10),
-            bg="white",
-            fg="black"
-        )
-        
         # Bind mouse events
         canvas.bind("<Motion>", update_preview)  # Update preview on mouse move
         canvas.bind("<ButtonPress-1>", on_mouse_click)
         
-        # Instructions label
+        # Add visual guides - crosshairs
+        screen_width = selection_window.winfo_screenwidth()
+        screen_height = selection_window.winfo_screenheight()
+        
+        # Minimal instructions
         instructions = tk.Label(
             canvas, 
-            text=f"Move mouse to preview region ({width}x{height} pixels, 1.5:1 ratio), click to place, ESC to cancel", 
-            font=("Arial", 16), 
-            bg="white"
+            text="SELECT REGION • CLICK TO PLACE • ESC TO CANCEL", 
+            font=("Consolas", 10), 
+            fg=self.colors['green'],
+            bg=self.colors['bg_dark'],
+            padx=20,
+            pady=5
         )
-        instructions.place(relx=0.5, rely=0.05, anchor=tk.CENTER)
+        canvas.create_window(screen_width // 2, 30, window=instructions)
+        
+        # Add minimal crosshair guides
+        # Horizontal line
+        canvas.create_line(
+            0, screen_height // 2,
+            screen_width, screen_height // 2,
+            fill=self.colors['accent'], width=1, dash=(5, 5)
+        )
+        
+        # Vertical line
+        canvas.create_line(
+            screen_width // 2, 0,
+            screen_width // 2, screen_height,
+            fill=self.colors['accent'], width=1, dash=(5, 5)
+        )
         
         # Handle ESC key to cancel
         def on_escape(event):
@@ -560,71 +1220,129 @@ class PixelChangeDetectorGUI:
         selection_window.bind("<Escape>", on_escape)
     
     def update_region_label(self):
-        """Update the UI to show the selected region"""
+        """Update the UI to show the selected region in minimal style"""
         if hasattr(self, 'region_info_label'):
             if self.detector and self.detector.region:
                 left, top, right, bottom = self.detector.region
                 width = right - left
                 height = bottom - top
                 self.region_info_label.config(
-                    text=f"Selected region: ({left}, {top}) to ({right}, {bottom}), {width}x{height} pixels"
+                    text=f"region({left},{top},{width}x{height})"
                 )
             else:
-                self.region_info_label.config(text="No region selected (monitoring full screen)")
-        else:
-            # Create the label if it doesn't exist
-            self.region_info_label = ttk.Label(self.control_frame, text="No region selected (monitoring full screen)")
-            self.region_info_label.grid(row=4, column=0, columnspan=4, padx=5, sticky=tk.W)
+                self.region_info_label.config(text="full_screen_monitoring")
         
     def capture_reference(self):
         """Capture a reference frame for comparison"""
         if self.detector and hasattr(self.detector, 'capture_reference'):
-            self.detector.capture_reference()
-            self.log("Reference frame captured")
+            success = self.detector.capture_reference()
+            if success:
+                self.log("Reference frame captured successfully")
+            else:
+                self.log("Failed to capture reference frame")
         else:
             self.log("Detector not initialized properly")
             
     def start_detection(self):
+        """Start the detection process with improved thread control"""
         try:
+            if self.is_running:
+                self.log("Detection is already running")
+                return
+                
             if not self.detector:
                 self.detector = PixelChangeDetector(self.log_queue)
                 self.detector.gui = self
                 
+            # Update detector settings from UI
             self.detector.THRESHOLD = self.threshold_var.get()
             self.detector.training_mode = self.training_var.get()
-            self.log(f"Starting detection with threshold: {self.detector.THRESHOLD}")
             
+            # Reset thread control variables
+            self.thread_control = {
+                "detection_thread": None,
+                "running": True,
+                "paused": False,
+                "stop_requested": False
+            }
+            
+            self.log(f"Starting detection with threshold: {self.detector.THRESHOLD:.2f}")
+            
+            # Start the detector
             self.is_running = True
-            self.detector.start_detection()
+            self.detector.start_detection(self.thread_control)
             
+            # Store the thread reference
+            self.thread_control["detection_thread"] = self.detector.detection_thread
+            
+            # Update UI
             self.start_button.config(state=tk.DISABLED)
             self.stop_button.config(state=tk.NORMAL)
-            self.update_status("Running")
+            self.pause_button.config(state=tk.NORMAL, text="pause")
+            self.set_status_indicator("running")
             
         except Exception as e:
             messagebox.showerror("Error", str(e))
             self.log(f"Error starting detection: {str(e)}")
     
     def stop_detection(self):
+        """Stop the detection process with improved thread management"""
+        if not self.is_running:
+            return
+            
+        # Signal thread to stop
+        self.thread_control["stop_requested"] = True
+        self.thread_control["running"] = False
         self.is_running = False
+        
+        # Wait for thread to finish (with timeout)
+        if self.thread_control["detection_thread"] and self.thread_control["detection_thread"].is_alive():
+            self.log("Waiting for detection thread to stop...")
+            self.thread_control["detection_thread"].join(timeout=2.0)
+            
+            # Check if thread is still alive after timeout
+            if self.thread_control["detection_thread"].is_alive():
+                self.log("Warning: Detection thread did not stop gracefully")
+            
+        # Stop the detector
         if self.detector:
             self.detector.stop_detection()
+            
         self.log("Detection stopped")
         
+        # Reset UI
         self.start_button.config(state=tk.NORMAL)
         self.stop_button.config(state=tk.DISABLED)
-        self.update_status("Stopped")
-        
-    def increment_detection_count(self):
-        self.detection_count += 1
-        self.count_label.config(text=f"Detections: {self.detection_count}")
-        self.log(f"Detection #{self.detection_count} triggered")
+        self.pause_button.config(state=tk.DISABLED, text="pause")
+        self.set_status_indicator("stopped")
+    
+    def toggle_pause(self):
+        """Pause or resume the detection thread"""
+        if not self.is_running:
+            return
+            
+        if self.thread_control["paused"]:
+            # Resume detection
+            self.thread_control["paused"] = False
+            self.pause_button.config(text="pause")
+            self.set_status_indicator("running")
+            self.log("Detection resumed")
+        else:
+            # Pause detection
+            self.thread_control["paused"] = True
+            self.pause_button.config(text="resume")
+            self.set_status_indicator("paused")
+            self.log("Detection paused")
+    
+    def clear_logs(self):
+        """Clear the log console"""
+        self.log_console.delete(1.0, tk.END)
 
     def reset_region(self):
-        """Reset to monitor the full screen"""
+        """Reset to full screen monitoring"""
         if self.detector:
             self.detector.region = None
-            self.log("Reset to monitoring full screen")
+            self.log("Reset to full screen monitoring")
             self.update_region_label()
 
 class PixelChangeDetector:
@@ -644,13 +1362,14 @@ class PixelChangeDetector:
         self.reference_frame = None
         self.diff_frame = None
         self.change_history = []
+        self.color_frame = None
         
         # Last detection time for cooldown
         self.last_detection_time = 0
-        self.detection_cooldown = 0.5  # Reduced from 2.0 to 0.5 seconds
+        self.detection_cooldown = 0.5  # Cooldown between detections
         
         # Capture interval in seconds
-        self.capture_interval = 0.05  # Reduced from 0.1 to 0.05 seconds
+        self.capture_interval = 0.05  # Capture interval
         
         # Play Together window tracking
         self.play_together_window = None
@@ -666,6 +1385,9 @@ class PixelChangeDetector:
         self.health_check_interval = 5  # seconds
         self.last_health_check = 0
         
+        # Detection thread reference
+        self.detection_thread = None
+        
     def log(self, message):
         """Log a message to the queue if it exists"""
         timestamp = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
@@ -678,8 +1400,8 @@ class PixelChangeDetector:
         """Reset detector state to handle recovery"""
         self.current_frame = None
         self.previous_frame = None
-        self.reference_frame = None
         self.diff_frame = None
+        # Don't reset reference_frame unless explicitly asked
         self.change_history = []
         self.last_detection_time = 0
         self.consecutive_failures = 0
@@ -890,10 +1612,6 @@ class PixelChangeDetector:
                 else:
                     # Capture specific region
                     screenshot = ImageGrab.grab(bbox=self.region)
-                    
-                    # Log first capture for debugging
-                    if self.current_frame is None:
-                        self.log(f"Capturing selected region: {self.region} ({width}x{height})")
             else:
                 # Capture full screen
                 screenshot = ImageGrab.grab()
@@ -949,15 +1667,20 @@ class PixelChangeDetector:
     
     def capture_reference(self):
         """Capture a reference frame for comparison"""
-        self.reference_frame = self.capture_screen()
-        if self.reference_frame is not None:
+        frame = self.capture_screen()
+        if frame is not None:
+            self.reference_frame = frame
             self.log(f"Reference frame captured: {self.reference_frame.shape}")
+            return True
         else:
             self.log("Failed to capture reference frame")
+            return False
             
-    def start_detection(self):
+    def start_detection(self, thread_control=None):
+        """Start detection with improved thread control"""
         if not self.find_play_together_process():
-            return
+            self.log("Cannot start detection: Play Together window not found")
+            return False
             
         self.is_running = True
         self.change_history = []
@@ -968,16 +1691,32 @@ class PixelChangeDetector:
             
         self.previous_frame = self.reference_frame
         
-        detection_thread = threading.Thread(target=self._detection_loop)
-        detection_thread.daemon = True
-        detection_thread.start()
+        # Use thread control if provided
+        self.thread_control = thread_control if thread_control else {
+            "running": True,
+            "paused": False,
+            "stop_requested": False
+        }
+        
+        self.detection_thread = threading.Thread(target=self._detection_loop)
+        self.detection_thread.daemon = True
+        self.detection_thread.start()
+        
+        return True
         
     def stop_detection(self):
+        """Stop detection cleanly"""
         self.is_running = False
         
     def _detection_loop(self):
-        while self.is_running:
+        """Main detection loop with improved thread control"""
+        while self.is_running and not self.thread_control.get("stop_requested", False):
             try:
+                # Check if paused
+                if self.thread_control.get("paused", False):
+                    time.sleep(0.1)
+                    continue
+                    
                 # Perform health check
                 if not self.perform_health_check():
                     time.sleep(0.1)
@@ -1031,27 +1770,36 @@ class PixelChangeDetector:
                             self.log("Failed to focus window, skipping key press")
                     
                     # Pause detection for 5 seconds after detection
+                    pause_start = time.time()
                     self.log("Pausing detection for 5 seconds...")
                     time.sleep(2)
-                    # Wait 3 seconds
-                    time.sleep(3)
-                    if self.is_running:
-                        if self.gui:
-                            self.gui.root.after(0, lambda: self.gui.update_status(f"Paused: {int(3 - (time.time() - pause_start))}s remaining"))
                     
-                    # Press ESC after 3 seconds
-                    if self.is_running:
+                    # Wait additional time, checking for stop requests
+                    pause_end = pause_start + 5
+                    while time.time() < pause_end and self.is_running and not self.thread_control.get("stop_requested", False):
+                        remaining = int(pause_end - time.time())
+                        if self.gui:
+                            self.gui.root.after(0, lambda r=remaining: self.gui.status_label.config(
+                                text=f"system:monitor.paused ({r}s)",
+                                style="Paused.Status.TLabel"
+                            ))
+                        time.sleep(0.1)
+                    
+                    # Press ESC after pause
+                    if self.is_running and not self.thread_control.get("stop_requested", False):
                         self.log("Pressing ESC key...")
                         if self.focus_play_together_window():
                             self.send_esc_key()
                         else:
                             self.log("Failed to focus window, skipping ESC key press")
                     
-                    # Wait 2 seconds
-                    time.sleep(2)
+                    # Wait 2 seconds, checking for stop requests
+                    esc_end = time.time() + 2
+                    while time.time() < esc_end and self.is_running and not self.thread_control.get("stop_requested", False):
+                        time.sleep(0.1)
                     
                     # Press F key
-                    if self.is_running:
+                    if self.is_running and not self.thread_control.get("stop_requested", False):
                         self.log("Pressing F key...")
                         if self.focus_play_together_window():
                             self.send_f_key()
@@ -1060,13 +1808,16 @@ class PixelChangeDetector:
                         else:
                             self.log("Failed to focus window, skipping F key press")
                     
+                    # Update status to running
+                    if self.gui and self.is_running and not self.thread_control.get("stop_requested", False):
+                        self.gui.root.after(0, lambda: self.gui.set_status_indicator("running"))
+                    
+                    # Check one more time for stop request
+                    if not self.is_running or self.thread_control.get("stop_requested", False):
+                        break
+                        
                     # Complete remaining pause time
                     time.sleep(0.5)
-                    
-                    if self.gui:
-                        self.gui.root.after(0, lambda: self.gui.update_status("Running"))
-                    
-                    time.sleep(2)
                     continue
                 
                 # Store current frame as previous for next comparison if not using reference
@@ -1080,10 +1831,42 @@ class PixelChangeDetector:
                 self.log(f"Error in detection loop: {e}")
                 self.consecutive_failures += 1
                 time.sleep(0.05)  # Reduced from 0.1 to 0.05 seconds
+                
+        # Thread is exiting
+        self.log("Detection thread exiting")
+        self.is_running = False
 
 def main():
     root = tk.Tk()
+    root.title("Pixel Change Monitor")
+    
+    # Set app icon (if available)
+    try:
+        root.iconbitmap("app_icon.ico")
+    except:
+        pass  # Icon file not found, use default
+    
+    # Create and start the application
     app = PixelChangeDetectorGUI(root)
+    
+    # Center window on screen
+    window_width = 900
+    window_height = 600
+    screen_width = root.winfo_screenwidth()
+    screen_height = root.winfo_screenheight()
+    center_x = int(screen_width/2 - window_width/2)
+    center_y = int(screen_height/2 - window_height/2)
+    
+    # Set window size and position
+    root.geometry(f'{window_width}x{window_height}+{center_x}+{center_y}')
+    
+    # Add welcome message
+    app.log("Pixel Change Monitor initialized")
+    app.log("Version 1.0 • Minimalist Terminal Edition")
+    app.log("Color palette: Dark + Green/Purple accents")
+    app.log("System ready")
+    
+    # Start the main loop
     root.mainloop()
 
 if __name__ == "__main__":
