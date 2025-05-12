@@ -186,7 +186,7 @@ class PixelChangeDetectorGUI:
     def log(self, message):
         """Add timestamped message to log queue"""
         timestamp = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        self.log_queue.put(f"[{timestamp}] {message}")
+        self.log_queue.put(f"[{timestamp}] {message}") 
         
     def create_widgets(self):
         # Style configuration
@@ -214,19 +214,28 @@ class PixelChangeDetectorGUI:
         self.status_label = ttk.Label(self.control_frame, text="Status: Not Running", font=('Arial', 10))
         self.status_label.grid(row=0, column=0, columnspan=2, pady=5, sticky=tk.W)
         
+        # Region size input
+        size_frame = ttk.Frame(self.control_frame)
+        size_frame.grid(row=1, column=0, columnspan=4, pady=5, sticky=tk.W)
+        
+        ttk.Label(size_frame, text="Region Size (pixels):").pack(side=tk.LEFT, padx=(0, 5))
+        self.size_var = tk.StringVar(value="50")
+        self.size_entry = ttk.Entry(size_frame, textvariable=self.size_var, width=6)
+        self.size_entry.pack(side=tk.LEFT)
+        
         # Threshold slider
-        ttk.Label(self.control_frame, text="Change Threshold:").grid(row=1, column=0, sticky=tk.W)
+        ttk.Label(self.control_frame, text="Change Threshold:").grid(row=2, column=0, sticky=tk.W)
         self.threshold_var = tk.DoubleVar(value=0.05)  # Default threshold for pixel change
         self.threshold_slider = ttk.Scale(self.control_frame, from_=0.01, to=0.5, 
                                         variable=self.threshold_var, orient=tk.HORIZONTAL, length=200)
-        self.threshold_slider.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=5)
+        self.threshold_slider.grid(row=2, column=1, sticky=(tk.W, tk.E), pady=5)
         self.threshold_label = ttk.Label(self.control_frame, text="0.05")
-        self.threshold_label.grid(row=1, column=2, padx=5)
+        self.threshold_label.grid(row=2, column=2, padx=5)
         self.threshold_slider.config(command=self.update_threshold_label)
         
         # Region selection
         region_frame = ttk.Frame(self.control_frame)
-        region_frame.grid(row=2, column=0, columnspan=4, pady=5, sticky=tk.W)
+        region_frame.grid(row=3, column=0, columnspan=4, pady=5, sticky=tk.W)
         
         ttk.Label(region_frame, text="Monitoring Region:").grid(row=0, column=0, sticky=tk.W)
         self.region_button = ttk.Button(region_frame, text="Select Region", command=self.select_region)
@@ -237,7 +246,7 @@ class PixelChangeDetectorGUI:
         
         # Add region info label 
         self.region_info_label = ttk.Label(self.control_frame, text="No region selected (monitoring full screen)")
-        self.region_info_label.grid(row=3, column=0, columnspan=4, padx=5, sticky=tk.W)
+        self.region_info_label.grid(row=4, column=0, columnspan=4, padx=5, sticky=tk.W)
         
         # Training mode 
         self.training_var = tk.BooleanVar(value=False)
@@ -248,7 +257,7 @@ class PixelChangeDetectorGUI:
         
         # Start/Stop buttons
         button_frame = ttk.Frame(self.control_frame)
-        button_frame.grid(row=4, column=0, columnspan=4, pady=5)
+        button_frame.grid(row=5, column=0, columnspan=4, pady=5)
         
         self.start_button = ttk.Button(button_frame, text="Start Detection", command=self.start_detection)
         self.start_button.grid(row=0, column=0, padx=5)
@@ -262,7 +271,7 @@ class PixelChangeDetectorGUI:
         # Detection count
         self.detection_count = 0
         self.count_label = ttk.Label(self.control_frame, text="Detections: 0")
-        self.count_label.grid(row=5, column=0, columnspan=3, pady=5, sticky=tk.W)
+        self.count_label.grid(row=6, column=0, columnspan=3, pady=5, sticky=tk.W)
         
         # Log console
         log_frame = ttk.LabelFrame(left_panel, text="Console Log", padding="10")
@@ -397,7 +406,22 @@ class PixelChangeDetectorGUI:
         
     def select_region(self):
         """Allow the user to select a region of the screen to monitor"""
-        self.log("Starting region selection - click and drag to select a region")
+        try:
+            # Get the size from the input field
+            size = int(self.size_var.get())
+            if size < 10:
+                self.log("Size must be at least 10 pixels")
+                return
+        except ValueError:
+            self.log("Invalid size value. Using default of 50 pixels")
+            size = 50
+            self.size_var.set("50")
+            
+        self.log("Starting region selection - click to place the region")
+        
+        # Calculate region dimensions based on 1.5:1 ratio
+        width = int(size * 1.5)
+        height = size
         
         # Temporarily minimize our own window
         self.root.iconify()
@@ -409,46 +433,87 @@ class PixelChangeDetectorGUI:
         selection_window.attributes('-alpha', 0.3)  # Set transparency
         selection_window.attributes('-topmost', True)
         
-        # Variables to track selection rectangle
-        start_x = start_y = end_x = end_y = 0
-        dragging = False
-        selection_rect = None
-        
         # Create canvas for drawing the selection rectangle
         canvas = tk.Canvas(selection_window, cursor="cross", bg="grey")
         canvas.pack(fill=tk.BOTH, expand=True)
         
-        # Function to handle mouse events
-        def on_mouse_down(event):
-            nonlocal start_x, start_y, dragging, selection_rect
-            start_x, start_y = event.x, event.y
-            dragging = True
+        # Variables to track selection rectangle
+        preview_rect = None
+        
+        def update_preview(event):
+            nonlocal preview_rect
             
-            # Create rectangle if it doesn't exist
-            if selection_rect:
-                canvas.delete(selection_rect)
-            selection_rect = canvas.create_rectangle(
-                start_x, start_y, start_x, start_y, 
-                outline="red", width=2
+            # Calculate region coordinates centered on mouse position
+            left = event.x - width // 2
+            top = event.y - height // 2
+            right = left + width
+            bottom = top + height
+            
+            # Ensure region stays within screen bounds
+            screen_width = selection_window.winfo_screenwidth()
+            screen_height = selection_window.winfo_screenheight()
+            
+            if left < 0:
+                left = 0
+                right = width
+            elif right > screen_width:
+                right = screen_width
+                left = right - width
+                
+            if top < 0:
+                top = 0
+                bottom = height
+            elif bottom > screen_height:
+                bottom = screen_height
+                top = bottom - height
+            
+            # Create or update preview rectangle
+            if preview_rect:
+                canvas.delete(preview_rect)
+            preview_rect = canvas.create_rectangle(
+                left, top, right, bottom,
+                outline="red", width=2,
+                fill="red", stipple="gray50"  # Semi-transparent fill
             )
-        
-        def on_mouse_move(event):
-            nonlocal end_x, end_y, dragging, selection_rect
-            if dragging:
-                end_x, end_y = event.x, event.y
-                # Update rectangle
-                canvas.coords(selection_rect, start_x, start_y, end_x, end_y)
-        
-        def on_mouse_up(event):
-            nonlocal start_x, start_y, end_x, end_y, dragging
-            end_x, end_y = event.x, event.y
-            dragging = False
             
-            # Ensure coordinates are in the right order (top-left to bottom-right)
-            left = min(start_x, end_x)
-            top = min(start_y, end_y)
-            right = max(start_x, end_x)
-            bottom = max(start_y, end_y)
+            # Update size label position
+            size_label.place(x=event.x + 10, y=event.y + 10)
+        
+        def on_mouse_click(event):
+            nonlocal preview_rect
+            
+            # Calculate region coordinates centered on click
+            left = event.x - width // 2
+            top = event.y - height // 2
+            right = left + width
+            bottom = top + height
+            
+            # Ensure region stays within screen bounds
+            screen_width = selection_window.winfo_screenwidth()
+            screen_height = selection_window.winfo_screenheight()
+            
+            if left < 0:
+                left = 0
+                right = width
+            elif right > screen_width:
+                right = screen_width
+                left = right - width
+                
+            if top < 0:
+                top = 0
+                bottom = height
+            elif bottom > screen_height:
+                bottom = screen_height
+                top = bottom - height
+            
+            # Create final rectangle
+            if preview_rect:
+                canvas.delete(preview_rect)
+            preview_rect = canvas.create_rectangle(
+                left, top, right, bottom,
+                outline="red", width=2,
+                fill="red", stipple="gray50"
+            )
             
             # Close selection window
             selection_window.destroy()
@@ -456,7 +521,7 @@ class PixelChangeDetectorGUI:
             # Set region in detector
             if self.detector:
                 self.detector.region = (left, top, right, bottom)
-                self.log(f"Region selected: {self.detector.region}")
+                self.log(f"Region selected: {self.detector.region} ({width}x{height})")
                 
                 # Update UI to show selected region
                 self.update_region_label()
@@ -464,15 +529,23 @@ class PixelChangeDetectorGUI:
             # Restore main window
             self.root.deiconify()
         
+        # Create size label
+        size_label = tk.Label(
+            canvas,
+            text=f"{width}x{height}",
+            font=("Arial", 10),
+            bg="white",
+            fg="black"
+        )
+        
         # Bind mouse events
-        canvas.bind("<ButtonPress-1>", on_mouse_down)
-        canvas.bind("<B1-Motion>", on_mouse_move)
-        canvas.bind("<ButtonRelease-1>", on_mouse_up)
+        canvas.bind("<Motion>", update_preview)  # Update preview on mouse move
+        canvas.bind("<ButtonPress-1>", on_mouse_click)
         
         # Instructions label
         instructions = tk.Label(
             canvas, 
-            text="Click and drag to select a region, ESC to cancel", 
+            text=f"Move mouse to preview region ({width}x{height} pixels, 1.5:1 ratio), click to place, ESC to cancel", 
             font=("Arial", 16), 
             bg="white"
         )
@@ -501,7 +574,7 @@ class PixelChangeDetectorGUI:
         else:
             # Create the label if it doesn't exist
             self.region_info_label = ttk.Label(self.control_frame, text="No region selected (monitoring full screen)")
-            self.region_info_label.grid(row=3, column=0, columnspan=4, padx=5, sticky=tk.W)
+            self.region_info_label.grid(row=4, column=0, columnspan=4, padx=5, sticky=tk.W)
         
     def capture_reference(self):
         """Capture a reference frame for comparison"""
@@ -722,13 +795,22 @@ class PixelChangeDetector:
         """Capture the screen or region of interest"""
         try:
             if self.region:
-                # Capture specific region
+                # Validate region size
                 left, top, right, bottom = self.region
-                screenshot = ImageGrab.grab(bbox=self.region)
+                width = right - left
+                height = bottom - top
                 
-                # Log first capture for debugging
-                if self.current_frame is None:
-                    self.log(f"Capturing selected region: {self.region} ({right-left}x{bottom-top})")
+                if width < 10 or height < 10:
+                    self.log("Invalid region size detected. Resetting to full screen.")
+                    self.region = None
+                    screenshot = ImageGrab.grab()
+                else:
+                    # Capture specific region
+                    screenshot = ImageGrab.grab(bbox=self.region)
+                    
+                    # Log first capture for debugging
+                    if self.current_frame is None:
+                        self.log(f"Capturing selected region: {self.region} ({width}x{height})")
             else:
                 # Capture full screen
                 screenshot = ImageGrab.grab()
@@ -736,6 +818,11 @@ class PixelChangeDetector:
             # Convert to numpy array for processing
             frame = np.array(screenshot)
             
+            # Validate frame
+            if frame.size == 0:
+                self.log("Error: Captured frame is empty")
+                return None
+                
             # Store color frame for visualization
             self.color_frame = frame.copy() if len(frame.shape) == 3 else None
             
@@ -746,6 +833,8 @@ class PixelChangeDetector:
             return frame
         except Exception as e:
             self.log(f"Error capturing screen: {e}")
+            # Reset to full screen on error
+            self.region = None
             return None
             
     def calculate_frame_difference(self, frame1, frame2):
