@@ -233,8 +233,8 @@ class PixelChangeDetectorGUI:
             
             # Status colors
             'success': '#47D068',       # SuccessColor
-            'border': '#222222',        # TertiaryBlackColor
-            'border_light': '#2A2A2A',  # QuaternaryBlackColor
+            'border': '#2A2A2A',        # Updated for modern look
+            'border_light': '#333333',  # Updated for modern look
             'cursor': '#C4E6B5',        # Using PrimaryGreenColor
             'alert': '#FF4D4D',         # ErrorColor
             'warning': '#FFB940',       # WarningColor
@@ -254,7 +254,7 @@ class PixelChangeDetectorGUI:
         # Add separator style
         style.configure('Separator.TFrame', background=self.colors['border'])
         
-        # Add border style
+        # Add modern border style with rounded corners
         style.configure('Border.TFrame', 
                        background=self.colors['bg_dark'],
                        borderwidth=1,
@@ -369,9 +369,9 @@ class PixelChangeDetectorGUI:
                        borderwidth=0,
                        background=self.colors['bg_dark'])
         
-        # LabelFrame with subtle border
+        # Modern LabelFrame style
         style.configure('Terminal.TLabelframe', 
-                       padding=8, 
+                       padding=10, 
                        relief="solid", 
                        borderwidth=1,
                        bordercolor=self.colors['border_light'],
@@ -418,16 +418,12 @@ class PixelChangeDetectorGUI:
     def create_widgets(self):
         """Create all GUI widgets with modern minimal terminal design"""
         # Main container with minimal padding
-        main_container = ttk.Frame(self.root, padding="5", style='TFrame')
+        main_container = ttk.Frame(self.root, padding="10", style='TFrame')
         main_container.pack(fill=tk.BOTH, expand=True)
         
         # Top command line prompt
         cmd_frame = ttk.Frame(main_container, style='Term.TFrame')
-        cmd_frame.pack(fill=tk.X, pady=(0, 5))
-        
-        # Command prompt symbol
-        cmd_prompt = ttk.Label(cmd_frame, text="> ", style='Term.TLabel')
-        cmd_prompt.pack(side=tk.LEFT, padx=(5, 0))
+        cmd_frame.pack(fill=tk.X, pady=(0, 10))
         
         # Status as command output
         self.status_label = ttk.Label(cmd_frame, text="system:monitor.idle", style='Status.TLabel')
@@ -449,7 +445,7 @@ class PixelChangeDetectorGUI:
         
         # Thin separator line
         separator = ttk.Frame(main_container, height=1, style='Separator.TFrame')
-        separator.pack(fill=tk.X, pady=(0, 5))
+        separator.pack(fill=tk.X, pady=(0, 10))
         
         # Split into left and right panels
         panel_container = ttk.Frame(main_container, style='TFrame')
@@ -457,7 +453,7 @@ class PixelChangeDetectorGUI:
         
         # Left control panel (fixed width)
         left_panel = ttk.Frame(panel_container, width=300, style='TFrame')
-        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 5))
+        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
         left_panel.pack_propagate(False)  # Fix the width
         
         # Right visualization panel (expanding)
@@ -466,16 +462,16 @@ class PixelChangeDetectorGUI:
         
         # Section 1: Detection Settings
         settings_frame = ttk.LabelFrame(left_panel, text="SETTINGS", style='Terminal.TLabelframe')
-        settings_frame.pack(fill=tk.X, pady=(0, 5), padx=0)
+        settings_frame.pack(fill=tk.X, pady=(0, 10), padx=0)
         
         # Threshold control with clean minimal slider
         threshold_frame = ttk.Frame(settings_frame, style='Term.TFrame')
-        threshold_frame.pack(fill=tk.X, pady=3)
+        threshold_frame.pack(fill=tk.X, pady=5)
         
-        ttk.Label(threshold_frame, text="> threshold:", style='Term.TLabel').pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Label(threshold_frame, text="threshold:", style='Term.TLabel').pack(side=tk.LEFT, padx=(5, 0))
         
         threshold_value_frame = ttk.Frame(settings_frame, style='Term.TFrame')
-        threshold_value_frame.pack(fill=tk.X, pady=(0, 5))
+        threshold_value_frame.pack(fill=tk.X, pady=(0, 8))
         
         self.threshold_var = tk.DoubleVar(value=0.05)
         
@@ -505,9 +501,9 @@ class PixelChangeDetectorGUI:
         
         # Region size input
         size_frame = ttk.Frame(settings_frame, style='Term.TFrame')
-        size_frame.pack(fill=tk.X, pady=3)
+        size_frame.pack(fill=tk.X, pady=5)
         
-        ttk.Label(size_frame, text="> region_size:", style='Term.TLabel').pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Label(size_frame, text="region_size:", style='Term.TLabel').pack(side=tk.LEFT, padx=(5, 0))
         self.size_var = tk.StringVar(value="50")
         self.size_entry = tk.Entry(
             size_frame, 
@@ -527,13 +523,11 @@ class PixelChangeDetectorGUI:
         
         # Section 2: Region Selection
         region_frame = ttk.LabelFrame(left_panel, text="MONITORING", style='Terminal.TLabelframe')
-        region_frame.pack(fill=tk.X, pady=(0, 5), padx=0)
+        region_frame.pack(fill=tk.X, pady=(0, 10), padx=0)
         
         # Region buttons in command line style
         region_buttons = ttk.Frame(region_frame, style='Term.TFrame')
-        region_buttons.pack(fill=tk.X, pady=3)
-        
-        ttk.Label(region_buttons, text=">", style='Term.TLabel').pack(side=tk.LEFT, padx=(5, 5))
+        region_buttons.pack(fill=tk.X, pady=5)
         
         # Custom button for region selection
         self.region_button = tk.Button(
@@ -551,24 +545,22 @@ class PixelChangeDetectorGUI:
             pady=6,
             font=('Consolas', 10)
         )
-        self.region_button.pack(side=tk.LEFT, padx=(0, 5))
+        self.region_button.pack(side=tk.LEFT, padx=(5, 5))
         
         # Status label
         region_info_frame = ttk.Frame(region_frame, style='Term.TFrame')
-        region_info_frame.pack(fill=tk.X, pady=3)
+        region_info_frame.pack(fill=tk.X, pady=5)
         
-        ttk.Label(region_info_frame, text="> status:", style='Term.TLabel').pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Label(region_info_frame, text="status:", style='Term.TLabel').pack(side=tk.LEFT, padx=(5, 0))
         self.region_info_label = ttk.Label(region_info_frame, text="waiting_for_region_selection", style='Term.TLabel')
         self.region_info_label.pack(side=tk.LEFT, padx=5)
         
         # Section 3: Control Buttons
         control_frame = ttk.LabelFrame(left_panel, text="CONTROL", style='Terminal.TLabelframe')
-        control_frame.pack(fill=tk.X, pady=(0, 5), padx=0)
+        control_frame.pack(fill=tk.X, pady=(0, 10), padx=0)
         
         button_frame = ttk.Frame(control_frame, style='Term.TFrame')
-        button_frame.pack(fill=tk.X, pady=3)
-        
-        ttk.Label(button_frame, text=">", style='Term.TLabel').pack(side=tk.LEFT, padx=(5, 5))
+        button_frame.pack(fill=tk.X, pady=5)
         
         # Main control buttons with custom tk styling
         self.start_button = tk.Button(
@@ -586,7 +578,7 @@ class PixelChangeDetectorGUI:
             pady=6,
             font=('Consolas', 10)
         )
-        self.start_button.pack(side=tk.LEFT, padx=(0, 5))
+        self.start_button.pack(side=tk.LEFT, padx=(5, 5))
         
         self.stop_button = tk.Button(
             button_frame, 
@@ -628,9 +620,7 @@ class PixelChangeDetectorGUI:
         
         # Second row of buttons
         button_frame2 = ttk.Frame(control_frame, style='Term.TFrame')
-        button_frame2.pack(fill=tk.X, pady=3)
-        
-        ttk.Label(button_frame2, text=">", style='Term.TLabel').pack(side=tk.LEFT, padx=(5, 5))
+        button_frame2.pack(fill=tk.X, pady=5)
         
         # Capture reference button
         self.ref_button = tk.Button(
@@ -648,7 +638,7 @@ class PixelChangeDetectorGUI:
             pady=6,
             font=('Consolas', 10)
         )
-        self.ref_button.pack(side=tk.LEFT, padx=(0, 5))
+        self.ref_button.pack(side=tk.LEFT, padx=(5, 5))
         
         # Clear logs button
         self.clear_button = tk.Button(
@@ -698,7 +688,7 @@ class PixelChangeDetectorGUI:
         
     def create_monitoring_figure(self, parent_frame):
         """Create the monitoring visualization with minimal command-line style"""
-        # Create frame for matplotlib with border
+        # Create frame for matplotlib with border - updated border
         viz_content_frame = ttk.Frame(parent_frame, style='Border.TFrame')
         viz_content_frame.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
         
@@ -732,9 +722,9 @@ class PixelChangeDetectorGUI:
         for spine in self.current_ax.spines.values():
             spine.set_visible(False)
         
-        # Add thin border around feed
-        rect = plt.Rectangle((0, 0), 1, 1, fill=False, ec=self.colors['border'], 
-                           transform=self.current_ax.transAxes, clip_on=False)
+        # Add thin border around feed - more modern with slightly thicker border
+        rect = plt.Rectangle((0, 0), 1, 1, fill=False, ec=self.colors['border_light'], 
+                           linewidth=1.5, transform=self.current_ax.transAxes, clip_on=False)
         self.current_ax.add_patch(rect)
         
         # Create a small timeline below the main frame
@@ -772,9 +762,9 @@ class PixelChangeDetectorGUI:
         self.timeline_ax.set_yticklabels(['0', '', '1'])
         self.timeline_ax.tick_params(axis='y', colors=self.colors['text_dim'], labelsize=6)
         
-        # Add thin border around timeline
-        rect = plt.Rectangle((0, 0), 1, 1, fill=False, ec=self.colors['border'], alpha=0.3,
-                           transform=self.timeline_ax.transAxes, clip_on=False)
+        # Add thin border around timeline - more modern
+        rect = plt.Rectangle((0, 0), 1, 1, fill=False, ec=self.colors['border_light'], 
+                           linewidth=1.5, alpha=0.5, transform=self.timeline_ax.transAxes, clip_on=False)
         self.timeline_ax.add_patch(rect)
         
         # We're not using tight_layout to avoid warnings
