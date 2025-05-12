@@ -659,11 +659,60 @@ class PixelChangeDetector:
         # Key code
         self.F_KEY = 0x46  # F key virtual key code
         
+        # Health check variables
+        self.last_successful_capture = 0
+        self.consecutive_failures = 0
+        self.max_consecutive_failures = 5
+        self.health_check_interval = 5  # seconds
+        self.last_health_check = 0
+        
     def log(self, message):
         """Log a message to the queue if it exists"""
         if self.log_queue:
             self.log_queue.put(message)
         print(message)
+        
+    def reset_state(self):
+        """Reset detector state to handle recovery"""
+        self.current_frame = None
+        self.previous_frame = None
+        self.reference_frame = None
+        self.diff_frame = None
+        self.change_history = []
+        self.last_detection_time = 0
+        self.consecutive_failures = 0
+        self.last_successful_capture = 0
+        
+    def perform_health_check(self):
+        """Check detector health and attempt recovery if needed"""
+        current_time = time.time()
+        
+        # Only perform health check every health_check_interval seconds
+        if current_time - self.last_health_check < self.health_check_interval:
+            return True
+            
+        self.last_health_check = current_time
+        
+        # Check if we've had too many consecutive failures
+        if self.consecutive_failures >= self.max_consecutive_failures:
+            self.log("Too many consecutive failures, attempting recovery...")
+            self.reset_state()
+            
+            # Try to recapture reference frame
+            self.capture_reference()
+            
+            # Reset failure counter
+            self.consecutive_failures = 0
+            return True
+            
+        # Check if we haven't had a successful capture in a while
+        if current_time - self.last_successful_capture > self.health_check_interval * 2:
+            self.log("No successful captures detected, attempting recovery...")
+            self.reset_state()
+            self.capture_reference()
+            return True
+            
+        return True
         
     def find_play_together_process(self):
         """Find Play Together process ID and window handle"""
@@ -821,6 +870,7 @@ class PixelChangeDetector:
             # Validate frame
             if frame.size == 0:
                 self.log("Error: Captured frame is empty")
+                self.consecutive_failures += 1
                 return None
                 
             # Store color frame for visualization
@@ -829,10 +879,15 @@ class PixelChangeDetector:
             # Convert to grayscale for processing
             if len(frame.shape) == 3:
                 frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-                
+            
+            # Update health check variables
+            self.last_successful_capture = time.time()
+            self.consecutive_failures = 0
             return frame
+            
         except Exception as e:
             self.log(f"Error capturing screen: {e}")
+            self.consecutive_failures += 1
             # Reset to full screen on error
             self.region = None
             return None
@@ -889,6 +944,11 @@ class PixelChangeDetector:
     def _detection_loop(self):
         while self.is_running:
             try:
+                # Perform health check
+                if not self.perform_health_check():
+                    time.sleep(0.1)
+                    continue
+                
                 # Capture current frame
                 self.current_frame = self.capture_screen()
                 
@@ -898,6 +958,11 @@ class PixelChangeDetector:
                     
                 # Use reference frame if available, otherwise use previous frame
                 compare_frame = self.reference_frame if self.reference_frame is not None else self.previous_frame
+                
+                if compare_frame is None:
+                    self.capture_reference()
+                    time.sleep(self.capture_interval)
+                    continue
                 
                 # Calculate difference
                 self.diff_frame, change_percent = self.calculate_frame_difference(self.current_frame, compare_frame)
@@ -924,12 +989,14 @@ class PixelChangeDetector:
                         continue
                     
                     # Quick focus and key press
-                    self.focus_play_together_window()
-                    self.send_f_key()
-                    
-                    # Capture new reference frame after detection
-                    time.sleep(0.2)  # Reduced from 1.0 to 0.2 seconds
-                    self.capture_reference()
+                    if self.focus_play_together_window():
+                        self.send_f_key()
+                        
+                        # Capture new reference frame after detection
+                        time.sleep(0.2)  # Reduced from 1.0 to 0.2 seconds
+                        self.capture_reference()
+                    else:
+                        self.log("Failed to focus window, skipping key press")
                 
                 # Store current frame as previous for next comparison if not using reference
                 if self.reference_frame is None:
@@ -940,6 +1007,7 @@ class PixelChangeDetector:
                 
             except Exception as e:
                 self.log(f"Error in detection loop: {e}")
+                self.consecutive_failures += 1
                 time.sleep(0.05)  # Reduced from 0.1 to 0.05 seconds
 
 def main():
