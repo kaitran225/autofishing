@@ -841,7 +841,39 @@ class PixelChangeDetector:
         except Exception as e:
             self.log(f"Error with key simulation: {e}")
             return False
-        
+
+    def send_esc_key(self):
+        """Optimized key press method for ESC key"""
+        try:
+            # Single quick focus check
+            if user32.GetForegroundWindow() != self.play_together_window:
+                self.focus_play_together_window()
+                time.sleep(0.05)  # Reduced delay
+            
+            # Use most reliable method first - SendInput
+            kb_input = INPUT()
+            kb_input.type = INPUT_KEYBOARD
+            kb_input.ii.ki.wVk = 0x1B  # VK_ESCAPE
+            kb_input.ii.ki.wScan = 0
+            kb_input.ii.ki.dwFlags = 0
+            kb_input.ii.ki.time = 0
+            kb_input.ii.ki.dwExtraInfo = ctypes.pointer(ctypes.c_ulong(0))
+            
+            # Press and release in quick succession
+            user32.SendInput(1, ctypes.byref(kb_input), ctypes.sizeof(INPUT))
+            time.sleep(0.01)  # Minimal delay
+            kb_input.ii.ki.dwFlags = KEYEVENTF_KEYUP
+            user32.SendInput(1, ctypes.byref(kb_input), ctypes.sizeof(INPUT))
+            
+            # Backup method - direct keyboard
+            keyboard.press_and_release('esc')
+            
+            return True
+            
+        except Exception as e:
+            self.log(f"Error with ESC key simulation: {e}")
+            return False
+
     def capture_screen(self):
         """Capture the screen or region of interest"""
         try:
@@ -995,25 +1027,46 @@ class PixelChangeDetector:
                             
                             # Capture new reference frame after detection
                             time.sleep(0.2)  # Reduced from 1.0 to 0.2 seconds
-                            self.capture_reference()
                         else:
                             self.log("Failed to focus window, skipping key press")
                     
                     # Pause detection for 5 seconds after detection
                     self.log("Pausing detection for 5 seconds...")
-                    pause_start = time.time()
-                    while time.time() - pause_start < 5 and self.is_running:
-                        # Update UI during pause
+                    time.sleep(2)
+                    # Wait 3 seconds
+                    time.sleep(3)
+                    if self.is_running:
                         if self.gui:
-                            self.gui.root.after(0, lambda: self.gui.update_status(f"Paused: {int(5 - (time.time() - pause_start))}s remaining"))
-                        time.sleep(0.1)
+                            self.gui.root.after(0, lambda: self.gui.update_status(f"Paused: {int(3 - (time.time() - pause_start))}s remaining"))
+                    
+                    # Press ESC after 3 seconds
+                    if self.is_running:
+                        self.log("Pressing ESC key...")
+                        if self.focus_play_together_window():
+                            self.send_esc_key()
+                        else:
+                            self.log("Failed to focus window, skipping ESC key press")
+                    
+                    # Wait 2 seconds
+                    time.sleep(2)
+                    
+                    # Press F key
+                    if self.is_running:
+                        self.log("Pressing F key...")
+                        if self.focus_play_together_window():
+                            self.send_f_key()
+                            # Capture new reference frame after F key press
+                            time.sleep(0.2)  # Wait for screen to update
+                        else:
+                            self.log("Failed to focus window, skipping F key press")
+                    
+                    # Complete remaining pause time
+                    time.sleep(0.5)
                     
                     if self.gui:
                         self.gui.root.after(0, lambda: self.gui.update_status("Running"))
                     
-                    # Reset state after pause
-                    self.reset_state()
-                    self.capture_reference()
+                    time.sleep(2)
                     continue
                 
                 # Store current frame as previous for next comparison if not using reference
