@@ -11,8 +11,8 @@ build/
 
 # PyInstaller
 *.manifest
-*.spec
-!AutoFishing.spec  # Keep the main spec file
+# Keep all spec files as they contain build configurations
+!*.spec
 
 # Virtual environments
 venv/
