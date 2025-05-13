@@ -11,8 +11,6 @@ build/
 
 # PyInstaller
 *.manifest
-# Keep all spec files as they contain build configurations
-!*.spec
 
 # Virtual environments
 venv/
@@ -24,7 +22,7 @@ env/
 .idea/
 .vscode/
 *.sublime-project
-*.sublime-workspace
+*.sublime-workspaceß
 
 # macOS specific
 .DS_Store
