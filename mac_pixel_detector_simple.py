@@ -77,7 +77,7 @@ class PixelChangeDetector(QObject):
         
         # Updated action sequence with consistent delay times for each action type
         self.action_sequence = [
-            {"action": "press_f", "delay": 2.0},
+            {"action": "press_f", "delay": 0.5},
             {"action": "wait", "delay": 3.0},
             {"action": "press_esc", "delay": 1.0},
             {"action": "wait", "delay": 1.0},
