@@ -58,8 +58,8 @@ class PixelChangeDetector(QObject):
         self.apply_blur = True
         self.blur_kernel_size = 3
         
-        # Performance optimization
-        self.capture_interval = 0.05  # 50ms between captures (20 fps)
+        # Performance optimization - faster capture rate
+        self.capture_interval = 0.01  # 10ms between captures (100fps) - decreased from 0.05
         self.consecutive_failures = 0
         self.max_consecutive_failures = 5
         self.last_successful_capture = 0
@@ -67,15 +67,17 @@ class PixelChangeDetector(QObject):
         # Optimization: Use mss context manager only once
         self.sct = mss.mss()
         
-        # Action sequence control
+        # Action sequence control with standardized delay times
         self.in_action_sequence = False
         self.action_sequence_step = 0
+        
+        # Updated action sequence with consistent delay times for each action type
         self.action_sequence = [
-            {"action": "press_f", "delay": 0.2},
-            {"action": "wait", "delay": 2.0},
-            {"action": "press_esc", "delay": 0.5},
-            {"action": "wait", "delay": 0.5},
-            {"action": "press_f", "delay": 2.0}
+            {"action": "press_f", "delay": 2.0},
+            {"action": "wait", "delay": 3.0},
+            {"action": "press_esc", "delay": 1.0},
+            {"action": "wait", "delay": 1.5},
+            {"action": "press_f", "delay": 1.0}
         ]
         
     def log(self, message):
@@ -165,6 +167,18 @@ class PixelChangeDetector(QObject):
             # Resize to match - use faster INTER_NEAREST for performance
             frame2 = cv2.resize(frame2, (frame1.shape[1], frame1.shape[0]), interpolation=cv2.INTER_NEAREST)
             
+        # Ensure both frames are grayscale for accurate comparison
+        if len(frame1.shape) == 3 and len(frame2.shape) == 2:
+            # Convert frame1 to grayscale
+            frame1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
+        elif len(frame1.shape) == 2 and len(frame2.shape) == 3:
+            # Convert frame2 to grayscale
+            frame2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
+        elif len(frame1.shape) == 3 and len(frame2.shape) == 3:
+            # Convert both to grayscale
+            frame1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
+            frame2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
+            
         # Calculate absolute difference
         diff_frame = cv2.absdiff(frame1, frame2)
         
@@ -188,13 +202,16 @@ class PixelChangeDetector(QObject):
         return thresholded_diff, change_percent
         
     def capture_reference(self):
-        """Capture a reference frame for comparison"""
-        frame = self.capture_screen()
-        if frame is not None:
-            self.reference_frame = frame
-            self.log(f"Reference frame captured")
-            return True
-        return False
+        """Capture a reference frame"""
+        if self.region:
+            success = self.capture_screen() is not None
+            if success:
+                self.reference_frame = self.color_frame
+                self.log("Reference frame captured")
+                return True
+        else:
+            self.log("You must select a region first")
+            return False
     
     def start_detection(self):
         """Start the detection process"""
@@ -210,9 +227,13 @@ class PixelChangeDetector(QObject):
         self.in_action_sequence = False
         self.action_sequence_step = 0
         
-        # Capture initial reference frame if none exists
-        if self.reference_frame is None:
-            self.capture_reference()
+        # Always clear and recapture the reference frame when starting
+        self.reference_frame = None 
+        self.log("Capturing new reference frame...")
+        if not self.capture_reference():
+            self.log("Failed to capture reference frame. Please check region selection.")
+            self.is_running = False
+            return
             
         self.previous_frame = self.reference_frame
         
@@ -287,10 +308,9 @@ class PixelChangeDetector(QObject):
                 if len(self.change_history) > 100:
                     self.change_history = self.change_history[-100:]
                     
-                # Emit signal for UI update - but throttle to avoid overwhelming the UI
-                # Only update UI every 100ms (10 fps) regardless of detection speed
+                # Emit signal for UI update - increased to 30fps (33ms) for more responsive display
                 current_time = time.time()
-                if not hasattr(self, '_last_ui_update') or (current_time - getattr(self, '_last_ui_update', 0)) > 0.1:
+                if not hasattr(self, '_last_ui_update') or (current_time - getattr(self, '_last_ui_update', 0)) > 0.033:
                     self.frame_updated.emit()
                     self._last_ui_update = current_time
                 
@@ -949,14 +969,14 @@ class MonitoringDisplay(QWidget):
         # Pre-allocate reusable image buffers for performance
         self._last_pixmap = None
         self._last_display_time = 0
-        self._display_throttle_ms = 50  # Limit updates to 20fps
+        self._display_throttle_ms = 16.67  # ~60fps (reduced from 50ms/20fps to ~16.67ms/60fps)
         
     def update_display(self, color_frame, diff_frame, change_percent):
         """Update the display with improved rendering to reduce noise - optimized for performance"""
         if color_frame is None:
             return
             
-        # Throttle updates for better performance
+        # Throttle updates for better performance, but with higher frame rate
         current_time = time.time() * 1000  # Convert to ms
         if current_time - self._last_display_time < self._display_throttle_ms:
             return
@@ -964,9 +984,9 @@ class MonitoringDisplay(QWidget):
         self._last_display_time = current_time
             
         try:
-            # Create a clean copy for display
-            display_frame = color_frame.copy()
-            
+            # Create a clean copy for display - optimize by avoiding unnecessary copies
+            display_frame = color_frame
+
             if diff_frame is not None:
                 # Apply a more selective highlighting approach
                 # Convert diff_frame to 3 channel if it's grayscale
@@ -975,7 +995,9 @@ class MonitoringDisplay(QWidget):
                     # Optimized version with fewer operations
                     change_indices = diff_frame > 0
                     if np.any(change_indices):
-                        # Only modify pixels that actually changed
+                        # Only modify pixels that actually changed - create a copy only when needed
+                        if id(display_frame) == id(color_frame):
+                            display_frame = color_frame.copy()
                         display_frame[change_indices, 0] = 255  # Set red channel to max
                         # Reduce other channels to make red more prominent
                         display_frame[change_indices, 1] = display_frame[change_indices, 1] // 2
@@ -1423,6 +1445,13 @@ class PixelChangeApp(QMainWindow):
         # Update threshold from UI
         self.detector.THRESHOLD = self.threshold_slider.value() / 100.0
         
+        # Always clear and recapture the reference frame when starting
+        self.detector.reference_frame = None
+        self.add_log("Capturing new reference frame...")
+        if not self.detector.capture_reference():
+            self.add_log("Failed to capture reference frame. Please check region selection.")
+            return
+        
         # Start detection
         self.detector.start_detection()
         
@@ -1442,7 +1471,6 @@ class PixelChangeApp(QMainWindow):
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         self.pause_button.setEnabled(False)
-        self.pause_button.setText("pause")
         self.monitor_display.set_status("stopped")
         self.status_label.setText("system:monitor.stopped")
         self.status_label.setStyleSheet(f"color: {self.colors['alert']};")
