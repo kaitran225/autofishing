@@ -1,0 +1,58 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+!AutoFishing.spec  # Keep the main spec file
+
+# Virtual environments
+venv/
+env/
+.env/
+.venv/
+
+# IDE specific files
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# macOS specific
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Logs and debugging
+*.log
+debug_output.txt
+crash_report.txt
+
+# Application bundles
+*.app
+release/
+*.zip
+
+# MSS and screencast related
+*.png
+*.jpg
+*.jpeg
+screenshots/
+
+# Temporary files
+tmp/
+temp/
+
+# User-specific settings
+config.json
+settings.ini 
