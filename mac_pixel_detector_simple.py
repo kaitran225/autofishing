@@ -14,10 +14,11 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QPushButton, QSlider, QFrame, QSplitter, QTextEdit,
-    QGroupBox, QMessageBox, QDialog, QDialogButtonBox
+    QGroupBox, QMessageBox, QDialog, QDialogButtonBox, QCheckBox
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QRect, QPoint, QSize, QThread, QObject
 from PyQt6.QtGui import QPixmap, QPainter, QColor, QPen, QImage, QFont
+import os
 
 
 class PixelChangeDetector(QObject):
@@ -53,6 +54,10 @@ class PixelChangeDetector(QObject):
         self.detection_thread = None
         self.stop_requested = False
         
+        # Noise reduction parameters
+        self.apply_blur = True
+        self.blur_kernel_size = 3
+        
     def log(self, message):
         """Log a message"""
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
@@ -81,6 +86,10 @@ class PixelChangeDetector(QObject):
                 # Convert to grayscale for processing
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2GRAY)
                 
+                # Apply Gaussian blur to reduce noise if enabled
+                if self.apply_blur and self.blur_kernel_size > 0:
+                    frame = cv2.GaussianBlur(frame, (self.blur_kernel_size, self.blur_kernel_size), 0)
+                
                 return frame
                 
         except Exception as e:
@@ -88,7 +97,7 @@ class PixelChangeDetector(QObject):
             return None
             
     def calculate_frame_difference(self, frame1, frame2):
-        """Calculate the difference between two frames"""
+        """Calculate the difference between two frames with improved noise handling"""
         if frame1 is None or frame2 is None:
             return None, 0
             
@@ -100,12 +109,23 @@ class PixelChangeDetector(QObject):
         # Calculate absolute difference
         diff_frame = cv2.absdiff(frame1, frame2)
         
+        # Apply threshold to create binary difference mask - helps ignore minor noise
+        threshold_value = 30  # Threshold for significant change
+        _, thresholded_diff = cv2.threshold(diff_frame, threshold_value, 255, cv2.THRESH_BINARY)
+        
+        # Optional: use morphological operations to reduce noise further
+        kernel = np.ones((2, 2), np.uint8)
+        thresholded_diff = cv2.morphologyEx(thresholded_diff, cv2.MORPH_OPEN, kernel)
+        
         # Calculate percentage of pixels that changed significantly
-        changed_pixels = np.sum(diff_frame > 30)  # Threshold for significant change
+        changed_pixels = np.sum(thresholded_diff > 0)
         total_pixels = frame1.shape[0] * frame1.shape[1]
         change_percent = changed_pixels / total_pixels
         
-        return diff_frame, change_percent
+        # Store the thresholded difference for visualization
+        self.diff_frame = thresholded_diff
+        
+        return thresholded_diff, change_percent
         
     def capture_reference(self):
         """Capture a reference frame for comparison"""
@@ -229,9 +249,14 @@ class RegionSelectionOverlay(QDialog):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowState(Qt.WindowState.WindowFullScreen)
         
-        # Save screen dimensions
-        self.screen_width = QApplication.primaryScreen().size().width()
-        self.screen_height = QApplication.primaryScreen().size().height()
+        # Force this window to be on top of all others
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        
+        # Get screen information - full desktop size
+        self.get_full_screen_dimensions()
+        
+        # Capture the current screen before showing the selection overlay
+        self.background_pixmap = self.capture_screen_background()
         
         # Box dimensions (1.5:1 ratio)
         self.box_height = default_size
@@ -240,32 +265,437 @@ class RegionSelectionOverlay(QDialog):
         # For tracking mouse position
         self.mouse_pos = QPoint(self.screen_width // 2, self.screen_height // 2)
         
+        # For drag and drop functionality
+        self.is_dragging = False
+        self.box_rect = QRect(
+            self.mouse_pos.x() - self.box_width // 2,
+            self.mouse_pos.y() - self.box_height // 2,
+            self.box_width,
+            self.box_height
+        )
+        
+        # For finding "PLAY TOGETHER" window
+        self.play_together_rect = None
+        self.find_play_together_window()
+        
         # Initialize UI
         self._init_ui()
         
+        # Ensure window is activated properly
+        self.activateWindow()
+        self.raise_()
+        
+    def get_full_screen_dimensions(self):
+        """Get the full screen dimensions of the entire desktop"""
+        # Get primary screen geometry
+        primary_screen = QApplication.primaryScreen()
+        self.screen_geometry = primary_screen.geometry()
+        self.screen_width = self.screen_geometry.width()
+        self.screen_height = self.screen_geometry.height()
+        
+        # Handle high DPI screens
+        self.device_pixel_ratio = primary_screen.devicePixelRatio()
+        
+        # For macOS, try to get the full desktop size using mss directly
+        try:
+            with mss.mss() as sct:
+                # Get monitor information for the primary display
+                monitor_info = sct.monitors[1]  # 0 is all monitors combined, 1 is the primary
+                
+                # Store the native screen resolution
+                self.full_width = monitor_info["width"]
+                self.full_height = monitor_info["height"]
+                
+                # Debug output
+                print(f"Qt Screen geometry: {self.screen_width}x{self.screen_height}")
+                print(f"MSS Monitor size: {self.full_width}x{self.full_height}")
+                print(f"Device pixel ratio: {self.device_pixel_ratio}")
+                
+                # Update screen size based on what we found
+                if self.full_width > self.screen_width or self.full_height > self.screen_height:
+                    # Use the larger dimensions for fullscreen capture
+                    self.screen_width = self.full_width
+                    self.screen_height = self.full_height
+                    print(f"Using full screen size: {self.screen_width}x{self.screen_height}")
+        except Exception as e:
+            print(f"Error getting full screen dimensions: {e}")
+            # Fallback to Qt screen geometry if mss fails
+            self.full_width = self.screen_width
+            self.full_height = self.screen_height
+        
+        # Set the window size to match the full screen
+        self.setGeometry(0, 0, self.screen_width, self.screen_height)
+        
+    def capture_screen_background(self):
+        """Capture the entire screen to use as background"""
+        try:
+            # Give a small delay to ensure any other windows are properly hidden
+            time.sleep(0.3)
+            
+            # Capture the entire screen using MSS
+            with mss.mss() as sct:
+                # Capture the primary monitor at full resolution
+                monitor_idx = 1  # Primary monitor
+                monitor = sct.monitors[monitor_idx]
+                
+                # Ensure we get the full monitor, not just the application window
+                screenshot = sct.grab(monitor)
+                
+                # Convert to numpy array
+                img_array = np.array(screenshot)
+                
+                # Convert from BGRA to RGB for proper display
+                if img_array.shape[2] == 4:  # If it has an alpha channel
+                    img_array = cv2.cvtColor(img_array, cv2.COLOR_BGRA2RGB)
+                else:
+                    img_array = cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB)
+                
+                # Get the dimensions of the captured image
+                height, width, channels = img_array.shape
+                print(f"Captured image dimensions: {width}x{height}")
+                
+                # Scale if the captured size doesn't match our window size
+                if width != self.screen_width or height != self.screen_height:
+                    img_array = cv2.resize(img_array, (self.screen_width, self.screen_height))
+                    print(f"Resized image to: {self.screen_width}x{self.screen_height}")
+                
+                # Convert to QImage
+                height, width, channels = img_array.shape
+                bytes_per_line = channels * width
+                
+                q_img = QImage(img_array.data, width, height, 
+                               bytes_per_line, QImage.Format.Format_RGB888)
+                
+                # Convert to QPixmap for drawing
+                pixmap = QPixmap.fromImage(q_img)
+                
+                # Debug
+                print(f"Final pixmap dimensions: {pixmap.width()}x{pixmap.height()}")
+                
+                return pixmap
+        except Exception as e:
+            print(f"Error capturing screen background: {e}")
+            return None
+    
     def _init_ui(self):
         """Initialize the UI components"""
         # Add label with instructions
-        self.instructions = QLabel("Click to place the region box (ESC to cancel)", self)
+        self.instructions = QLabel("Click and drag to move selection box. Release to place. (ESC to cancel)", self)
         self.instructions.setStyleSheet("color: white; background-color: rgba(0, 0, 0, 150); padding: 10px;")
         self.instructions.setGeometry(0, 30, self.screen_width, 30)
         self.instructions.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
+        # Add "Position on PLAY TOGETHER" button
+        self.play_together_button = QPushButton("Position on PLAY TOGETHER", self)
+        self.play_together_button.setStyleSheet("""
+            background-color: rgba(50, 150, 255, 180); 
+            color: white; 
+            border: none; 
+            padding: 8px 16px;
+            border-radius: 4px;
+        """)
+        self.play_together_button.setGeometry(self.screen_width - 230, 70, 200, 40)
+        self.play_together_button.clicked.connect(self.position_on_play_together)
+        
+        # Show button only if PLAY TOGETHER window was found
+        self.play_together_button.setVisible(self.play_together_rect is not None)
+        
+    def find_play_together_window(self):
+        """Try to find the PLAY TOGETHER game window using AppleScript"""
+        try:
+            # AppleScript to find windows with PLAY TOGETHER in the title
+            script = '''
+            tell application "System Events"
+                set allWindows to {}
+                repeat with proc in processes
+                    repeat with w in windows of proc
+                        if name of w contains "PLAY TOGETHER" or name of w contains "Play Together" or name of w contains "play together" then
+                            set winPos to position of w
+                            set winSize to size of w
+                            return {item 1 of winPos, item 2 of winPos, item 1 of winSize, item 2 of winSize}
+                        end if
+                    end repeat
+                end repeat
+                return ""
+            end tell
+            '''
+            
+            result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True, check=False)
+            if result.stdout.strip():
+                try:
+                    # Parse the result into left, top, width, height
+                    values = [int(x) for x in result.stdout.strip().split(", ")]
+                    if len(values) == 4:
+                        left, top, width, height = values
+                        self.play_together_rect = QRect(left, top, width, height)
+                        return True
+                except Exception as e:
+                    print(f"Error parsing window dimensions: {e}")
+                    
+            # Alternative approach if the above fails - try to find by window title
+            script2 = '''
+            tell application "System Events"
+                set windowNames to {}
+                repeat with proc in processes
+                    repeat with w in windows of proc
+                        set windowNames to windowNames & name of w
+                    end repeat
+                end repeat
+                return windowNames
+            end tell
+            '''
+            
+            result2 = subprocess.run(['osascript', '-e', script2], capture_output=True, text=True, check=False)
+            print(f"Window titles: {result2.stdout}")
+            
+            return False
+        except Exception as e:
+            print(f"Error finding PLAY TOGETHER window: {e}")
+            return False
+    
+    def position_on_play_together(self):
+        """Position the selection box centered on the PLAY TOGETHER window"""
+        if self.play_together_rect is not None:
+            # Center the box on the game window
+            center_x = self.play_together_rect.left() + self.play_together_rect.width() // 2
+            center_y = self.play_together_rect.top() + self.play_together_rect.height() // 2
+            
+            # Position the box
+            self.box_rect.moveCenter(QPoint(center_x, center_y))
+            
+            # Ensure box stays within screen bounds
+            self.constrain_box_to_screen()
+            
+            # Update the display
+            self.update()
+            
+    def showEvent(self, event):
+        """Ensure window is on top when shown"""
+        super().showEvent(event)
+        self.activateWindow()
+        self.raise_()
+        
+        # Use Apple Script to ensure window focus (for macOS)
+        try:
+            script = '''
+            tell application "System Events" 
+                set frontmost of every process whose unix id is %d to true
+            end tell
+            ''' % os.getpid()
+            subprocess.run(['osascript', '-e', script], check=True)
+        except Exception as e:
+            print(f"Error focusing window: {e}")
+        
     def paintEvent(self, event):
         """Draw the selection overlay"""
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor(0, 0, 0, 100))  # Semi-transparent background
+        
+        # Draw the captured screen background, ensuring it fills the entire window
+        if hasattr(self, 'background_pixmap') and self.background_pixmap is not None:
+            # Set up rendering hints for better quality scaling
+            painter.setRenderHints(QPainter.RenderHint.SmoothPixmapTransform | 
+                                 QPainter.RenderHint.Antialiasing)
+            
+            # Draw the background to fill the entire window
+            target_rect = self.rect()
+            painter.drawPixmap(target_rect, self.background_pixmap, 
+                             QRect(0, 0, self.background_pixmap.width(), self.background_pixmap.height()))
+            
+            # Apply a slight darkening overlay
+            painter.fillRect(target_rect, QColor(0, 0, 0, 30))
+        else:
+            # Fallback to a semi-transparent background if no screenshot
+            painter.fillRect(self.rect(), QColor(0, 0, 0, 50))
+        
+        # Highlight PLAY TOGETHER window if found
+        if self.play_together_rect is not None:
+            play_together_highlight = QRect(
+                self.play_together_rect.left(),
+                self.play_together_rect.top(),
+                self.play_together_rect.width(),
+                self.play_together_rect.height()
+            )
+            painter.fillRect(play_together_highlight, QColor(100, 255, 100, 20))
+            painter.setPen(QPen(QColor(100, 255, 100, 100), 2, Qt.PenStyle.DashLine))
+            painter.drawRect(play_together_highlight)
+            
+            # Display a label identifying the window
+            game_label_rect = QRect(
+                self.play_together_rect.left(), 
+                self.play_together_rect.top() - 30,
+                self.play_together_rect.width(), 
+                30
+            )
+            painter.fillRect(game_label_rect, QColor(0, 0, 0, 150))
+            painter.setPen(QColor(100, 255, 100))
+            painter.setFont(QFont("Menlo", 9))
+            painter.drawText(game_label_rect, Qt.AlignmentFlag.AlignCenter, "PLAY TOGETHER WINDOW")
+        
+        # Draw dimmed rectangle around the selection area to highlight it
+        # Create four rectangles to cover all areas except the selection
+        # Top area
+        painter.fillRect(
+            QRect(0, 0, self.screen_width, self.box_rect.top()),
+            QColor(0, 0, 0, 70)
+        )
+        # Bottom area
+        painter.fillRect(
+            QRect(0, self.box_rect.bottom() + 1, self.screen_width, self.screen_height - self.box_rect.bottom() - 1),
+            QColor(0, 0, 0, 70)
+        )
+        # Left area
+        painter.fillRect(
+            QRect(0, self.box_rect.top(), self.box_rect.left(), self.box_rect.height()),
+            QColor(0, 0, 0, 70)
+        )
+        # Right area
+        painter.fillRect(
+            QRect(self.box_rect.right() + 1, self.box_rect.top(), 
+                  self.screen_width - self.box_rect.right() - 1, self.box_rect.height()),
+            QColor(0, 0, 0, 70)
+        )
         
         # Draw crosshairs
         painter.setPen(QPen(QColor(100, 200, 255), 1, Qt.PenStyle.DashLine))
         painter.drawLine(0, self.mouse_pos.y(), self.screen_width, self.mouse_pos.y())
         painter.drawLine(self.mouse_pos.x(), 0, self.mouse_pos.x(), self.screen_height)
         
-        # Calculate box position (centered on mouse)
-        left = self.mouse_pos.x() - self.box_width // 2
-        top = self.mouse_pos.y() - self.box_height // 2
-        
         # Ensure box stays within screen bounds
+        self.constrain_box_to_screen()
+        
+        # Draw selection box
+        # Draw outer border (make it more visible with a 2px bright blue border)
+        painter.setPen(QPen(QColor(50, 150, 255), 2))
+        painter.drawRect(self.box_rect)
+        
+        # Add a second, inner border for better visibility
+        inner_rect = QRect(
+            self.box_rect.left() + 2, 
+            self.box_rect.top() + 2, 
+            self.box_rect.width() - 4, 
+            self.box_rect.height() - 4
+        )
+        painter.setPen(QPen(QColor(255, 255, 255), 1))
+        painter.drawRect(inner_rect)
+        
+        # Draw semi-transparent fill - very light so content is visible underneath
+        painter.fillRect(self.box_rect, QColor(100, 200, 255, 20))
+        
+        # Draw grid lines
+        painter.setPen(QPen(QColor(255, 255, 255, 100), 1, Qt.PenStyle.DashLine))
+        # Vertical grid lines
+        cell_width = self.box_width // 3
+        for i in range(1, 3):
+            painter.drawLine(
+                self.box_rect.left() + i * cell_width, self.box_rect.top(),
+                self.box_rect.left() + i * cell_width, self.box_rect.bottom()
+            )
+        # Horizontal grid lines
+        cell_height = self.box_height // 3
+        for i in range(1, 3):
+            painter.drawLine(
+                self.box_rect.left(), self.box_rect.top() + i * cell_height,
+                self.box_rect.right(), self.box_rect.top() + i * cell_height
+            )
+        
+        # Draw coordinates with better visibility
+        coord_text = f"Position: ({self.box_rect.left()},{self.box_rect.top()}) • Size: {self.box_width}×{self.box_height}"
+        
+        # Draw shadow for text to make it readable against any background
+        painter.setPen(QColor(0, 0, 0, 200))
+        painter.setFont(QFont("Menlo", 10))
+        painter.drawText(
+            1, self.screen_height - 39, self.screen_width, 30,
+            Qt.AlignmentFlag.AlignCenter, coord_text
+        )
+        
+        # Draw actual text
+        painter.setPen(QColor(255, 255, 255))
+        painter.setFont(QFont("Menlo", 10))
+        painter.drawText(
+            0, self.screen_height - 40, self.screen_width, 30,
+            Qt.AlignmentFlag.AlignCenter, coord_text
+        )
+        
+    def mouseMoveEvent(self, event):
+        """Track mouse movement for dragging or positioning the box"""
+        self.mouse_pos = event.pos()
+        
+        if self.is_dragging:
+            # Move the box with the mouse
+            dx = event.pos().x() - self.drag_start_pos.x()
+            dy = event.pos().y() - self.drag_start_pos.y()
+            
+            self.box_rect.moveTopLeft(self.box_start_pos + QPoint(dx, dy))
+        else:
+            # Center box on cursor when not dragging
+            self.box_rect = QRect(
+                self.mouse_pos.x() - self.box_width // 2,
+                self.mouse_pos.y() - self.box_height // 2,
+                self.box_width,
+                self.box_height
+            )
+            
+        self.update()  # Redraw
+        
+    def mousePressEvent(self, event):
+        """Start dragging when mouse pressed"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            # Check if click is inside box
+            if self.box_rect.contains(event.pos()):
+                self.is_dragging = True
+                self.drag_start_pos = event.pos()
+                self.box_start_pos = self.box_rect.topLeft()
+            else:
+                # Center box on click position
+                self.box_rect = QRect(
+                    event.pos().x() - self.box_width // 2,
+                    event.pos().y() - self.box_height // 2,
+                    self.box_width,
+                    self.box_height
+                )
+                self.is_dragging = True
+                self.drag_start_pos = event.pos()
+                self.box_start_pos = self.box_rect.topLeft()
+                
+            self.update()  # Redraw
+            
+    def mouseReleaseEvent(self, event):
+        """Finalize selection on mouse release"""
+        if event.button() == Qt.MouseButton.LeftButton and self.is_dragging:
+            self.is_dragging = False
+            
+            # Constrain box to screen before finalizing
+            self.constrain_box_to_screen()
+            
+            # Get the exact coordinates from the box
+            left = self.box_rect.left()
+            top = self.box_rect.top()
+            right = self.box_rect.right() + 1  # +1 because right/bottom are inclusive
+            bottom = self.box_rect.bottom() + 1
+            
+            # Ensure coordinates are within screen bounds and have correct dimensions
+            if left < 0: left = 0
+            if top < 0: top = 0
+            if right > self.screen_width: right = self.screen_width
+            if bottom > self.screen_height: bottom = self.screen_height
+            
+            # Debug output
+            print(f"Selected region: ({left}, {top}, {right}, {bottom})")
+            print(f"Dimensions: {right-left}x{bottom-top}")
+            
+            # Emit signal with selected region
+            region = (left, top, right, bottom)
+            self.region_selected.emit(region)
+            self.accept()
+    
+    def constrain_box_to_screen(self):
+        """Ensure the box stays within screen bounds"""
+        # Get current position
+        left = self.box_rect.left()
+        top = self.box_rect.top()
+        
+        # Adjust for screen boundaries
         if left < 0:
             left = 0
         elif left + self.box_width > self.screen_width:
@@ -275,73 +705,9 @@ class RegionSelectionOverlay(QDialog):
             top = 0
         elif top + self.box_height > self.screen_height:
             top = self.screen_height - self.box_height
-        
-        # Draw selection box
-        box_rect = QRect(left, top, self.box_width, self.box_height)
-        
-        # Draw outer border
-        painter.setPen(QPen(QColor(100, 200, 255), 2))
-        painter.drawRect(box_rect)
-        
-        # Draw semi-transparent fill
-        painter.fillRect(box_rect, QColor(100, 200, 255, 40))
-        
-        # Draw grid lines
-        painter.setPen(QPen(QColor(255, 255, 255, 120), 1, Qt.PenStyle.DashLine))
-        # Vertical grid lines
-        cell_width = self.box_width // 3
-        for i in range(1, 3):
-            painter.drawLine(
-                left + i * cell_width, top,
-                left + i * cell_width, top + self.box_height
-            )
-        # Horizontal grid lines
-        cell_height = self.box_height // 3
-        for i in range(1, 3):
-            painter.drawLine(
-                left, top + i * cell_height,
-                left + self.box_width, top + i * cell_height
-            )
-        
-        # Draw coordinates
-        coord_text = f"Position: ({left},{top}) • Size: {self.box_width}×{self.box_height}"
-        painter.setPen(QColor(255, 255, 255))
-        painter.setFont(QFont("Menlo", 10))
-        painter.drawText(
-            0, self.screen_height - 40, self.screen_width, 30,
-            Qt.AlignmentFlag.AlignCenter, coord_text
-        )
-        
-    def mouseMoveEvent(self, event):
-        """Track mouse movement"""
-        self.mouse_pos = event.pos()
-        self.update()  # Redraw
-        
-    def mousePressEvent(self, event):
-        """Handle mouse clicks"""
-        if event.button() == Qt.MouseButton.LeftButton:
-            # Calculate box position
-            left = self.mouse_pos.x() - self.box_width // 2
-            top = self.mouse_pos.y() - self.box_height // 2
             
-            # Ensure box stays within screen bounds
-            if left < 0:
-                left = 0
-            elif left + self.box_width > self.screen_width:
-                left = self.screen_width - self.box_width
-                
-            if top < 0:
-                top = 0
-            elif top + self.box_height > self.screen_height:
-                top = self.screen_height - self.box_height
-                
-            # Calculate region bounds
-            right = left + self.box_width
-            bottom = top + self.box_height
-            
-            # Emit signal with selected region
-            self.region_selected.emit((left, top, right, bottom))
-            self.accept()
+        # Update rectangle position
+        self.box_rect = QRect(left, top, self.box_width, self.box_height)
             
     def keyPressEvent(self, event):
         """Handle key presses"""
@@ -431,27 +797,46 @@ class MonitoringDisplay(QWidget):
         layout.addLayout(status_layout)
         
     def update_display(self, color_frame, diff_frame, change_percent):
-        """Update the display with current frames"""
+        """Update the display with improved rendering to reduce noise"""
         if color_frame is None:
             return
             
         try:
-            # Create overlay of original frame with difference highlights
+            # Create a clean copy for display
             display_frame = color_frame.copy()
             
             if diff_frame is not None:
-                # Create a mask where differences are significant
-                mask = diff_frame > 30
-                
-                # Apply red highlighting to areas with significant change
-                display_frame[mask, 0] = 255  # Max out red channel
-                
-            # Convert to QImage for display
-            height, width, channels = display_frame.shape
-            bytes_per_line = channels * width
+                # Apply a more selective highlighting approach
+                # Convert diff_frame to 3 channel if it's grayscale
+                if len(diff_frame.shape) == 2:
+                    # Create a colored mask for changes - using red for visibility
+                    red_mask = np.zeros_like(display_frame)
+                    red_mask[:, :, 0] = diff_frame  # Set the red channel
+                    
+                    # Apply the mask selectively where changes are detected
+                    change_indices = diff_frame > 0
+                    if np.any(change_indices):
+                        alpha = 0.7  # Blend factor
+                        display_frame[change_indices] = cv2.addWeighted(
+                            display_frame[change_indices], 
+                            1 - alpha, 
+                            red_mask[change_indices], 
+                            alpha, 
+                            0
+                        )
             
             # Convert BGR to RGB for proper display
             display_frame_rgb = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
+            
+            # Apply slight sharpening to enhance detail
+            sharpen_kernel = np.array([[-1, -1, -1], 
+                                      [-1, 9, -1], 
+                                      [-1, -1, -1]])
+            display_frame_rgb = cv2.filter2D(display_frame_rgb, -1, sharpen_kernel)
+            
+            # Convert to QImage for display
+            height, width, channels = display_frame_rgb.shape
+            bytes_per_line = channels * width
             
             q_img = QImage(display_frame_rgb.data, width, height, 
                           bytes_per_line, QImage.Format.Format_RGB888)
@@ -499,14 +884,32 @@ class PixelChangeApp(QMainWindow):
         self.detector.frame_updated.connect(self.update_visualization)
         self.detector.detection_signal.connect(self.handle_detection)
         
+        # Define color scheme first
+        self._define_colors()
+        
         # Create UI
         self._init_ui()
         
-        # Configure colors and styles
-        self._setup_styles()
-        
         # Detection counter
         self.detection_count = 0
+        
+    def _define_colors(self):
+        """Define the color scheme for the application"""
+        # Define color scheme
+        self.colors = {
+            'bg_dark': '#050505',      
+            'bg_term': '#0E0E0E',     
+            'bg_lighter': '#1A1A1A',   
+            'bg_alt': '#191919',      
+            'text': '#F8F5FF',         
+            'text_dim': '#999999',     
+            'accent': '#A280FF',       
+            'green': '#C4E6B5',        
+            'success': '#47D068',      
+            'alert': '#FF4D4D',        
+            'warning': '#FFB940',      
+            'border': '#2A2A2A',       
+        }
         
     def _init_ui(self):
         """Initialize the user interface"""
@@ -514,6 +917,61 @@ class PixelChangeApp(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget)
+        
+        # Set application-wide stylesheet
+        self.setStyleSheet(f"""
+            QMainWindow, QWidget {{ background-color: {self.colors['bg_dark']}; color: {self.colors['text']}; }}
+            
+            QGroupBox {{ 
+                background-color: {self.colors['bg_dark']}; 
+                color: {self.colors['green']}; 
+                border: 1px solid {self.colors['border']}; 
+                border-radius: 3px; 
+                margin-top: 0.5em;
+                font-weight: bold;
+            }}
+            QGroupBox::title {{ 
+                subcontrol-origin: margin; 
+                left: 10px; 
+                padding: 0 3px;
+            }}
+            
+            QLabel {{ color: {self.colors['text']}; }}
+            
+            QPushButton {{ 
+                background-color: {self.colors['bg_dark']}; 
+                color: {self.colors['green']}; 
+                border: 1px solid {self.colors['border']}; 
+                padding: 5px; 
+                border-radius: 2px;
+            }}
+            QPushButton:hover {{ background-color: {self.colors['bg_lighter']}; }}
+            QPushButton:pressed {{ background-color: {self.colors['bg_alt']}; }}
+            QPushButton:disabled {{ color: {self.colors['text_dim']}; }}
+            
+            QTextEdit {{ 
+                background-color: {self.colors['bg_term']}; 
+                color: {self.colors['text']}; 
+                border: 1px solid {self.colors['border']}; 
+                font-family: Menlo, Consolas, monospace;
+                font-size: 10pt;
+            }}
+            
+            QSlider::groove:horizontal {{
+                border: 1px solid {self.colors['border']};
+                height: 4px;
+                background: {self.colors['bg_term']};
+                margin: 0px;
+                border-radius: 2px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {self.colors['accent']};
+                border: 1px solid {self.colors['accent']};
+                width: 10px;
+                margin: -5px 0;
+                border-radius: 5px;
+            }}
+        """)
         
         # Create left panel (controls)
         left_panel = QWidget()
@@ -562,6 +1020,28 @@ class PixelChangeApp(QMainWindow):
         self.size_value_label = QLabel("100")
         size_layout.addWidget(self.size_value_label)
         settings_layout.addLayout(size_layout)
+        
+        # Add noise reduction controls to the settings group
+        settings_layout.addSpacing(10)
+        
+        # Add a separator line
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setFrameShadow(QFrame.Shadow.Sunken)
+        separator.setStyleSheet(f"background-color: {self.colors['border']};")
+        settings_layout.addWidget(separator)
+        
+        # Noise reduction settings
+        noise_layout = QHBoxLayout()
+        noise_label = QLabel("noise_reduction:")
+        noise_layout.addWidget(noise_label)
+        
+        self.noise_checkbox = QCheckBox("On")
+        self.noise_checkbox.setChecked(True)
+        self.noise_checkbox.toggled.connect(self.toggle_noise_reduction)
+        noise_layout.addWidget(self.noise_checkbox)
+        
+        settings_layout.addLayout(noise_layout)
         
         # 2. Monitoring group
         monitoring_group = QGroupBox("MONITORING")
@@ -654,79 +1134,11 @@ class PixelChangeApp(QMainWindow):
         self.add_log("Pixel Change Detector initialized")
         self.add_log("Click 'select-region' to begin")
         
-    def _setup_styles(self):
-        """Configure application styling"""
-        # Define color scheme
-        self.colors = {
-            'bg_dark': '#050505',      
-            'bg_term': '#0E0E0E',     
-            'bg_lighter': '#1A1A1A',   
-            'bg_alt': '#191919',      
-            'text': '#F8F5FF',         
-            'text_dim': '#999999',     
-            'accent': '#A280FF',       
-            'green': '#C4E6B5',        
-            'success': '#47D068',      
-            'alert': '#FF4D4D',        
-            'warning': '#FFB940',      
-            'border': '#2A2A2A',       
-        }
+        # Apply specific button styles after components have been created
+        self._apply_specific_styles()
         
-        # Set application-wide stylesheet
-        self.setStyleSheet(f"""
-            QMainWindow, QWidget {{ background-color: {self.colors['bg_dark']}; color: {self.colors['text']}; }}
-            
-            QGroupBox {{ 
-                background-color: {self.colors['bg_dark']}; 
-                color: {self.colors['green']}; 
-                border: 1px solid {self.colors['border']}; 
-                border-radius: 3px; 
-                margin-top: 0.5em;
-                font-weight: bold;
-            }}
-            QGroupBox::title {{ 
-                subcontrol-origin: margin; 
-                left: 10px; 
-                padding: 0 3px;
-            }}
-            
-            QLabel {{ color: {self.colors['text']}; }}
-            
-            QPushButton {{ 
-                background-color: {self.colors['bg_dark']}; 
-                color: {self.colors['green']}; 
-                border: 1px solid {self.colors['border']}; 
-                padding: 5px; 
-                border-radius: 2px;
-            }}
-            QPushButton:hover {{ background-color: {self.colors['bg_lighter']}; }}
-            QPushButton:pressed {{ background-color: {self.colors['bg_alt']}; }}
-            QPushButton:disabled {{ color: {self.colors['text_dim']}; }}
-            
-            QTextEdit {{ 
-                background-color: {self.colors['bg_term']}; 
-                color: {self.colors['text']}; 
-                border: 1px solid {self.colors['border']}; 
-                font-family: Menlo, Consolas, monospace;
-                font-size: 10pt;
-            }}
-            
-            QSlider::groove:horizontal {{
-                border: 1px solid {self.colors['border']};
-                height: 4px;
-                background: {self.colors['bg_term']};
-                margin: 0px;
-                border-radius: 2px;
-            }}
-            QSlider::handle:horizontal {{
-                background: {self.colors['accent']};
-                border: 1px solid {self.colors['accent']};
-                width: 10px;
-                margin: -5px 0;
-                border-radius: 5px;
-            }}
-        """)
-        
+    def _apply_specific_styles(self):
+        """Apply styles to specific UI components"""
         # Set specific button styles
         self.start_button.setStyleSheet(f"""
             QPushButton {{ color: {self.colors['green']}; }}
@@ -762,31 +1174,75 @@ class PixelChangeApp(QMainWindow):
     
     def select_region(self):
         """Open region selection overlay"""
-        # Hide main window temporarily
+        # Hide main window to ensure it's not in the screenshot
         self.hide()
-        time.sleep(0.2)  # Short delay for window transition
+        
+        # Delay to ensure the main window disappears before capturing screen
+        # Longer delay for more reliable fullscreen capture
+        time.sleep(0.5)
+        
+        # Make sure all Qt events are processed before taking the screenshot
+        QApplication.processEvents()
         
         # Create and show region selection dialog
         region_size = self.size_slider.value()
         selection_dialog = RegionSelectionOverlay(None, region_size)
         selection_dialog.region_selected.connect(self.set_region)
         
-        if selection_dialog.exec() == QDialog.DialogCode.Rejected:
+        # Force the selection dialog to stay on top
+        selection_dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        
+        # Show dialog and make it active - fullscreen
+        selection_dialog.showFullScreen()
+        selection_dialog.activateWindow()
+        selection_dialog.raise_()
+        
+        # Use Apple Script to ensure window focus and bring to front (for macOS)
+        try:
+            script = '''
+            tell application "System Events" 
+                set frontmost of every process whose unix id is %d to true
+            end tell
+            ''' % os.getpid()
+            subprocess.run(['osascript', '-e', script], check=True)
+        except Exception as e:
+            print(f"Error focusing window: {e}")
+        
+        result = selection_dialog.exec()
+        
+        if result == QDialog.DialogCode.Rejected:
             self.add_log("Region selection canceled")
             
         # Show main window again
         self.show()
+        self.activateWindow()
+        self.raise_()
     
     def set_region(self, region):
         """Set the selected region"""
-        self.detector.region = region
-        left, top, right, bottom = region
+        # Ensure region coordinates are valid integers
+        left, top, right, bottom = [int(coord) for coord in region]
+        
+        # Calculate dimensions for display
         width = right - left
         height = bottom - top
+        
+        # Validate the region
+        if width <= 0 or height <= 0:
+            self.add_log(f"Invalid region dimensions: {width}x{height}")
+            return
+            
+        # Set the region in the detector
+        self.detector.region = (left, top, right, bottom)
         
         # Update UI
         self.region_info_label.setText(f"region({left},{top},{width}×{height})")
         self.add_log(f"Region selected: ({left},{top}) {width}×{height}")
+        
+        # Capture a reference frame if detector is initialized
+        if self.detector and not self.detector.is_running:
+            self.capture_reference()
+            self.add_log("Initial reference frame captured")
     
     def start_detection(self):
         """Start the detection process"""
@@ -905,6 +1361,12 @@ class PixelChangeApp(QMainWindow):
         # Update display components
         self.monitor_display.update_display(current_frame, diff_frame, current_change)
         self.timeline_plot.update_plot(self.detector.change_history, self.detector.THRESHOLD)
+
+    def toggle_noise_reduction(self, checked):
+        """Toggle noise reduction processing"""
+        if self.detector:
+            self.detector.apply_blur = checked
+            self.add_log(f"Noise reduction {'enabled' if checked else 'disabled'}")
 
 
 def main():
