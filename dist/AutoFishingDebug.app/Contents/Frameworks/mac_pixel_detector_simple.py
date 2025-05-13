@@ -1,0 +1,1 @@
+../Resources/mac_pixel_detector_simple.py

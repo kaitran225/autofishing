@@ -1,0 +1,3 @@
+([('test_permissions',
+   '/Users/anhlam/autofishing/dist/test_permissions',
+   'EXECUTABLE')],)
