@@ -58,14 +58,58 @@ class PixelChangeDetector(QObject):
         self.apply_blur = True
         self.blur_kernel_size = 3
         
+        # Performance optimization
+        self.capture_interval = 0.05  # 50ms between captures (20 fps)
+        self.consecutive_failures = 0
+        self.max_consecutive_failures = 5
+        self.last_successful_capture = 0
+        
+        # Optimization: Use mss context manager only once
+        self.sct = mss.mss()
+        
+        # Action sequence control
+        self.in_action_sequence = False
+        self.action_sequence_step = 0
+        self.action_sequence = [
+            {"action": "press_f", "delay": 0.2},
+            {"action": "wait", "delay": 2.0},
+            {"action": "press_esc", "delay": 0.5},
+            {"action": "wait", "delay": 0.5},
+            {"action": "press_f", "delay": 2.0}
+        ]
+        
     def log(self, message):
         """Log a message"""
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         formatted_message = f"[{timestamp}] {message}"
         self.log_signal.emit(formatted_message)
         
+    def perform_health_check(self):
+        """Check detector health and attempt recovery if needed"""
+        current_time = time.time()
+        
+        # Check if we've had too many consecutive failures
+        if self.consecutive_failures >= self.max_consecutive_failures:
+            self.log("Too many consecutive failures, attempting recovery...")
+            # Reset state
+            self.current_frame = None
+            self.diff_frame = None
+            
+            # Try to recapture reference frame
+            self.capture_reference()
+            
+            # Reset failure counter
+            self.consecutive_failures = 0
+            
+        # Check if we haven't had a successful capture in a while
+        if self.last_successful_capture > 0 and (current_time - self.last_successful_capture) > 5.0:
+            self.log("No successful captures detected, attempting recovery...")
+            self.capture_reference()
+            
+        return True
+    
     def capture_screen(self):
-        """Capture the defined region of the screen"""
+        """Capture the defined region of the screen with optimized performance"""
         try:
             if not self.region:
                 self.log("No region selected")
@@ -75,36 +119,51 @@ class PixelChangeDetector(QObject):
             width = right - left
             height = bottom - top
             
-            with mss.mss() as sct:
-                monitor = {"top": top, "left": left, "width": width, "height": height}
-                screenshot = sct.grab(monitor)
-                frame = np.array(screenshot)
+            # Using reused mss context manager for better performance
+            monitor = {"top": top, "left": left, "width": width, "height": height}
+            screenshot = self.sct.grab(monitor)
+            
+            # Use numpy array with zero copy when possible
+            frame = np.array(screenshot, dtype=np.uint8)
+            
+            # Store color frame for visualization
+            self.color_frame = frame.copy()
+            
+            # Convert to grayscale for processing - more efficient conversion
+            if len(frame.shape) > 2:
+                if frame.shape[2] == 4:  # BGRA format from mss
+                    # Faster grayscale conversion using weighted sum
+                    frame = np.dot(frame[..., :3], [0.114, 0.587, 0.299])
+                else:
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 
-                # Store color frame for visualization
-                self.color_frame = frame.copy()
-                
-                # Convert to grayscale for processing
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2GRAY)
-                
-                # Apply Gaussian blur to reduce noise if enabled
-                if self.apply_blur and self.blur_kernel_size > 0:
-                    frame = cv2.GaussianBlur(frame, (self.blur_kernel_size, self.blur_kernel_size), 0)
-                
-                return frame
+                # Ensure uint8 type
+                frame = frame.astype(np.uint8)
+            
+            # Apply Gaussian blur to reduce noise if enabled - use small kernel for speed
+            if self.apply_blur and self.blur_kernel_size > 0:
+                frame = cv2.GaussianBlur(frame, (self.blur_kernel_size, self.blur_kernel_size), 0)
+            
+            # Update health check variables
+            self.last_successful_capture = time.time()
+            self.consecutive_failures = 0
+            
+            return frame
                 
         except Exception as e:
             self.log(f"Error capturing screen: {e}")
+            self.consecutive_failures += 1
             return None
             
     def calculate_frame_difference(self, frame1, frame2):
-        """Calculate the difference between two frames with improved noise handling"""
+        """Calculate the difference between two frames with improved noise handling and performance"""
         if frame1 is None or frame2 is None:
             return None, 0
             
         # Ensure frames have same dimensions
         if frame1.shape != frame2.shape:
-            # Resize to match
-            frame2 = cv2.resize(frame2, (frame1.shape[1], frame1.shape[0]))
+            # Resize to match - use faster INTER_NEAREST for performance
+            frame2 = cv2.resize(frame2, (frame1.shape[1], frame1.shape[0]), interpolation=cv2.INTER_NEAREST)
             
         # Calculate absolute difference
         diff_frame = cv2.absdiff(frame1, frame2)
@@ -114,13 +173,14 @@ class PixelChangeDetector(QObject):
         _, thresholded_diff = cv2.threshold(diff_frame, threshold_value, 255, cv2.THRESH_BINARY)
         
         # Optional: use morphological operations to reduce noise further
+        # Using smaller kernel and simpler operation for better performance
         kernel = np.ones((2, 2), np.uint8)
         thresholded_diff = cv2.morphologyEx(thresholded_diff, cv2.MORPH_OPEN, kernel)
         
-        # Calculate percentage of pixels that changed significantly
-        changed_pixels = np.sum(thresholded_diff > 0)
-        total_pixels = frame1.shape[0] * frame1.shape[1]
-        change_percent = changed_pixels / total_pixels
+        # Calculate percentage efficiently by counting non-zero pixels
+        non_zero_pixels = cv2.countNonZero(thresholded_diff)
+        total_pixels = frame1.size  # More efficient than shape[0] * shape[1]
+        change_percent = non_zero_pixels / total_pixels
         
         # Store the thresholded difference for visualization
         self.diff_frame = thresholded_diff
@@ -145,6 +205,10 @@ class PixelChangeDetector(QObject):
         self.is_paused = False
         self.stop_requested = False
         self.change_history = []
+        self.consecutive_failures = 0
+        self.last_successful_capture = 0
+        self.in_action_sequence = False
+        self.action_sequence_step = 0
         
         # Capture initial reference frame if none exists
         if self.reference_frame is None:
@@ -178,19 +242,31 @@ class PixelChangeDetector(QObject):
             self.log("Detection resumed")
             
     def _detection_loop(self):
-        """Main detection loop"""
+        """Main detection loop with the action sequence from pixel_change_trigger.py"""
+        # Initialize local variables for performance
+        local_threshold = self.THRESHOLD
+        local_interval = self.capture_interval
+        
         while self.is_running and not self.stop_requested:
             try:
                 # Skip if paused
                 if self.is_paused:
-                    time.sleep(0.1)
+                    time.sleep(local_interval * 2)
+                    continue
+                
+                # Perform health check periodically
+                self.perform_health_check()
+                
+                # Handle action sequence if one is in progress
+                if self.in_action_sequence:
+                    self._process_action_sequence()
                     continue
                     
                 # Capture current frame
                 self.current_frame = self.capture_screen()
                 
                 if self.current_frame is None:
-                    time.sleep(0.1)
+                    time.sleep(local_interval)
                     continue
                     
                 # Determine which frame to compare against
@@ -198,7 +274,7 @@ class PixelChangeDetector(QObject):
                 
                 if compare_frame is None:
                     self.capture_reference()
-                    time.sleep(0.1)
+                    time.sleep(local_interval)
                     continue
                 
                 # Calculate difference
@@ -211,33 +287,107 @@ class PixelChangeDetector(QObject):
                 if len(self.change_history) > 100:
                     self.change_history = self.change_history[-100:]
                     
-                # Emit signal for UI update
-                self.frame_updated.emit()
+                # Emit signal for UI update - but throttle to avoid overwhelming the UI
+                # Only update UI every 100ms (10 fps) regardless of detection speed
+                current_time = time.time()
+                if not hasattr(self, '_last_ui_update') or (current_time - getattr(self, '_last_ui_update', 0)) > 0.1:
+                    self.frame_updated.emit()
+                    self._last_ui_update = current_time
                 
                 # Check for detection with cooldown
-                current_time = time.time()
-                if (change_percent > self.THRESHOLD and 
+                if (change_percent > local_threshold and 
                         (current_time - self.last_detection_time) > self.detection_cooldown):
                     self.log(f"Change detected! {change_percent:.2%}")
                     self.last_detection_time = current_time
                     
-                    # Emit signal to trigger action
+                    # Start the action sequence
+                    self.in_action_sequence = True
+                    self.action_sequence_step = 0
+                    
+                    # Emit signal to trigger UI update
                     self.detection_signal.emit()
                     
-                    # Brief pause after detection
-                    time.sleep(1.0)
+                    # Execute first action immediately
+                    self._process_action_sequence()
+                    continue
                 
-                # Store current frame as previous
+                # Store current frame as previous for next comparison
                 self.previous_frame = self.current_frame
                 
-                # Control capture rate
-                time.sleep(0.05)
+                # Control capture rate - faster loop for better responsiveness
+                time.sleep(local_interval)
                 
             except Exception as e:
                 self.log(f"Error in detection loop: {e}")
-                time.sleep(0.1)
+                self.consecutive_failures += 1
+                time.sleep(local_interval)
                 
+        # Cleanup when loop exits
         self.log("Detection thread exiting")
+        
+    def _process_action_sequence(self):
+        """Process the current step in the action sequence"""
+        if not self.in_action_sequence or self.action_sequence_step >= len(self.action_sequence):
+            self.in_action_sequence = False
+            self.action_sequence_step = 0
+            return
+            
+        # Get the current action
+        action = self.action_sequence[self.action_sequence_step]
+        
+        # Execute the action
+        if action["action"] == "press_f":
+            self.log(f"Action sequence: Pressing F key")
+            self._send_f_key()
+        elif action["action"] == "press_esc":
+            self.log(f"Action sequence: Pressing ESC key")
+            self._send_esc_key()
+        elif action["action"] == "wait":
+            self.log(f"Action sequence: Waiting {action['delay']}s")
+            # No actual action needed for wait
+            pass
+        
+        # Schedule the next action after the delay
+        time.sleep(action["delay"])
+        
+        # Move to next step
+        self.action_sequence_step += 1
+        
+        # If we've reached the end, exit the sequence
+        if self.action_sequence_step >= len(self.action_sequence):
+            self.in_action_sequence = False
+            self.log("Action sequence completed")
+            
+            # Take a new reference frame after completing the sequence
+            self.capture_reference()
+            
+    def _send_f_key(self):
+        """Send F key press using AppleScript"""
+        try:
+            script = '''
+            tell application "System Events"
+                keystroke "f"
+            end tell
+            '''
+            subprocess.run(['osascript', '-e', script], check=True, capture_output=True)
+            return True
+        except Exception as e:
+            self.log(f"Error sending F key: {e}")
+            return False
+            
+    def _send_esc_key(self):
+        """Send ESC key press using AppleScript"""
+        try:
+            script = '''
+            tell application "System Events"
+                key code 53  # ESC key code
+            end tell
+            '''
+            subprocess.run(['osascript', '-e', script], check=True, capture_output=True)
+            return True
+        except Exception as e:
+            self.log(f"Error sending ESC key: {e}")
+            return False
 
 
 class RegionSelectionOverlay(QDialog):
@@ -796,10 +946,22 @@ class MonitoringDisplay(QWidget):
         
         layout.addLayout(status_layout)
         
+        # Pre-allocate reusable image buffers for performance
+        self._last_pixmap = None
+        self._last_display_time = 0
+        self._display_throttle_ms = 50  # Limit updates to 20fps
+        
     def update_display(self, color_frame, diff_frame, change_percent):
-        """Update the display with improved rendering to reduce noise"""
+        """Update the display with improved rendering to reduce noise - optimized for performance"""
         if color_frame is None:
             return
+            
+        # Throttle updates for better performance
+        current_time = time.time() * 1000  # Convert to ms
+        if current_time - self._last_display_time < self._display_throttle_ms:
+            return
+            
+        self._last_display_time = current_time
             
         try:
             # Create a clean copy for display
@@ -810,31 +972,19 @@ class MonitoringDisplay(QWidget):
                 # Convert diff_frame to 3 channel if it's grayscale
                 if len(diff_frame.shape) == 2:
                     # Create a colored mask for changes - using red for visibility
-                    red_mask = np.zeros_like(display_frame)
-                    red_mask[:, :, 0] = diff_frame  # Set the red channel
-                    
-                    # Apply the mask selectively where changes are detected
+                    # Optimized version with fewer operations
                     change_indices = diff_frame > 0
                     if np.any(change_indices):
-                        alpha = 0.7  # Blend factor
-                        display_frame[change_indices] = cv2.addWeighted(
-                            display_frame[change_indices], 
-                            1 - alpha, 
-                            red_mask[change_indices], 
-                            alpha, 
-                            0
-                        )
+                        # Only modify pixels that actually changed
+                        display_frame[change_indices, 0] = 255  # Set red channel to max
+                        # Reduce other channels to make red more prominent
+                        display_frame[change_indices, 1] = display_frame[change_indices, 1] // 2
+                        display_frame[change_indices, 2] = display_frame[change_indices, 2] // 2
             
             # Convert BGR to RGB for proper display
             display_frame_rgb = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
             
-            # Apply slight sharpening to enhance detail
-            sharpen_kernel = np.array([[-1, -1, -1], 
-                                      [-1, 9, -1], 
-                                      [-1, -1, -1]])
-            display_frame_rgb = cv2.filter2D(display_frame_rgb, -1, sharpen_kernel)
-            
-            # Convert to QImage for display
+            # Convert to QImage for display - avoid memory copies when possible
             height, width, channels = display_frame_rgb.shape
             bytes_per_line = channels * width
             
@@ -843,11 +993,28 @@ class MonitoringDisplay(QWidget):
             
             # Scale image to fit label while maintaining aspect ratio
             pixmap = QPixmap.fromImage(q_img)
-            self.image_label.setPixmap(pixmap.scaled(
-                self.image_label.size(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
-            ))
+            
+            # Only rescale if the size changed
+            if (self._last_pixmap is None or 
+                self.image_label.width() != self._last_pixmap.width() or 
+                self.image_label.height() != self._last_pixmap.height()):
+                
+                scaled_pixmap = pixmap.scaled(
+                    self.image_label.size(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.FastTransformation  # Use fast transformation for performance
+                )
+                self._last_pixmap = scaled_pixmap
+            else:
+                # Use cached pixmap size
+                scaled_pixmap = pixmap.scaled(
+                    self._last_pixmap.size(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.FastTransformation
+                )
+                self._last_pixmap = scaled_pixmap
+                
+            self.image_label.setPixmap(self._last_pixmap)
             
             # Update change percentage display
             self.change_label.setText(f"Change: {change_percent:.2%}")
@@ -866,6 +1033,9 @@ class MonitoringDisplay(QWidget):
         elif status == "paused":
             self.status_label.setText("Status: Paused")
             self.status_label.setStyleSheet("color: #FFB940;")  # Yellow
+        elif status == "action_sequence":
+            self.status_label.setText("Status: Action Sequence")
+            self.status_label.setStyleSheet("color: #A280FF;")  # Purple
         else:
             self.status_label.setText(f"Status: {status}")
             self.status_label.setStyleSheet("color: #999999;")  # Gray
@@ -1318,34 +1488,16 @@ class PixelChangeApp(QMainWindow):
         self.detection_count += 1
         self.count_label.setText(f"detections: {self.detection_count}")
         
-        # Run AppleScript to press 'f' key in the active application
-        try:
-            # AppleScript to press 'f' key
-            script = '''
-            tell application "System Events"
-                keystroke "f"
-            end tell
-            '''
-            subprocess.run(['osascript', '-e', script], check=True)
-            self.add_log("Triggered 'f' key press")
-            
-            # After a delay, also send ESC key
-            def delayed_esc():
-                time.sleep(3)
-                esc_script = '''
-                tell application "System Events"
-                    keystroke (ASCII character 27)  # ESC key
-                    delay 0.5
-                    keystroke "f"
-                end tell
-                '''
-                subprocess.run(['osascript', '-e', esc_script], check=True)
-                
-            threading.Thread(target=delayed_esc, daemon=True).start()
-            
-        except subprocess.SubprocessError as e:
-            self.add_log(f"Error triggering key press: {e}")
-    
+        # Update status to show action sequence
+        self.monitor_display.set_status("action_sequence")
+        self.status_label.setText("system:monitor.action_sequence")
+        self.status_label.setStyleSheet(f"color: {self.colors['accent']};")
+        
+        # Add a log message
+        self.add_log(f"Detection #{self.detection_count} - executing action sequence")
+        
+        # Note: The actual key presses are handled by the detector's action sequence
+        
     def update_visualization(self):
         """Update visualization components"""
         if not self.detector:
@@ -1361,6 +1513,12 @@ class PixelChangeApp(QMainWindow):
         # Update display components
         self.monitor_display.update_display(current_frame, diff_frame, current_change)
         self.timeline_plot.update_plot(self.detector.change_history, self.detector.THRESHOLD)
+        
+        # Update status if in action sequence
+        if self.detector.in_action_sequence:
+            step = self.detector.action_sequence_step
+            total_steps = len(self.detector.action_sequence)
+            self.status_label.setText(f"system:monitor.action_sequence ({step}/{total_steps})")
 
     def toggle_noise_reduction(self, checked):
         """Toggle noise reduction processing"""
