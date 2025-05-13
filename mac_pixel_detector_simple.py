@@ -62,6 +62,9 @@ class PixelChangeDetector(QObject):
         self.apply_blur = True
         self.blur_kernel_size = 3
         
+        # Bright background detection
+        self.enhanced_bright_detection = True  # Enable enhanced detection for bright backgrounds
+        
         # Performance optimization - faster capture rate
         self.capture_interval = 0.01  # 10ms between captures (100fps) - decreased from 0.05
         self.consecutive_failures = 0
@@ -75,13 +78,13 @@ class PixelChangeDetector(QObject):
         self.in_action_sequence = False
         self.action_sequence_step = 0
         
-        # Updated action sequence with consistent delay times for each action type
+        # Updated action sequence with longer delays for better detection on bright backgrounds
         self.action_sequence = [
-            {"action": "press_f", "delay": 0.5},
-            {"action": "wait", "delay": 3.0},
-            {"action": "press_esc", "delay": 1.0},
-            {"action": "wait", "delay": 1.0},
-            {"action": "press_f", "delay": 1.0}
+            {"action": "press_f", "delay": 0.0},
+            {"action": "wait", "delay": 4.0},  # Increased from 3.0 to 4.0
+            {"action": "press_esc", "delay": 1.5},  # Increased from 1.0 to 1.5
+            {"action": "wait", "delay": 2.0},  # Increased from 1.0 to 2.0
+            {"action": "press_f", "delay": 2.0}   # Increased from 1.0 to 2.0
         ]
         
     def log(self, message):
@@ -162,7 +165,7 @@ class PixelChangeDetector(QObject):
             return None
             
     def calculate_frame_difference(self, frame1, frame2):
-        """Calculate the difference between two frames with improved noise handling and performance"""
+        """Calculate the difference between two frames with improved handling for bright backgrounds"""
         if frame1 is None or frame2 is None:
             return None, 0
             
@@ -183,12 +186,37 @@ class PixelChangeDetector(QObject):
             frame1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
             frame2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
             
-        # Calculate absolute difference
-        diff_frame = cv2.absdiff(frame1, frame2)
+        # Base threshold value
+        threshold_base = 30  # Default threshold for significant change
         
-        # Apply threshold to create binary difference mask - helps ignore minor noise
-        threshold_value = 30  # Threshold for significant change
-        _, thresholded_diff = cv2.threshold(diff_frame, threshold_value, 255, cv2.THRESH_BINARY)
+        if self.enhanced_bright_detection:
+            # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to improve contrast
+            # This helps with detecting changes in bright backgrounds
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            frame1_eq = clahe.apply(frame1)
+            frame2_eq = clahe.apply(frame2)
+                
+            # Calculate absolute difference from contrast-enhanced images
+            diff_frame = cv2.absdiff(frame1_eq, frame2_eq)
+            
+            # Identify bright areas
+            bright_mask = frame1 > 180
+            
+            # Apply the adaptive threshold to get binary difference
+            _, thresholded_diff = cv2.threshold(diff_frame, threshold_base, 255, cv2.THRESH_BINARY)
+            
+            # Additional processing for bright regions to enhance sensitivity
+            if np.any(bright_mask):
+                # Apply a more sensitive threshold to bright areas
+                bright_diff = cv2.bitwise_and(diff_frame, diff_frame, mask=bright_mask.astype(np.uint8) * 255)
+                _, bright_thresh = cv2.threshold(bright_diff, threshold_base // 2, 255, cv2.THRESH_BINARY)
+                
+                # Combine normal threshold with enhanced bright area threshold
+                thresholded_diff = cv2.bitwise_or(thresholded_diff, bright_thresh)
+        else:
+            # Standard detection method
+            diff_frame = cv2.absdiff(frame1, frame2)
+            _, thresholded_diff = cv2.threshold(diff_frame, threshold_base, 255, cv2.THRESH_BINARY)
         
         # Optional: use morphological operations to reduce noise further
         # Using smaller kernel and simpler operation for better performance
@@ -345,11 +373,12 @@ class PixelChangeDetector(QObject):
                     self.in_action_sequence = True
                     self.action_sequence_step = 0
                     
-                    # Emit signal to trigger UI update
+                    # Execute first action immediately without delay
+                    self._process_action_sequence()
+                    
+                    # Emit signal to trigger UI update AFTER first action is already processed
                     self.detection_signal.emit()
                     
-                    # Execute first action immediately
-                    self._process_action_sequence()
                     continue
                 
                 # Store current frame as previous for next comparison
@@ -376,19 +405,28 @@ class PixelChangeDetector(QObject):
         # Get the current action
         action = self.action_sequence[self.action_sequence_step]
         
-        # Execute the action
-        if action["action"] == "press_f":
-            self.log(f"Action sequence: Pressing F key")
-            self._send_f_key()
-        elif action["action"] == "press_esc":
-            self.log(f"Action sequence: Pressing ESC key")
-            self._send_esc_key()
-        elif action["action"] == "wait":
-            self.log(f"Action sequence: Waiting {action['delay']}s")
-            # No actual action needed for wait
-            pass
+        # Execute the action based on type
+        action_type = action["action"]
         
-        # Schedule the next action after the delay
+        # Special case for first F key press (step 0) - execute immediately with high priority
+        if self.action_sequence_step == 0 and action_type == "press_f":
+            self.log(f"Action sequence: Pressing F key (IMMEDIATE)")
+            # Execute F key press with high priority
+            self._send_f_key()
+        else:
+            # Normal action execution
+            if action_type == "press_f":
+                self.log(f"Action sequence: Pressing F key")
+                self._send_f_key()
+            elif action_type == "press_esc":
+                self.log(f"Action sequence: Pressing ESC key")
+                self._send_esc_key()
+            elif action_type == "wait":
+                self.log(f"Action sequence: Waiting {action['delay']}s")
+                # No actual action needed for wait
+                pass
+        
+        # Wait for the specified delay AFTER executing the action
         time.sleep(action["delay"])
         
         # Move to next step
@@ -407,55 +445,53 @@ class PixelChangeDetector(QObject):
         try:
             # Create a more targeted focus script if we have window details
             if self.game_process_name and self.game_window_name:
-                focus_script = f'''
+                # Integrated focus and keypress in a single AppleScript for maximum responsiveness
+                focus_key_script = f'''
                 tell application "System Events"
                     tell process "{self.game_process_name}"
                         set frontmost to true
                         tell window "{self.game_window_name}"
                             perform action "AXRaise"
                         end tell
+                        # Immediate key press after focus, no delay
+                        key code 3 # "f" key
                     end tell
-                    delay 0.2
                 end tell
                 '''
             else:
-                # Fallback to generic window search
-                focus_script = '''
+                # Fallback with integrated focus and key press
+                focus_key_script = '''
                 tell application "System Events"
-                    set frontApp to first application process whose frontmost is true
-                    set frontAppName to name of frontApp
-                    
                     # Try to find and focus on the game window
-                    set targetApp to "PLAY TOGETHER"
-                    
-                    # Look for window with PLAY TOGETHER in the title
+                    set targetFound to false
                     repeat with proc in application processes
                         if exists (windows of proc) then
                             repeat with w in windows of proc
                                 if name of w contains "PLAY TOGETHER" or name of w contains "Play Together" then
                                     set frontmost of proc to true
                                     perform action "AXRaise" of w
-                                    delay 0.2
+                                    set targetFound to true
                                     exit repeat
                                 end if
                             end repeat
                         end if
+                        if targetFound then
+                            # Immediate key press after focus found
+                            key code 3 # "f" key
+                            exit repeat
+                        end if
                     end repeat
+                    
+                    # If no specific window found, just send the key anyway
+                    if not targetFound then
+                        key code 3 # "f" key
+                    end if
                 end tell
                 '''
                 
-            # Execute the focus script
-            subprocess.run(['osascript', '-e', focus_script], check=True, capture_output=True)
-            self.log("Focused on game window")
-            
-            # Now send the F key
-            key_script = '''
-            tell application "System Events"
-                key code 3 -- "f" key
-            end tell
-            '''
-            subprocess.run(['osascript', '-e', key_script], check=True, capture_output=True)
-            self.log("F key sent to game")
+            # Execute the integrated focus+key script as a single operation
+            subprocess.run(['osascript', '-e', focus_key_script], check=True, capture_output=True)
+            self.log("F key sent to game (instant)")
             return True
         except Exception as e:
             self.log(f"Error sending F key: {e}")
@@ -1179,6 +1215,9 @@ class MonitoringDisplay(QWidget):
             'text': '#FFFFFF',         # White text
         }
         
+        # Initialize bright mode tracking
+        self.bright_mode_enabled = True
+        
         # Create layout
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1257,6 +1296,13 @@ class MonitoringDisplay(QWidget):
             # Convert BGR to RGB for proper display
             display_frame_rgb = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
             
+            # Add a small indicator for bright detection mode if enabled
+            if hasattr(self, 'bright_mode_enabled') and self.bright_mode_enabled:
+                # Add a small "B" indicator in the bottom right corner
+                height, width = display_frame_rgb.shape[:2]
+                cv2.putText(display_frame_rgb, "BRIGHT", (width-70, height-10), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 200, 255), 1, cv2.LINE_AA)
+            
             # Convert to QImage for display - avoid memory copies when possible
             height, width, channels = display_frame_rgb.shape
             bytes_per_line = channels * width
@@ -1312,6 +1358,10 @@ class MonitoringDisplay(QWidget):
         else:
             self.status_label.setText(f"Status: {status}")
             self.status_label.setStyleSheet(f"color: {self.colors['text']}; font-weight: 500; font-size: 12px;")
+            
+    def set_bright_mode(self, enabled):
+        """Set whether bright detection mode is enabled"""
+        self.bright_mode_enabled = enabled
 
 
 class PixelChangeApp(QMainWindow):
@@ -1553,6 +1603,20 @@ class PixelChangeApp(QMainWindow):
         
         settings_layout.addLayout(noise_layout)
         
+        # Bright background detection settings
+        bright_layout = QHBoxLayout()
+        bright_layout.setSpacing(10)
+        bright_label = QLabel("Bright Detection:")
+        bright_label.setStyleSheet(f"color: {self.colors['text_dim']};")
+        bright_layout.addWidget(bright_label)
+        
+        self.bright_checkbox = QCheckBox("Enhanced")
+        self.bright_checkbox.setChecked(True)
+        self.bright_checkbox.toggled.connect(self.toggle_bright_detection)
+        bright_layout.addWidget(self.bright_checkbox)
+        
+        settings_layout.addLayout(bright_layout)
+        
         # 2. Monitoring group - macOS style
         monitoring_group = QGroupBox("Monitoring")
         monitoring_layout = QVBoxLayout(monitoring_group)
@@ -1735,6 +1799,9 @@ class PixelChangeApp(QMainWindow):
         self.add_log("Pixel Change Detector initialized")
         self.add_log("macOS Modern UI Theme")
         self.add_log("Click 'Select Region' to begin")
+        
+        # Set initial state of bright detection in monitor display
+        self.monitor_display.set_bright_mode(self.detector.enhanced_bright_detection)
     
     def update_threshold(self):
         """Update threshold value from slider"""
@@ -1956,6 +2023,16 @@ class PixelChangeApp(QMainWindow):
         if self.detector:
             self.detector.apply_blur = checked
             self.add_log(f"Noise reduction {'enabled' if checked else 'disabled'}")
+    
+    def toggle_bright_detection(self, checked):
+        """Toggle enhanced bright detection"""
+        if self.detector:
+            self.detector.enhanced_bright_detection = checked
+            self.monitor_display.set_bright_mode(checked)
+            self.add_log(f"Enhanced bright detection {'enabled' if checked else 'disabled'}")
+            
+            # Update visualization to show the indicator immediately
+            self.update_visualization()
 
 
 def main():
