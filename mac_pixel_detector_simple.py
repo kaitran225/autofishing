@@ -36,6 +36,10 @@ class PixelChangeDetector(QObject):
         # Screen capture region
         self.region = None  # (left, top, right, bottom)
         
+        # Game window info for focusing
+        self.game_process_name = ""
+        self.game_window_name = "PLAY TOGETHER"
+        
         # Frames for comparison
         self.current_frame = None
         self.previous_frame = None
@@ -229,6 +233,10 @@ class PixelChangeDetector(QObject):
         self.in_action_sequence = False
         self.action_sequence_step = 0
         
+        # Try to find the game window if we don't have its info yet
+        if not self.game_process_name or not self.game_window_name:
+            self.find_game_window()
+        
         # Always clear and recapture the reference frame when starting
         self.reference_frame = None
         self.log("Capturing new reference frame...")
@@ -395,31 +403,159 @@ class PixelChangeDetector(QObject):
             self.capture_reference()
             
     def _send_f_key(self):
-        """Send F key press using AppleScript"""
+        """Send F key press using AppleScript with game focus"""
         try:
-            script = '''
+            # Create a more targeted focus script if we have window details
+            if self.game_process_name and self.game_window_name:
+                focus_script = f'''
+                tell application "System Events"
+                    tell process "{self.game_process_name}"
+                        set frontmost to true
+                        tell window "{self.game_window_name}"
+                            perform action "AXRaise"
+                        end tell
+                    end tell
+                    delay 0.2
+                end tell
+                '''
+            else:
+                # Fallback to generic window search
+                focus_script = '''
+                tell application "System Events"
+                    set frontApp to first application process whose frontmost is true
+                    set frontAppName to name of frontApp
+                    
+                    # Try to find and focus on the game window
+                    set targetApp to "PLAY TOGETHER"
+                    
+                    # Look for window with PLAY TOGETHER in the title
+                    repeat with proc in application processes
+                        if exists (windows of proc) then
+                            repeat with w in windows of proc
+                                if name of w contains "PLAY TOGETHER" or name of w contains "Play Together" then
+                                    set frontmost of proc to true
+                                    perform action "AXRaise" of w
+                                    delay 0.2
+                                    exit repeat
+                                end if
+                            end repeat
+                        end if
+                    end repeat
+                end tell
+                '''
+                
+            # Execute the focus script
+            subprocess.run(['osascript', '-e', focus_script], check=True, capture_output=True)
+            self.log("Focused on game window")
+            
+            # Now send the F key
+            key_script = '''
             tell application "System Events"
                 key code 3 -- "f" key
             end tell
             '''
-            subprocess.run(['osascript', '-e', script], check=True, capture_output=True)
+            subprocess.run(['osascript', '-e', key_script], check=True, capture_output=True)
+            self.log("F key sent to game")
             return True
         except Exception as e:
             self.log(f"Error sending F key: {e}")
             return False
             
     def _send_esc_key(self):
-        """Send ESC key press using AppleScript"""
+        """Send ESC key press using AppleScript with game focus"""
         try:
-            script = '''
+            # Create a more targeted focus script if we have window details
+            if self.game_process_name and self.game_window_name:
+                focus_script = f'''
+                tell application "System Events"
+                    tell process "{self.game_process_name}"
+                        set frontmost to true
+                        tell window "{self.game_window_name}"
+                            perform action "AXRaise"
+                        end tell
+                    end tell
+                    delay 0.2
+                end tell
+                '''
+            else:
+                # Fallback to generic window search
+                focus_script = '''
+                tell application "System Events"
+                    set frontApp to first application process whose frontmost is true
+                    set frontAppName to name of frontApp
+                    
+                    # Try to find and focus on the game window
+                    set targetApp to "PLAY TOGETHER"
+                    
+                    # Look for window with PLAY TOGETHER in the title
+                    repeat with proc in application processes
+                        if exists (windows of proc) then
+                            repeat with w in windows of proc
+                                if name of w contains "PLAY TOGETHER" or name of w contains "Play Together" then
+                                    set frontmost of proc to true
+                                    perform action "AXRaise" of w
+                                    delay 0.2
+                                    exit repeat
+                                end if
+                            end repeat
+                        end if
+                    end repeat
+                end tell
+                '''
+                
+            # Execute the focus script
+            subprocess.run(['osascript', '-e', focus_script], check=True, capture_output=True)
+            self.log("Focused on game window")
+            
+            # Now send the ESC key
+            key_script = '''
             tell application "System Events"
                 key code 53  -- ESC key code
             end tell
             '''
-            subprocess.run(['osascript', '-e', script], check=True, capture_output=True)
+            subprocess.run(['osascript', '-e', key_script], check=True, capture_output=True)
+            self.log("ESC key sent to game")
             return True
         except Exception as e:
             self.log(f"Error sending ESC key: {e}")
+            return False
+
+    def find_game_window(self):
+        """Try to find the game window"""
+        try:
+            # AppleScript to find windows with PLAY TOGETHER in the title
+            script = '''
+            tell application "System Events"
+                set windowInfo to {}
+                repeat with proc in application processes
+                    set procName to name of proc
+                    repeat with w in windows of proc
+                        if name of w contains "PLAY TOGETHER" or name of w contains "Play Together" or name of w contains "play together" then
+                            set winName to name of w
+                            return {procName, winName}
+                        end if
+                    end repeat
+                end repeat
+                return ""
+            end tell
+            '''
+            
+            result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True, check=False)
+            output = result.stdout.strip()
+            
+            if output:
+                values = output.split(", ")
+                if len(values) >= 2:
+                    self.game_process_name = values[0]
+                    self.game_window_name = values[1]
+                    self.log(f"Found game window: {self.game_window_name} ({self.game_process_name})")
+                    return True
+                    
+            self.log("Game window not found. Will use generic search during keystroke sending.")
+            return False
+            
+        except Exception as e:
+            self.log(f"Error finding game window: {e}")
             return False
 
 
@@ -613,16 +749,18 @@ class RegionSelectionOverlay(QDialog):
     def find_play_together_window(self):
         """Try to find the PLAY TOGETHER game window using AppleScript"""
         try:
-            # AppleScript to find windows with PLAY TOGETHER in the title
+            # AppleScript to find windows with PLAY TOGETHER in the title and get more details
             script = '''
             tell application "System Events"
-                set allWindows to {}
-                repeat with proc in processes
+                set windowInfo to {}
+                repeat with proc in application processes
+                    set procName to name of proc
                     repeat with w in windows of proc
                         if name of w contains "PLAY TOGETHER" or name of w contains "Play Together" or name of w contains "play together" then
                             set winPos to position of w
                             set winSize to size of w
-                            return {item 1 of winPos, item 2 of winPos, item 1 of winSize, item 2 of winSize}
+                            set winName to name of w
+                            return {item 1 of winPos, item 2 of winPos, item 1 of winSize, item 2 of winSize, procName, winName}
                         end if
                     end repeat
                 end repeat
@@ -633,30 +771,42 @@ class RegionSelectionOverlay(QDialog):
             result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True, check=False)
             if result.stdout.strip():
                 try:
-                    # Parse the result into left, top, width, height
-                    values = [int(x) for x in result.stdout.strip().split(", ")]
-                    if len(values) == 4:
-                        left, top, width, height = values
+                    # Parse the result: left, top, width, height, process name, window name
+                    values = result.stdout.strip().split(", ")
+                    if len(values) >= 4:
+                        left = int(values[0])
+                        top = int(values[1])
+                        width = int(values[2])
+                        height = int(values[3])
+                        
+                        # Store process name and window name if available
+                        self.play_together_proc = values[4] if len(values) > 4 else ""
+                        self.play_together_name = values[5] if len(values) > 5 else "PLAY TOGETHER"
+                        
                         self.play_together_rect = QRect(left, top, width, height)
+                        print(f"Found game window: {self.play_together_name} ({self.play_together_proc}) at {left},{top} size {width}x{height}")
                         return True
                 except Exception as e:
                     print(f"Error parsing window dimensions: {e}")
                     
-            # Alternative approach if the above fails - try to find by window title
+            # Alternative approach - try to list all windows for debugging
             script2 = '''
             tell application "System Events"
-                set windowNames to {}
-                repeat with proc in processes
+                set allWindows to {}
+                repeat with proc in application processes
+                    set procName to name of proc
                     repeat with w in windows of proc
-                        set windowNames to windowNames & name of w
+                        set winName to name of w
+                        set entry to procName & ": " & winName
+                        set allWindows to allWindows & entry & return
                     end repeat
                 end repeat
-                return windowNames
+                return allWindows
             end tell
             '''
             
             result2 = subprocess.run(['osascript', '-e', script2], capture_output=True, text=True, check=False)
-            print(f"Window titles: {result2.stdout}")
+            print(f"Available windows: {result2.stdout}")
             
             return False
         except Exception as e:
@@ -1617,16 +1767,16 @@ class PixelChangeApp(QMainWindow):
         
         # Create and show region selection dialog
         region_size = self.size_slider.value()
-        selection_dialog = RegionSelectionOverlay(None, region_size)
-        selection_dialog.region_selected.connect(self.set_region)
+        self.selection_dialog = RegionSelectionOverlay(None, region_size)
+        self.selection_dialog.region_selected.connect(self.set_region)
         
         # Force the selection dialog to stay on top
-        selection_dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        self.selection_dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         
         # Show dialog and make it active - fullscreen
-        selection_dialog.showFullScreen()
-        selection_dialog.activateWindow()
-        selection_dialog.raise_()
+        self.selection_dialog.showFullScreen()
+        self.selection_dialog.activateWindow()
+        self.selection_dialog.raise_()
         
         # Use Apple Script to ensure window focus and bring to front (for macOS)
         try:
@@ -1639,7 +1789,7 @@ class PixelChangeApp(QMainWindow):
         except Exception as e:
             print(f"Error focusing window: {e}")
         
-        result = selection_dialog.exec()
+        result = self.selection_dialog.exec()
         
         if result == QDialog.DialogCode.Rejected:
             self.add_log("Region selection canceled")
@@ -1665,6 +1815,15 @@ class PixelChangeApp(QMainWindow):
             
         # Set the region in the detector
         self.detector.region = (left, top, right, bottom)
+        
+        # Share game window info if available
+        if hasattr(self.selection_dialog, 'play_together_proc') and self.selection_dialog.play_together_proc:
+            self.detector.game_process_name = self.selection_dialog.play_together_proc
+            self.add_log(f"Game process identified: {self.detector.game_process_name}")
+            
+        if hasattr(self.selection_dialog, 'play_together_name') and self.selection_dialog.play_together_name:
+            self.detector.game_window_name = self.selection_dialog.play_together_name
+            self.add_log(f"Game window identified: {self.detector.game_window_name}")
         
         # Update UI
         self.region_info_label.setText(f"region({left},{top},{width}×{height})")
