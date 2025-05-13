@@ -76,7 +76,7 @@ class PixelChangeDetector(QObject):
             {"action": "press_f", "delay": 2.0},
             {"action": "wait", "delay": 3.0},
             {"action": "press_esc", "delay": 1.0},
-            {"action": "wait", "delay": 1.5},
+            {"action": "wait", "delay": 1.0},
             {"action": "press_f", "delay": 1.0}
         ]
         
