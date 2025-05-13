@@ -1377,11 +1377,11 @@ class PixelChangeApp(QMainWindow):
         
         self.size_slider = QSlider(Qt.Orientation.Horizontal)
         self.size_slider.setRange(20, 200)  # 20 to 200 pixels
-        self.size_slider.setValue(100)      # Default 100
+        self.size_slider.setValue(50)      # Default 100
         self.size_slider.valueChanged.connect(self.update_size_label)
         size_layout.addWidget(self.size_slider)
         
-        self.size_value_label = QLabel("100")
+        self.size_value_label = QLabel("50")
         self.size_value_label.setStyleSheet(f"color: {self.colors['text_dim']};")
         size_layout.addWidget(self.size_value_label)
         settings_layout.addLayout(size_layout)
