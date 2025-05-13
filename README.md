@@ -1,6 +1,6 @@
 # AutoFishing
 
-A macOS application for automatically detecting pixel changes on screen and triggering keyboard actions. Perfect for automating fishing in games.
+A cross-platform application for automatically detecting pixel changes on screen and triggering keyboard actions. Perfect for automating fishing in games.
 
 ## Features
 
@@ -8,42 +8,59 @@ A macOS application for automatically detecting pixel changes on screen and trig
 - Customizable detection threshold
 - Real-time visualization of changes
 - Automatic keyboard actions when change is detected
-- Modern macOS UI design with Matcha Wood theme
+- Support for both Windows and macOS
+
+## Platform Support
+
+- **Windows**: Full support with a terminal-inspired modern UI
+- **macOS**: Full support with a modern macOS UI design
 
 ## Installation
 
-1. Download the `AutoFishing.app` file
-2. Move it to your Applications folder
-3. When first running the app, you will need to right-click and select "Open" to bypass Gatekeeper
+### Pre-built Binaries
+1. Download the latest release for your operating system
+2. For macOS: Move `AutoFishing.app` to your Applications folder
+3. For Windows: Extract the zip file and run the executable
+
+### Running from Source
+1. Clone this repository
+2. Install dependencies: `pip install -r requirements.txt`
+3. Run `python autofishing.py` (automatically selects correct version for your OS)
 
 ## Required Permissions
 
+### macOS
 This app requires the following macOS permissions to function properly:
 
 1. **Screen Recording Permission**: To detect pixel changes on screen
-   - When prompted, allow AutoFishing to record your screen
-   - If not prompted, go to System Preferences → Security & Privacy → Privacy → Screen Recording and enable AutoFishing
-
 2. **Accessibility Permission**: To send keyboard commands
-   - When prompted, allow AutoFishing to control your computer
-   - If not prompted, go to System Preferences → Security & Privacy → Privacy → Accessibility and enable AutoFishing
+
+### Windows
+This app requires:
+
+1. **Administrator privileges**: May be required for some keyboard actions
+2. **No special firewall permissions**: The app does not connect to the internet
 
 ## Usage
 
 1. Launch the application
 2. Click "Select Region" to select the area of the screen to monitor (fishing float/bobber)
 3. Adjust the threshold as needed (lower values = more sensitive)
-4. Enable "Enhanced Bright Detection" for bright backgrounds
-5. Click "Start" to begin monitoring
-6. The app will automatically press F when a change is detected, wait for a bite, press ESC if no bite, then cast again
+4. Click "Start" to begin monitoring
+5. The app will automatically press F when a change is detected, wait for a bite, press ESC if no bite, then cast again
+
+## Project Structure
+
+- `autofishing.py` - Main entry point that detects OS and launches appropriate version
+- `src/windows` - Windows-specific implementation
+- `src/mac` - macOS-specific implementation
 
 ## Troubleshooting
 
 If the application quits unexpectedly:
 
 1. Make sure you've granted all required permissions
-2. Open Terminal and run: `open -a AutoFishing.app` to see any error messages
-3. Try running the test version: `open -a AutoFishingDebug.app`
+2. Try running from the command line to see error messages
 
 ## Support
 
@@ -57,12 +74,22 @@ MIT License
 
 If you want to build the application from source:
 
+### macOS
 ```bash
 # Install dependencies
-pip install pyinstaller numpy pyautogui mss opencv-python pillow matplotlib PyQt6
+pip install -r requirements.txt
 
 # Build the application
-pyinstaller autofishing.spec
+pyinstaller autofishing_mac.spec
+```
+
+### Windows
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Build the application
+pyinstaller autofishing_windows.spec
 ```
 
 The compiled app will be in the `dist` folder. 
