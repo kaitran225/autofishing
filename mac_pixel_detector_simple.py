@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QSlider, QFrame, QSplitter, QTextEdit,
     QGroupBox, QMessageBox, QDialog, QDialogButtonBox, QCheckBox
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QRect, QPoint, QSize, QThread, QObject
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QRect, QPoint, QSize, QThread, QObject, QRectF
 from PyQt6.QtGui import QPixmap, QPainter, QColor, QPen, QImage, QFont, QPainterPath
 import os
 
@@ -215,9 +215,11 @@ class PixelChangeDetector(QObject):
     
     def start_detection(self):
         """Start the detection process"""
-        if self.is_running:
+        if not self.region:
+            self.log("You must select a region first")
             return
             
+        # Set running state
         self.is_running = True
         self.is_paused = False
         self.stop_requested = False
@@ -228,7 +230,7 @@ class PixelChangeDetector(QObject):
         self.action_sequence_step = 0
         
         # Always clear and recapture the reference frame when starting
-        self.reference_frame = None 
+        self.reference_frame = None
         self.log("Capturing new reference frame...")
         if not self.capture_reference():
             self.log("Failed to capture reference frame. Please check region selection.")
@@ -252,11 +254,22 @@ class PixelChangeDetector(QObject):
         if self.detection_thread and self.detection_thread.is_alive():
             self.detection_thread.join(timeout=1.0)
             
+        # Reset state
+        self.is_running = False
+        self.is_paused = False
+        self.stop_requested = False
+        self.change_history = []
+        self.consecutive_failures = 0
+        self.last_successful_capture = 0
+        self.in_action_sequence = False
+        self.action_sequence_step = 0
+            
         self.log("Detection stopped")
-        
+    
     def toggle_pause(self):
         """Pause or resume detection"""
         self.is_paused = not self.is_paused
+        
         if self.is_paused:
             self.log("Detection paused")
         else:
@@ -386,7 +399,7 @@ class PixelChangeDetector(QObject):
         try:
             script = '''
             tell application "System Events"
-                keystroke "f"
+                key code 3 -- "f" key
             end tell
             '''
             subprocess.run(['osascript', '-e', script], check=True, capture_output=True)
@@ -400,7 +413,7 @@ class PixelChangeDetector(QObject):
         try:
             script = '''
             tell application "System Events"
-                key code 53  # ESC key code
+                key code 53  -- ESC key code
             end tell
             '''
             subprocess.run(['osascript', '-e', script], check=True, capture_output=True)
@@ -444,15 +457,15 @@ class RegionSelectionOverlay(QDialog):
             self.box_height
         )
         
-        # Matcha wood theme colors
+        # Modern macOS theme colors
         self.colors = {
-            'bg': QColor(44, 54, 57, 90),          # Dark background with transparency
-            'wood': QColor(162, 123, 92, 200),     # Wood accent
-            'matcha': QColor(160, 196, 157, 255),  # Medium matcha green
-            'matcha_light': QColor(218, 229, 208, 255),  # Light matcha
-            'matcha_dark': QColor(125, 143, 105, 255),   # Dark matcha
-            'text': QColor(255, 255, 255, 255),    # White text
-            'border': QColor(160, 196, 157, 180)   # Border color with transparency
+            'bg_overlay': QColor(25, 25, 25, 150),     # Dark background with transparency
+            'bg_medium': QColor(53, 54, 57, 220),      # Medium background with transparency
+            'accent_blue': QColor(10, 132, 255, 255),  # macOS blue accent
+            'accent_blue_light': QColor(50, 172, 255, 200), # Lighter blue
+            'accent_green': QColor(48, 209, 88, 255),  # macOS green
+            'text': QColor(255, 255, 255, 255),        # White text
+            'border': QColor(90, 90, 95, 180)          # Border color with transparency
         }
         
         # For finding "PLAY TOGETHER" window
@@ -559,37 +572,39 @@ class RegionSelectionOverlay(QDialog):
             return None
     
     def _init_ui(self):
-        """Initialize the UI components with matcha wood theme"""
+        """Initialize the UI components with modern macOS theme"""
         # Add label with instructions
         self.instructions = QLabel("Click and drag to move selection box. Release to place. (ESC to cancel)", self)
         self.instructions.setStyleSheet("""
             color: white; 
-            background-color: rgba(125, 143, 105, 180); 
-            padding: 10px;
-            border-radius: 8px;
+            background-color: rgba(53, 54, 57, 220); 
+            padding: 12px;
+            border-radius: 10px;
             font-family: Helvetica, Arial, sans-serif;
             font-weight: 500;
+            font-size: 13px;
         """)
         self.instructions.setGeometry(
             (self.screen_width - 500) // 2,  # Center horizontally
             30,  # Position from top
             500,  # Width
-            36   # Height
+            40   # Height
         )
         self.instructions.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         # Add "Position on PLAY TOGETHER" button
         self.play_together_button = QPushButton("Position on PLAY TOGETHER", self)
         self.play_together_button.setStyleSheet("""
-            background-color: rgba(160, 196, 157, 220); 
-            color: rgba(44, 54, 57, 255); 
+            background-color: rgba(10, 132, 255, 220); 
+            color: white; 
             border: none; 
-            padding: 8px 16px;
-            border-radius: 8px;
+            padding: 10px 16px;
+            border-radius: 10px;
             font-family: Helvetica, Arial, sans-serif;
             font-weight: 500;
+            font-size: 13px;
         """)
-        self.play_together_button.setGeometry(self.screen_width - 230, 70, 200, 40)
+        self.play_together_button.setGeometry(self.screen_width - 250, 70, 220, 40)
         self.play_together_button.clicked.connect(self.position_on_play_together)
         
         # Show button only if PLAY TOGETHER window was found
@@ -682,7 +697,7 @@ class RegionSelectionOverlay(QDialog):
             print(f"Error focusing window: {e}")
         
     def paintEvent(self, event):
-        """Draw the selection overlay with matcha wood theme"""
+        """Draw the selection overlay with modern macOS theme"""
         painter = QPainter(self)
         
         # Set up rendering hints for better quality
@@ -696,10 +711,10 @@ class RegionSelectionOverlay(QDialog):
                              QRect(0, 0, self.background_pixmap.width(), self.background_pixmap.height()))
             
             # Apply a slight darkening overlay
-            painter.fillRect(target_rect, QColor(44, 54, 57, 80))  # Dark teal overlay
+            painter.fillRect(target_rect, QColor(25, 25, 25, 100))  # Dark overlay
         else:
             # Fallback to a semi-transparent background if no screenshot
-            painter.fillRect(self.rect(), self.colors['bg'])
+            painter.fillRect(self.rect(), self.colors['bg_overlay'])
         
         # Highlight PLAY TOGETHER window if found
         if self.play_together_rect is not None:
@@ -709,8 +724,8 @@ class RegionSelectionOverlay(QDialog):
                 self.play_together_rect.width(),
                 self.play_together_rect.height()
             )
-            painter.fillRect(play_together_highlight, QColor(160, 196, 157, 30))  # Matcha green highlight
-            painter.setPen(QPen(self.colors['matcha'], 2, Qt.PenStyle.DashLine))
+            painter.fillRect(play_together_highlight, QColor(10, 132, 255, 30))  # Blue highlight
+            painter.setPen(QPen(self.colors['accent_blue'], 2, Qt.PenStyle.DashLine))
             painter.drawRect(play_together_highlight)
             
             # Display a label identifying the window
@@ -720,9 +735,9 @@ class RegionSelectionOverlay(QDialog):
                 self.play_together_rect.width(), 
                 30
             )
-            painter.fillRect(game_label_rect, QColor(44, 54, 57, 180))  # Dark teal background
-            painter.setPen(self.colors['matcha'])
-            painter.setFont(QFont("Helvetica", 9, QFont.Weight.Medium))
+            painter.fillRect(game_label_rect, QColor(53, 54, 57, 220))  # Dark background
+            painter.setPen(self.colors['accent_blue'])
+            painter.setFont(QFont("Helvetica", 10, QFont.Weight.Medium))
             painter.drawText(game_label_rect, Qt.AlignmentFlag.AlignCenter, "PLAY TOGETHER WINDOW")
         
         # Draw dimmed rectangle around the selection area to highlight it
@@ -730,37 +745,37 @@ class RegionSelectionOverlay(QDialog):
         # Top area
         painter.fillRect(
             QRect(0, 0, self.screen_width, self.box_rect.top()),
-            QColor(44, 54, 57, 120)  # Dark teal with transparency
+            QColor(25, 25, 25, 150)  # Dark with transparency
         )
         # Bottom area
         painter.fillRect(
             QRect(0, self.box_rect.bottom() + 1, self.screen_width, self.screen_height - self.box_rect.bottom() - 1),
-            QColor(44, 54, 57, 120)
+            QColor(25, 25, 25, 150)
         )
         # Left area
         painter.fillRect(
             QRect(0, self.box_rect.top(), self.box_rect.left(), self.box_rect.height()),
-            QColor(44, 54, 57, 120)
+            QColor(25, 25, 25, 150)
         )
         # Right area
         painter.fillRect(
             QRect(self.box_rect.right() + 1, self.box_rect.top(), 
                   self.screen_width - self.box_rect.right() - 1, self.box_rect.height()),
-            QColor(44, 54, 57, 120)
+            QColor(25, 25, 25, 150)
         )
         
-        # Draw crosshairs - matcha green
-        painter.setPen(QPen(self.colors['matcha'], 1, Qt.PenStyle.DashLine))
+        # Draw crosshairs - blue accent
+        painter.setPen(QPen(self.colors['accent_blue'], 1, Qt.PenStyle.DashLine))
         painter.drawLine(0, self.mouse_pos.y(), self.screen_width, self.mouse_pos.y())
         painter.drawLine(self.mouse_pos.x(), 0, self.mouse_pos.x(), self.screen_height)
         
         # Ensure box stays within screen bounds
         self.constrain_box_to_screen()
         
-        # Draw selection box border - matcha green with wood accent
-        outer_pen = QPen(self.colors['matcha'], 2)
+        # Draw selection box border - blue accent
+        outer_pen = QPen(self.colors['accent_blue'], 2)
         painter.setPen(outer_pen)
-        painter.drawRoundedRect(self.box_rect, 8, 8)  # Rounded corners
+        painter.drawRoundedRect(self.box_rect, 10, 10)  # Rounded corners
         
         # Add a second, inner border for better visibility
         inner_rect = QRect(
@@ -769,14 +784,14 @@ class RegionSelectionOverlay(QDialog):
             self.box_rect.width() - 6, 
             self.box_rect.height() - 6
         )
-        painter.setPen(QPen(self.colors['wood'], 1))
-        painter.drawRoundedRect(inner_rect, 6, 6)  # Rounded corners
+        painter.setPen(QPen(self.colors['accent_blue_light'], 1))
+        painter.drawRoundedRect(inner_rect, 8, 8)  # Rounded corners
         
         # Draw semi-transparent fill
-        painter.fillRect(self.box_rect, QColor(160, 196, 157, 15))  # Very light matcha green
+        painter.fillRect(self.box_rect, QColor(10, 132, 255, 15))  # Very light blue
         
         # Draw grid lines
-        painter.setPen(QPen(self.colors['matcha_light'], 1, Qt.PenStyle.DashLine))
+        painter.setPen(QPen(self.colors['accent_blue_light'], 1, Qt.PenStyle.DashLine))
         # Vertical grid lines
         cell_width = self.box_width // 3
         for i in range(1, 3):
@@ -795,7 +810,7 @@ class RegionSelectionOverlay(QDialog):
         # Draw coordinates with macOS-style pill background
         coord_text = f"Position: ({self.box_rect.left()},{self.box_rect.top()}) • Size: {self.box_width}×{self.box_height}"
         text_width = 400
-        text_height = 28
+        text_height = 30
         
         # Create pill background
         coord_rect = QRect(
@@ -807,12 +822,12 @@ class RegionSelectionOverlay(QDialog):
         
         # Draw background pill
         path = QPainterPath()
-        path.addRoundedRect(coord_rect, 14, 14)
-        painter.fillPath(path, QColor(44, 54, 57, 220))  # Dark background
+        path.addRoundedRect(QRectF(coord_rect), 15, 15)
+        painter.fillPath(path, QColor(53, 54, 57, 220))  # Dark background
         
         # Draw text
-        painter.setPen(self.colors['matcha_light'])
-        painter.setFont(QFont("Helvetica", 10, QFont.Weight.Medium))
+        painter.setPen(self.colors['text'])
+        painter.setFont(QFont("Helvetica", 11, QFont.Weight.Medium))
         painter.drawText(
             coord_rect, 
             Qt.AlignmentFlag.AlignCenter, 
@@ -929,7 +944,7 @@ class TimelinePlot(FigureCanvas):
             'matcha_light': '#DAE5D0', # Light matcha
             'alert': '#F87474',        # Soft red
             'text': '#FFFFFF',         # White text
-            'text_dim': '#BBBCBC',     # Dim text
+            'text_dim': '#DCD7C9',     # Dim text
         }
         
         # Create figure and axes with matcha wood theme
@@ -953,12 +968,12 @@ class TimelinePlot(FigureCanvas):
         # Add subtle grid lines
         self.ax.grid(True, alpha=0.15, color=self.colors['grid'])
         
-        # Set text styling
-        self.ax.set_title("Activity Timeline", color=self.colors['matcha_light'], fontsize=10, 
-                         fontfamily='Helvetica', fontweight='medium')
+        # Set text styling - using standard fonts that matplotlib supports
+        self.ax.set_title("Activity Timeline", color=self.colors['matcha_light'], fontsize=11, 
+                         fontweight='medium')
         
         # Set text color for axis labels and ticks
-        self.ax.tick_params(axis='y', colors=self.colors['text_dim'], labelsize=8)
+        self.ax.tick_params(axis='y', colors=self.colors['text_dim'], labelsize=9)
         self.ax.yaxis.label.set_color(self.colors['text'])
         
         # Remove spines
@@ -971,7 +986,7 @@ class TimelinePlot(FigureCanvas):
         self.setParent(parent)
         
         # Set up a tight layout
-        self.fig.tight_layout(pad=1.0)
+        self.fig.tight_layout(pad=1.2)
         
     def update_plot(self, history, threshold):
         """Update the plot with new data"""
@@ -987,10 +1002,10 @@ class TimelinePlot(FigureCanvas):
         self.activity_line.set_ydata(data)
         self.threshold_line.set_ydata([threshold, threshold])
         
-        # Update title with threshold value in minimal format
+        # Update title with threshold value in minimal format - using standard fonts
         self.ax.set_title(f"Activity Timeline [threshold: {threshold:.2f}]", 
-                        color=self.colors['matcha_light'], fontsize=10, 
-                        fontfamily='Helvetica', fontweight='medium')
+                        color=self.colors['matcha_light'], fontsize=11, 
+                        fontweight='medium')
         
         # Redraw the canvas
         self.draw()
@@ -1000,36 +1015,57 @@ class MonitoringDisplay(QWidget):
     """Widget for displaying the captured region and difference visualization"""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumSize(400, 250)  # Slightly more compact
+        self.setMinimumSize(400, 250)
+        
+        # Define colors
+        self.colors = {
+            'bg_dark': '#2C3639',      # Deep charcoal background
+            'bg_wood': '#3F4E4F',      # Wood tone
+            'matcha': '#A0C49D',       # Medium matcha
+            'matcha_light': '#DAE5D0', # Light matcha
+            'matcha_dark': '#7D8F69',  # Dark matcha
+            'alert': '#F87474',        # Soft red
+            'warning': '#F9B572',      # Soft orange
+            'text': '#FFFFFF',         # White text
+        }
         
         # Create layout
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)  # Remove margins for a cleaner look
-        layout.setSpacing(4)  # Tighter spacing
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)  # Reduced spacing for slimmer appearance
         
-        # Image display label
+        # Image display label with rounded corners
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.image_label.setStyleSheet("""
-            background-color: #3F4E4F; 
+        self.image_label.setStyleSheet(f"""
+            background-color: {self.colors['bg_wood']}; 
             border: none; 
-            border-radius: 8px;
+            border-radius: 10px;
+            padding: 4px;
         """)
         layout.addWidget(self.image_label)
         
-        # Status indicators
-        status_layout = QHBoxLayout()
-        status_layout.setSpacing(6)  # Tighter spacing
+        # Status indicators in a ultra-slim frame
+        status_frame = QFrame()
+        status_frame.setMaximumHeight(28)  # Make it slimmer
+        status_frame.setStyleSheet(f"""
+            background-color: {self.colors['bg_wood']};
+            border-radius: 6px;
+            padding: 0px;
+        """)
+        status_layout = QHBoxLayout(status_frame)
+        status_layout.setContentsMargins(8, 2, 8, 2)  # Very slim padding
+        status_layout.setSpacing(6)
         
         self.status_label = QLabel("Status: Idle")
-        self.status_label.setStyleSheet("color: #A0C49D; font-weight: 500;")
+        self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
         status_layout.addWidget(self.status_label)
         
         self.change_label = QLabel("Change: 0.00%")
-        self.change_label.setStyleSheet("color: #A0C49D; font-weight: 500;")
+        self.change_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
         status_layout.addWidget(self.change_label, alignment=Qt.AlignmentFlag.AlignRight)
         
-        layout.addLayout(status_layout)
+        layout.addWidget(status_frame)
         
         # Pre-allocate reusable image buffers for performance
         self._last_pixmap = None
@@ -1056,17 +1092,17 @@ class MonitoringDisplay(QWidget):
                 # Apply a more selective highlighting approach
                 # Convert diff_frame to 3 channel if it's grayscale
                 if len(diff_frame.shape) == 2:
-                    # Create a colored mask for changes - using red for visibility
+                    # Create a colored mask for changes - using blue for visibility (macOS style)
                     # Optimized version with fewer operations
                     change_indices = diff_frame > 0
                     if np.any(change_indices):
                         # Only modify pixels that actually changed - create a copy only when needed
                         if id(display_frame) == id(color_frame):
                             display_frame = color_frame.copy()
-                        display_frame[change_indices, 0] = 255  # Set red channel to max
-                        # Reduce other channels to make red more prominent
-                        display_frame[change_indices, 1] = display_frame[change_indices, 1] // 2
-                        display_frame[change_indices, 2] = display_frame[change_indices, 2] // 2
+                        # Use matcha green for highlights
+                        display_frame[change_indices, 0] = 157   # B value (in BGR)
+                        display_frame[change_indices, 1] = 196   # G value
+                        display_frame[change_indices, 2] = 160   # R value
             
             # Convert BGR to RGB for proper display
             display_frame_rgb = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
@@ -1089,7 +1125,7 @@ class MonitoringDisplay(QWidget):
                 scaled_pixmap = pixmap.scaled(
                     self.image_label.size(),
                     Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.FastTransformation  # Use fast transformation for performance
+                    Qt.TransformationMode.SmoothTransformation  # Use smooth transformation for better quality
                 )
                 self._last_pixmap = scaled_pixmap
             else:
@@ -1097,7 +1133,7 @@ class MonitoringDisplay(QWidget):
                 scaled_pixmap = pixmap.scaled(
                     self._last_pixmap.size(),
                     Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.FastTransformation
+                    Qt.TransformationMode.SmoothTransformation
                 )
                 self._last_pixmap = scaled_pixmap
                 
@@ -1110,22 +1146,22 @@ class MonitoringDisplay(QWidget):
             print(f"Error updating display: {e}")
     
     def set_status(self, status):
-        """Update the status display with Matcha theme colors"""
+        """Update the status display with Matcha Wood theme colors"""
         if status == "running":
             self.status_label.setText("Status: Running")
-            self.status_label.setStyleSheet("color: #A0C49D; font-weight: 500;")  # Matcha green
+            self.status_label.setStyleSheet(f"color: {self.colors['matcha']}; font-weight: 500; font-size: 12px;")
         elif status == "stopped":
             self.status_label.setText("Status: Stopped")
-            self.status_label.setStyleSheet("color: #F87474; font-weight: 500;")  # Soft red
+            self.status_label.setStyleSheet(f"color: {self.colors['alert']}; font-weight: 500; font-size: 12px;")
         elif status == "paused":
             self.status_label.setText("Status: Paused")
-            self.status_label.setStyleSheet("color: #F9B572; font-weight: 500;")  # Soft orange
+            self.status_label.setStyleSheet(f"color: {self.colors['warning']}; font-weight: 500; font-size: 12px;")
         elif status == "action_sequence":
             self.status_label.setText("Status: Action Sequence")
-            self.status_label.setStyleSheet("color: #DAE5D0; font-weight: 500;")  # Light matcha
+            self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
         else:
             self.status_label.setText(f"Status: {status}")
-            self.status_label.setStyleSheet("color: #BBBCBC; font-weight: 500;")  # Gray
+            self.status_label.setStyleSheet(f"color: {self.colors['text']}; font-weight: 500; font-size: 12px;")
 
 
 class PixelChangeApp(QMainWindow):
@@ -1151,43 +1187,44 @@ class PixelChangeApp(QMainWindow):
         self.detection_count = 0
         
     def _define_colors(self):
-        """Define the color scheme for the application - Matcha Wood theme"""
+        """Define the color scheme for the application - Matcha Wood Theme"""
         # Define color scheme - Matcha Wood Theme
         self.colors = {
             # Base colors
             'bg_dark': '#2C3639',      # Deep charcoal for background
             'bg_wood': '#3F4E4F',      # Darker wood tone
-            'bg_matcha': '#A27B5C',    # Wood accent
-            'bg_light': '#DCD7C9',     # Light beige
+            'bg_light': '#A27B5C',     # Light wood accent
+            'bg_control': '#A27B5C',   # Wood tone for controls
             
             # Text colors
             'text': '#FFFFFF',         # White text
-            'text_dim': '#BBBCBC',     # Dim text
-            'text_dark': '#333333',    # Dark text for light backgrounds
+            'text_dim': '#DCD7C9',     # Soft beige for secondary text
+            'text_secondary': '#C8B6A6', # Muted wood tone for tertiary text
+            'text_dark': '#2C3639',    # Dark text for light backgrounds
             
-            # Accent colors
+            # Accent colors - Matcha and wood tones
+            'matcha': '#A0C49D',       # Medium matcha green
             'matcha_light': '#DAE5D0',  # Light matcha
-            'matcha': '#A0C49D',        # Medium matcha
             'matcha_dark': '#7D8F69',   # Dark matcha
-            'wood_accent': '#C8B6A6',   # Wood accent
+            'wood_accent': '#C8B6A6',   # Light wood accent
             
             # Status colors
             'success': '#A0C49D',      # Success - matcha green
             'alert': '#F87474',        # Error - soft red
             'warning': '#F9B572',      # Warning - soft orange
-            'border': '#555555',       # Border color
+            'border': '#454649',       # Border color
         }
         
     def _init_ui(self):
-        """Initialize the user interface - more compact macOS style"""
+        """Initialize the user interface - Matcha Wood theme"""
         # Create central widget and main layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(10, 10, 10, 10)  # Tighter margins
-        main_layout.setSpacing(10)  # Tighter spacing
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(16)
         
-        # Set application-wide stylesheet - Matcha Wood macOS theme
+        # Set application-wide stylesheet - Matcha Wood theme
         self.setStyleSheet(f"""
             QMainWindow, QWidget {{ 
                 background-color: {self.colors['bg_dark']}; 
@@ -1197,33 +1234,36 @@ class PixelChangeApp(QMainWindow):
             
             QGroupBox {{ 
                 background-color: {self.colors['bg_wood']}; 
-                color: {self.colors['matcha_light']}; 
+                color: {self.colors['text_dim']}; 
                 border: none;
-                border-radius: 8px; 
-                margin-top: 0.8em;
+                border-radius: 10px; 
+                margin-top: 1.2em;
                 font-weight: 500;
                 font-size: 13px;
             }}
             QGroupBox::title {{ 
                 subcontrol-origin: margin; 
-                left: 10px; 
-                padding: 0 4px;
+                left: 12px; 
+                padding: 0 8px 0 8px;
                 color: {self.colors['matcha_light']};
             }}
             
             QLabel {{ 
                 color: {self.colors['text']}; 
-                font-size: 12px;
+                font-size: 13px;
+                background: transparent;
             }}
             
             QPushButton {{ 
                 background-color: {self.colors['bg_wood']}; 
                 color: {self.colors['text']}; 
                 border: none; 
-                padding: 6px 12px; 
-                border-radius: 6px;
-                font-size: 12px;
+                padding: 8px 16px; 
+                border-radius: 8px;
+                font-size: 13px;
                 font-weight: 500;
+                min-height: 28px;
+                margin: 2px;
             }}
             QPushButton:hover {{ 
                 background-color: {self.colors['matcha_dark']}; 
@@ -1233,19 +1273,20 @@ class PixelChangeApp(QMainWindow):
                 color: {self.colors['text_dark']};
             }}
             QPushButton:disabled {{ 
-                color: {self.colors['text_dim']}; 
+                color: {self.colors['text_secondary']}; 
                 background-color: {self.colors['bg_wood']};
-                opacity: 0.7;
+                opacity: 0.8;
             }}
             
             QTextEdit {{ 
                 background-color: {self.colors['bg_wood']}; 
                 color: {self.colors['text']}; 
                 border: none; 
-                border-radius: 6px;
-                font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
-                font-size: 11px;
-                padding: 2px;
+                border-radius: 8px;
+                font-family: 'Menlo', 'Monaco', monospace;
+                font-size: 12px;
+                padding: 6px;
+                selection-background-color: {self.colors['matcha']};
             }}
             
             QSlider::groove:horizontal {{
@@ -1258,10 +1299,10 @@ class PixelChangeApp(QMainWindow):
             QSlider::handle:horizontal {{
                 background: {self.colors['matcha']};
                 border: none;
-                width: 14px;
-                height: 14px;
-                margin: -5px 0;
-                border-radius: 7px;
+                width: 16px;
+                height: 16px;
+                margin: -6px 0;
+                border-radius: 8px;
             }}
             QSlider::handle:horizontal:hover {{
                 background: {self.colors['matcha_light']};
@@ -1269,12 +1310,13 @@ class PixelChangeApp(QMainWindow):
             
             QCheckBox {{
                 color: {self.colors['text']};
-                font-size: 12px;
+                font-size: 13px;
+                spacing: 8px;
             }}
             QCheckBox::indicator {{
-                width: 14px;
-                height: 14px;
-                border-radius: 3px;
+                width: 18px;
+                height: 18px;
+                border-radius: 4px;
                 border: none;
                 background-color: {self.colors['bg_dark']};
             }}
@@ -1284,35 +1326,35 @@ class PixelChangeApp(QMainWindow):
             }}
         """)
         
-        # Create left panel (controls) - more compact
+        # Create left panel (controls) with macOS spacing
         left_panel = QWidget()
-        left_panel.setFixedWidth(250)  # Narrower control panel
+        left_panel.setFixedWidth(280)  # Slightly wider for better readability
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(0, 0, 0, 0)  # Remove margins
-        left_layout.setSpacing(8)  # Tighter spacing
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(12)  # Standard macOS spacing
         main_layout.addWidget(left_panel)
         
         # Create right panel (visualization)
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(0, 0, 0, 0)  # Remove margins
-        right_layout.setSpacing(8)  # Tighter spacing
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(12)  # Standard macOS spacing
         main_layout.addWidget(right_panel)
         
         # === LEFT PANEL COMPONENTS ===
         
-        # 1. Settings group - more compact
-        settings_group = QGroupBox("SETTINGS")
+        # 1. Settings group - macOS style
+        settings_group = QGroupBox("Settings")
         settings_layout = QVBoxLayout(settings_group)
-        settings_layout.setContentsMargins(12, 15, 12, 12)  # Tighter padding
-        settings_layout.setSpacing(10)  # Reduced spacing
+        settings_layout.setContentsMargins(16, 24, 16, 16)  # macOS padding
+        settings_layout.setSpacing(12)
         left_layout.addWidget(settings_group)
         
         # Threshold control
         threshold_layout = QHBoxLayout()
-        threshold_layout.setSpacing(8)  # Tighter spacing
-        threshold_label = QLabel("threshold:")
-        threshold_label.setStyleSheet(f"color: {self.colors['matcha_light']};")
+        threshold_layout.setSpacing(10)
+        threshold_label = QLabel("Threshold:")
+        threshold_label.setStyleSheet(f"color: {self.colors['text_dim']};")
         threshold_layout.addWidget(threshold_label)
         
         self.threshold_slider = QSlider(Qt.Orientation.Horizontal)
@@ -1322,15 +1364,15 @@ class PixelChangeApp(QMainWindow):
         threshold_layout.addWidget(self.threshold_slider)
         
         self.threshold_value_label = QLabel("0.05")
-        self.threshold_value_label.setStyleSheet(f"color: {self.colors['matcha_light']};")
+        self.threshold_value_label.setStyleSheet(f"color: {self.colors['text_dim']};")
         threshold_layout.addWidget(self.threshold_value_label)
         settings_layout.addLayout(threshold_layout)
         
         # Region size control
         size_layout = QHBoxLayout()
-        size_layout.setSpacing(8)  # Tighter spacing
-        size_label = QLabel("region_size:")
-        size_label.setStyleSheet(f"color: {self.colors['matcha_light']};")
+        size_layout.setSpacing(10)
+        size_label = QLabel("Region Size:")
+        size_label.setStyleSheet(f"color: {self.colors['text_dim']};")
         size_layout.addWidget(size_label)
         
         self.size_slider = QSlider(Qt.Orientation.Horizontal)
@@ -1340,18 +1382,18 @@ class PixelChangeApp(QMainWindow):
         size_layout.addWidget(self.size_slider)
         
         self.size_value_label = QLabel("100")
-        self.size_value_label.setStyleSheet(f"color: {self.colors['matcha_light']};")
+        self.size_value_label.setStyleSheet(f"color: {self.colors['text_dim']};")
         size_layout.addWidget(self.size_value_label)
         settings_layout.addLayout(size_layout)
         
-        # Add noise reduction controls to the settings group
-        settings_layout.addSpacing(5)  # Reduced spacing
+        # Add noise reduction controls
+        settings_layout.addSpacing(4)
         
         # Noise reduction settings
         noise_layout = QHBoxLayout()
-        noise_layout.setSpacing(8)  # Tighter spacing
-        noise_label = QLabel("noise_reduction:")
-        noise_label.setStyleSheet(f"color: {self.colors['matcha_light']};")
+        noise_layout.setSpacing(10)
+        noise_label = QLabel("Noise Reduction:")
+        noise_label.setStyleSheet(f"color: {self.colors['text_dim']};")
         noise_layout.addWidget(noise_label)
         
         self.noise_checkbox = QCheckBox("On")
@@ -1361,19 +1403,20 @@ class PixelChangeApp(QMainWindow):
         
         settings_layout.addLayout(noise_layout)
         
-        # 2. Monitoring group - more compact
-        monitoring_group = QGroupBox("MONITORING")
+        # 2. Monitoring group - macOS style
+        monitoring_group = QGroupBox("Monitoring")
         monitoring_layout = QVBoxLayout(monitoring_group)
-        monitoring_layout.setContentsMargins(12, 15, 12, 12)  # Tighter padding
-        monitoring_layout.setSpacing(8)  # Reduced spacing
+        monitoring_layout.setContentsMargins(16, 24, 16, 16)  # macOS padding
+        monitoring_layout.setSpacing(12)
         left_layout.addWidget(monitoring_group)
         
-        # Region selection button - styled for matcha theme
-        self.region_button = QPushButton("select-region")
+        # Region selection button
+        self.region_button = QPushButton("Select Region")
         self.region_button.setStyleSheet(f"""
             QPushButton {{
                 background-color: {self.colors['matcha_dark']};
                 color: {self.colors['text']};
+                font-weight: 500;
             }}
             QPushButton:hover {{
                 background-color: {self.colors['matcha']};
@@ -1384,31 +1427,32 @@ class PixelChangeApp(QMainWindow):
         
         # Region info display
         region_info_layout = QHBoxLayout()
-        region_info_layout.setSpacing(6)  # Tighter spacing
-        status_label = QLabel("status:")
-        status_label.setStyleSheet(f"color: {self.colors['matcha_light']};")
+        region_info_layout.setSpacing(8)
+        status_label = QLabel("Status:")
+        status_label.setStyleSheet(f"color: {self.colors['text_dim']};")
         region_info_layout.addWidget(status_label)
         
-        self.region_info_label = QLabel("waiting_for_region_selection")
+        self.region_info_label = QLabel("No region selected")
         region_info_layout.addWidget(self.region_info_label)
         monitoring_layout.addLayout(region_info_layout)
         
-        # 3. Control group - more compact
-        control_group = QGroupBox("CONTROL")
+        # 3. Control group - macOS style
+        control_group = QGroupBox("Control")
         control_layout = QVBoxLayout(control_group)
-        control_layout.setContentsMargins(12, 15, 12, 12)  # Tighter padding
-        control_layout.setSpacing(8)  # Reduced spacing
+        control_layout.setContentsMargins(16, 24, 16, 16)  # macOS padding
+        control_layout.setSpacing(12)
         left_layout.addWidget(control_group)
         
         # Control buttons
         button_layout = QHBoxLayout()
-        button_layout.setSpacing(6)  # Tighter spacing
+        button_layout.setSpacing(8)
         
-        self.start_button = QPushButton("start")
+        self.start_button = QPushButton("Start")
         self.start_button.setStyleSheet(f"""
             QPushButton {{
                 background-color: {self.colors['matcha']};
                 color: {self.colors['text_dark']};
+                font-weight: 600;
             }}
             QPushButton:hover {{
                 background-color: {self.colors['matcha_light']};
@@ -1417,11 +1461,12 @@ class PixelChangeApp(QMainWindow):
         self.start_button.clicked.connect(self.start_detection)
         button_layout.addWidget(self.start_button)
         
-        self.stop_button = QPushButton("stop")
+        self.stop_button = QPushButton("Stop")
         self.stop_button.setStyleSheet(f"""
             QPushButton {{
                 background-color: {self.colors['alert']};
-                color: {self.colors['text']};
+                color: #FFFFFF;
+                font-weight: 600;
             }}
             QPushButton:hover {{
                 background-color: #FF8A8A;
@@ -1431,11 +1476,12 @@ class PixelChangeApp(QMainWindow):
         self.stop_button.setEnabled(False)
         button_layout.addWidget(self.stop_button)
         
-        self.pause_button = QPushButton("pause")
+        self.pause_button = QPushButton("Pause")
         self.pause_button.setStyleSheet(f"""
             QPushButton {{
                 background-color: {self.colors['warning']};
                 color: {self.colors['text_dark']};
+                font-weight: 600;
             }}
             QPushButton:hover {{
                 background-color: #FFCA85;
@@ -1449,12 +1495,12 @@ class PixelChangeApp(QMainWindow):
         
         # Second row of buttons
         button_layout2 = QHBoxLayout()
-        button_layout2.setSpacing(6)  # Tighter spacing
+        button_layout2.setSpacing(8)
         
-        self.reference_button = QPushButton("capture-reference")
+        self.reference_button = QPushButton("Capture Reference")
         self.reference_button.setStyleSheet(f"""
             QPushButton {{
-                background-color: {self.colors['bg_matcha']};
+                background-color: {self.colors['bg_light']};
                 color: {self.colors['text']};
             }}
             QPushButton:hover {{
@@ -1465,17 +1511,17 @@ class PixelChangeApp(QMainWindow):
         self.reference_button.clicked.connect(self.capture_reference)
         button_layout2.addWidget(self.reference_button)
         
-        self.clear_button = QPushButton("clear-logs")
+        self.clear_button = QPushButton("Clear Logs")
         self.clear_button.clicked.connect(self.clear_logs)
         button_layout2.addWidget(self.clear_button)
         
         control_layout.addLayout(button_layout2)
         
-        # 4. Log display - more compact
-        log_group = QGroupBox("LOGS")
+        # 4. Log display - macOS style
+        log_group = QGroupBox("Logs")
         log_layout = QVBoxLayout(log_group)
-        log_layout.setContentsMargins(12, 15, 12, 12)  # Tighter padding
-        log_layout.setSpacing(0)  # Minimal spacing
+        log_layout.setContentsMargins(16, 24, 16, 16)  # macOS padding
+        log_layout.setSpacing(8)
         left_layout.addWidget(log_group, stretch=1)
         
         self.log_display = QTextEdit()
@@ -1484,7 +1530,12 @@ class PixelChangeApp(QMainWindow):
         
         # === RIGHT PANEL COMPONENTS ===
         
-        # 1. Monitoring display with matcha theme
+        # 1. Monitoring display with matcha wood theme
+        monitor_group = QGroupBox("Live Monitor")
+        monitor_layout = QVBoxLayout(monitor_group)
+        monitor_layout.setContentsMargins(16, 24, 16, 16)  # macOS padding
+        monitor_layout.setSpacing(8)
+        
         self.monitor_display = MonitoringDisplay()
         self.monitor_display.setStyleSheet(f"""
             QLabel {{ 
@@ -1493,41 +1544,47 @@ class PixelChangeApp(QMainWindow):
                 border-radius: 8px;
             }}
         """)
-        right_layout.addWidget(self.monitor_display, stretch=3)
+        monitor_layout.addWidget(self.monitor_display)
+        right_layout.addWidget(monitor_group, stretch=3)
         
-        # 2. Timeline plot
+        # 2. Timeline plot in its own group
+        timeline_group = QGroupBox("Activity Timeline")
+        timeline_layout = QVBoxLayout(timeline_group)
+        timeline_layout.setContentsMargins(16, 24, 16, 16)  # macOS padding
+        
         self.timeline_plot = TimelinePlot(width=5, height=1.5)
-        timeline_container = QWidget()
-        timeline_layout = QVBoxLayout(timeline_container)
-        timeline_layout.setContentsMargins(0, 0, 0, 0)  # Remove margins
         timeline_layout.addWidget(self.timeline_plot)
-        right_layout.addWidget(timeline_container, stretch=1)
+        
+        right_layout.addWidget(timeline_group, stretch=1)
         
         # 3. Status and count display
-        status_layout = QHBoxLayout()
-        status_layout.setSpacing(6)  # Tighter spacing
+        status_frame = QFrame()
+        status_frame.setMaximumHeight(28)  # Keep it slim
+        status_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {self.colors['bg_wood']};
+                border-radius: 6px;
+                padding: 0px;
+            }}
+        """)
+        status_layout = QHBoxLayout(status_frame)
+        status_layout.setContentsMargins(8, 2, 8, 2)  # Very slim padding
+        status_layout.setSpacing(8)
         
-        self.status_label = QLabel("system:monitor.idle")
-        self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500;")
+        self.status_label = QLabel("Status: Waiting")
+        self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
         status_layout.addWidget(self.status_label)
         
-        self.count_label = QLabel("detections: 0")
-        self.count_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500;")
+        self.count_label = QLabel("Detections: 0")
+        self.count_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
         status_layout.addWidget(self.count_label, alignment=Qt.AlignmentFlag.AlignRight)
         
-        right_layout.addLayout(status_layout)
+        right_layout.addWidget(status_frame)
         
         # Add a welcome log message
         self.add_log("Pixel Change Detector initialized")
-        self.add_log("macOS Matcha Wood Theme v1.0")
-        self.add_log("Click 'select-region' to begin")
-        
-        # Apply specific button styles after components have been created
-        self._apply_specific_styles()
-        
-    def _apply_specific_styles(self):
-        """Apply styles to specific UI components"""
-        pass  # No longer needed - styles applied directly to buttons
+        self.add_log("macOS Modern UI Theme")
+        self.add_log("Click 'Select Region' to begin")
     
     def update_threshold(self):
         """Update threshold value from slider"""
@@ -1642,8 +1699,8 @@ class PixelChangeApp(QMainWindow):
         self.stop_button.setEnabled(True)
         self.pause_button.setEnabled(True)
         self.monitor_display.set_status("running")
-        self.status_label.setText("system:monitor.active")
-        self.status_label.setStyleSheet(f"color: {self.colors['success']};")
+        self.status_label.setText("Status: Running")
+        self.status_label.setStyleSheet(f"color: {self.colors['matcha']}; font-weight: 500; font-size: 12px;")
     
     def stop_detection(self):
         """Stop the detection process"""
@@ -1654,23 +1711,23 @@ class PixelChangeApp(QMainWindow):
         self.stop_button.setEnabled(False)
         self.pause_button.setEnabled(False)
         self.monitor_display.set_status("stopped")
-        self.status_label.setText("system:monitor.stopped")
-        self.status_label.setStyleSheet(f"color: {self.colors['alert']};")
+        self.status_label.setText("Status: Stopped")
+        self.status_label.setStyleSheet(f"color: {self.colors['alert']}; font-weight: 500; font-size: 12px;")
     
     def toggle_pause(self):
         """Pause or resume detection"""
         self.detector.toggle_pause()
         
         if self.detector.is_paused:
-            self.pause_button.setText("resume")
+            self.pause_button.setText("Resume")
             self.monitor_display.set_status("paused")
-            self.status_label.setText("system:monitor.paused")
-            self.status_label.setStyleSheet(f"color: {self.colors['warning']};")
+            self.status_label.setText("Status: Paused")
+            self.status_label.setStyleSheet(f"color: {self.colors['warning']}; font-weight: 500; font-size: 12px;")
         else:
-            self.pause_button.setText("pause")
+            self.pause_button.setText("Pause")
             self.monitor_display.set_status("running")
-            self.status_label.setText("system:monitor.active")
-            self.status_label.setStyleSheet(f"color: {self.colors['success']};")
+            self.status_label.setText("Status: Running")
+            self.status_label.setStyleSheet(f"color: {self.colors['matcha']}; font-weight: 500; font-size: 12px;")
     
     def capture_reference(self):
         """Capture a reference frame"""
@@ -1696,12 +1753,12 @@ class PixelChangeApp(QMainWindow):
         """Handle a detection event"""
         # Increment detection counter
         self.detection_count += 1
-        self.count_label.setText(f"detections: {self.detection_count}")
+        self.count_label.setText(f"Detections: {self.detection_count}")
         
         # Update status to show action sequence
         self.monitor_display.set_status("action_sequence")
-        self.status_label.setText("system:monitor.action_sequence")
-        self.status_label.setStyleSheet(f"color: {self.colors['accent']};")
+        self.status_label.setText("Status: Action Sequence")
+        self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
         
         # Add a log message
         self.add_log(f"Detection #{self.detection_count} - executing action sequence")
@@ -1713,23 +1770,28 @@ class PixelChangeApp(QMainWindow):
         if not self.detector:
             return
             
-        # Get latest data from detector
-        current_frame = self.detector.color_frame
-        diff_frame = self.detector.diff_frame
-        
-        # Calculate current change percentage
-        current_change = self.detector.change_history[-1] if self.detector.change_history else 0
-        
-        # Update display components
-        self.monitor_display.update_display(current_frame, diff_frame, current_change)
-        self.timeline_plot.update_plot(self.detector.change_history, self.detector.THRESHOLD)
-        
-        # Update status if in action sequence
-        if self.detector.in_action_sequence:
-            step = self.detector.action_sequence_step
-            total_steps = len(self.detector.action_sequence)
-            self.status_label.setText(f"system:monitor.action_sequence ({step}/{total_steps})")
-
+        try:
+            # Get latest data from detector
+            current_frame = self.detector.color_frame
+            diff_frame = self.detector.diff_frame
+            
+            # Calculate current change percentage
+            current_change = self.detector.change_history[-1] if self.detector.change_history else 0
+            
+            # Update display components
+            self.monitor_display.update_display(current_frame, diff_frame, current_change)
+            self.timeline_plot.update_plot(self.detector.change_history, self.detector.THRESHOLD)
+            
+            # Update status if in action sequence
+            if self.detector.in_action_sequence:
+                step = self.detector.action_sequence_step
+                total_steps = len(self.detector.action_sequence)
+                self.status_label.setText(f"Status: Action Sequence ({step}/{total_steps})")
+                self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
+        except Exception as e:
+            print(f"Error updating visualization: {e}")
+            # Don't stop the application on visualization errors
+    
     def toggle_noise_reduction(self, checked):
         """Toggle noise reduction processing"""
         if self.detector:
