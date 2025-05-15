@@ -1,19 +1,46 @@
-numpy>=1.19.2
-opencv-python>=4.5.1
-Pillow>=8.0.1
-matplotlib>=3.3.2
-keyboard>=0.13.5
-psutil>=5.8.0
-PyQt6>=6.2.0
-mss>=6.1.0
+# AutoFishing Tool Requirements
+# =========================
 
-# Platform-specific dependencies
-# These will be installed based on your OS
+# Core Dependencies
+# ----------------
+numpy>=1.20.0          # Scientific computing
+opencv-python>=4.5.0   # Computer vision for pixel detection
+Pillow>=8.0.0          # Image processing
+pynput>=1.7.0          # Input control (keyboard/mouse)
+pyautogui>=0.9.50      # Screen automation
+mss>=6.1.0             # Fast screen capture
 
-# Windows dependencies
-pywin32>=228; sys_platform == 'win32'
-ctypes-callable>=1.0.0; sys_platform == 'win32'
+# UI Framework
+# -----------
+PyQt5>=5.15.0          # Cross-platform GUI framework
 
-# macOS dependencies
-pyautogui>=0.9.52; sys_platform == 'darwin'
-pyobjc-framework-Quartz>=7.0; sys_platform == 'darwin' 
+# Platform Specific
+# ---------------
+# Windows
+pywin32>=300; sys_platform == 'win32'    # Windows API access
+
+# macOS
+pyobjc>=7.0; sys_platform == 'darwin'    # Objective-C bridge for macOS
+
+# Development Tools
+# ---------------
+pytest>=6.2.0          # Testing framework
+black>=21.5b2          # Code formatting
+isort>=5.8.0           # Import sorting
+pylint>=2.8.0          # Code linting
+mypy>=0.800            # Type checking
+
+# Documentation
+# ------------
+Sphinx>=4.0.0          # Documentation generator
+sphinx-rtd-theme>=0.5.0  # Documentation theme
+
+# Packaging
+# ---------
+setuptools>=57.0.0     # Build package
+wheel>=0.36.0          # Build package
+twine>=3.4.0           # Upload package
+
+# Version Requirements
+# ------------------
+python_requires = ">=3.8" 

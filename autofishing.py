@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-import os
 import platform
 import sys
-import importlib
 
 def main():
     """
