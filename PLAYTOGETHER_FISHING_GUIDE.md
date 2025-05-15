@@ -22,40 +22,7 @@
 Fishing in PlayTogether is one of the most profitable and engaging activities within the game. Players can catch a variety of fish species with different rarities and values. This guide covers everything you need to know about fishing in PlayTogether, from the basic mechanics to rare fish locations and tips for successful fishing.
 
 ## Fishing Locations
-
-There are currently **25** known locations to fish in PlayTogether:
-
-- Camping Ground Lake
-- Waterfall
-- Pond
-- Swimming Pool
-- House Pool
-- (My House) Resort Sea
-- (My House) Resort Swimming Pool
-- My House Cherry Blossom Fishing Spot
-- Fashion Mall
-- Beach
-- Sea Area
-- Deep Sea
-- Boats
-- Lighthouse
-- Great Blue Hole
-- Downtown Pool
-- Downtown Pond
-- Downtown Fountain
-- Sanrio Characters Hotel Sauna
-- Resort Pool
-- Resort Pond
-- Resort Offshore Area
-- Resort Shipwreck Area
-- Resort Deep Sea Area
-- Bonobono Forest Pond
-- Underground Sewers
-- Igloo
-- Waterspout
-
-Different fish species can be found in specific locations and sometimes only during certain times of day (All Day, Noon, or Night).
-
+ --To do
 ## Fishing Mechanics
 
 To start fishing in PlayTogether:
@@ -71,101 +38,19 @@ Timing is crucial in catching fish. You should not reel in too early or too late
 
 ## Fishing Rods
 
-PlayTogether offers several fishing rods with different benefits:
-
-### Amateur Rod
-- Increases success chance by 20%
-- Increases chance to get rare fish by 50%
-- Increases chance to get uncommon fish by 100%
-- Price: 30 Jewels
-- Repair Cost: $1000
-
-### Feline Rod
-- Increases chance to get uncommon fish by 50%
-
-### Duck Rod
-- Increases success chance by 15%
-- Increases chance to get uncommon fish by 100%
-- Price: $2250
-- Repair Cost: $750
-
-### Wooden Rod
-- A wooden fishing rod with an acorn ornament
-- Good for novice anglers
-- No special abilities
-
 ## Fish Categories
-
-There are currently **276** fish in the game, divided into five categories based on rarity. Each fish (except the last VVIP) has a crowned variant, bringing the total to **551** fish to collect.
 
 ### Basic Fish
 
-There are **35** Basic fish species. These are the most common and generally easier to catch. Examples include:
-
-- Crayfish (Small) - Found in Camping Ground Lake, Waterfall, Pond, etc.
-- Rosy Bitterling (Small) - Found in Camping Ground Lake at noon
-- Pale Bleak (Small) - Found in Camping Ground Lake, Swimming Pool, etc.
-- Cherry Salmon (Large) - Found in Camping Ground Lake, Waterfall
-- Squid (Medium) - Found in Deep Sea, Boat, etc. at night
-- Mackerel (Medium) - Found in Sea Area, available all day
-
 ### Trendy Fish
-
-There are **59** Trendy fish species that are moderately rare and valuable. Examples include:
-
-- Bluegill (Medium) - Found in Camping Ground Lake at noon
-- Bass (Large) - Found in Camping Ground Lake, Waterfall, Pond
-- Cutlassfish (Large) - Found in Sea Area, available all day
-- Octopus (Large) - Found in Deep Sea, Boat, Lighthouse
-- Butterflyfish (Medium) - Found on Beach, available all day
-- Parrotfish (Medium) - Found on Beach at noon
 
 ### Luxury Fish
 
-There are **74** Luxury fish species that are rare and quite valuable. Examples include:
-
-- Slender Shinner (Small) - Found in Pond, Swimming Pool, etc.
-- Footballfish (Large) - Found in Deep Sea, Boat, Great Blue Hole at night
-- Spearfish (Extra Large) - Found in Deep Sea, Boat, Lighthouse
-- Seahorse (Small) - Found in Deep Sea, Boat, Lighthouse
-- Red Stingray (Extra Large) - Found on Beach, available all day
-- Rainbow Trout (Medium) - Found in Camping Ground Lake, Waterfall, Pond
-
 ### VIP Fish
-
-There are **97** VIP fish species that are extremely rare and highly valuable. Examples include:
-
-- Mini Inia (Small) - Found in Fashion Mall at noon
-- Mini Killer Whale (Small) - Found in Deep Sea, Boat at night
-- Shark (Extra Large) - Found in Deep Sea, Boat, Lighthouse
-- Ocean Sunfish (Extra Large) - Found in Deep Sea, Boat, Lighthouse, Great Blue Hole
-- Dolphin (Extra Large) - Found in Sea Area, available all day
-- Blue Whale (Extra Extra Large) - Found at Lighthouse at noon
 
 ### VVIP Fish
 
-There are **11** VVIP fish species, which are the rarest and most valuable fish in the game. Examples include:
-
-- Icy Dolphin (Extra Extra Large) - Found in Deep Sea during winter
-- White Humpback Whale (Gigantic) - Found in Offshore Area
-- Miraculous Azure Dragon (Gigantic) - Found in Waterspout
-- Leviathan Melvillei (Gigantic) - Found in Offshore Area
-- Ice Cream Carp (Large) - Found in Camping Ground Lake, Waterfall
-
 ### Trash Items
-
-When fishing, there's a 5% chance to catch "Junk" instead of fish, and a 2% chance for that Junk to become "Treasure." Junk items include:
-
-- Broken Car Door (Large)
-- Old Doll (Medium)
-- Fish Bones (Small)
-- PET Bottle (Small)
-- Trash Bag (Medium)
-- Rusty Anchor (Large)
-- Waste Barrel (Large)
-- Old Submarine (Extra Large)
-- Silver Pearl
-- Golden Pearl
 
 ## Fish Shadows & Rarity
 

@@ -1,3 +1,3 @@
 """
-Utility functions for AutoFisher
+Utility modules for the AutoFisher application.
 """ 

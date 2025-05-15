@@ -34,43 +34,31 @@ if current_platform in platform_specific:
     install_requires.extend(platform_specific[current_platform])
 
 setup(
-    name="autofishing",
-    version="0.1.0",
+    name="autofisher",
+    version="1.0.0",
+    description="Automated fishing tool for PlayTogether game",
+    author="AutoFisher Team",
+    author_email="autofisher@example.com",
     packages=find_packages(),
-    
-    # Dependencies
     install_requires=install_requires,
-    python_requires='>=3.8',
-    
-    # Metadata
-    author="Your Name",
-    author_email="your.email@example.com",
-    description="A cross-platform automation tool for fishing in games",
-    long_description=open("README.md").read(),
-    long_description_content_type="text/markdown",
-    keywords="gaming, automation, fishing, pixel-detection",
-    url="https://github.com/yourusername/autofishing",
-    
-    # Classifiers
-    classifiers=[
-        "Development Status :: 3 - Alpha",
-        "Intended Audience :: Gamers",
-        "Topic :: Gaming :: Automation",
-        "License :: OSI Approved :: MIT License",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
-        "Programming Language :: Python :: 3.10",
-    ],
-    
-    # Entry points
+    extras_require={
+        "windows": ["pywin32"],
+    },
     entry_points={
-        'console_scripts': [
-            'autofishing=autofishing:main',
+        "console_scripts": [
+            "autofisher=autofisher.__main__:main",
         ],
     },
-    
-    # Include data files
-    package_data={
-        'autofisher': ['ui/resources/*'],
-    },
+    classifiers=[
+        "Development Status :: 4 - Beta",
+        "Intended Audience :: End Users/Desktop",
+        "License :: OSI Approved :: MIT License",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Topic :: Games/Entertainment",
+    ],
+    python_requires=">=3.6",
 ) 

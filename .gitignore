@@ -5,7 +5,7 @@ __pycache__/
 *.so
 .Python
 env/
-build/temp/
+build/
 develop-eggs/
 dist/
 downloads/
@@ -16,10 +16,40 @@ lib64/
 parts/
 sdist/
 var/
+wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# Distribution / packaging
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+.env/
+
+# Testing
+.coverage
+htmlcov/
 .pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# AutoFisher specific
+captured_regions/
+screenshots/
+*.log
 
 # Virtual Environment
 .venv/
