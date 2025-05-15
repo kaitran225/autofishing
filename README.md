@@ -2,6 +2,10 @@
 
 An automated fishing tool for PlayTogether game with cross-platform support for Windows and macOS.
 
+> [!NOTE]
+> This repository has been cleaned up and reorganized to follow modern Python package structure.
+> For details, see the [Cleanup Summary](docs/CLEANUP_SUMMARY.md).
+
 ## Features
 
 - **Cross-platform support**: Works on both Windows and macOS
@@ -84,6 +88,14 @@ autofisher/
 ├── utils/            # Utility modules
 └── __main__.py       # Entry point for the application
 ```
+
+## Documentation
+
+For more detailed documentation, check out the [docs directory](docs/).
+
+- [Project Structure](docs/PROJECT_STRUCTURE.md)
+- [Development Guide](docs/DEVELOPMENT.md)
+- [PlayTogether Fishing Guide](docs/PLAYTOGETHER_FISHING_GUIDE.md)
 
 ## License
 

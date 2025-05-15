@@ -1,6 +1,9 @@
+"""
+Windows implementation for window focus and manipulation.
+"""
 import time
 
-class GameFocusWin:
+class WindowsWindowFocus:
     def __init__(self):
         try:
             # Import Windows-specific modules
@@ -136,26 +139,4 @@ class GameFocusWin:
             return (left, top, width, height)
         except Exception as e:
             print(f"Error getting window rect: {e}")
-            return None
-    
-if __name__ == "__main__":
-    # Test the game window focus
-    focus = GameFocusWin()
-    
-    # Find the game window
-    if focus.find_game_window():
-        print("Game window found!")
-        
-        # Get window rectangle
-        rect = focus.get_game_window_rect()
-        if rect:
-            print(f"Window rect: {rect}")
-        
-        # Focus the window
-        print("Attempting to focus window...")
-        if focus.focus_game_window():
-            print("Successfully focused game window")
-        else:
-            print("Failed to focus game window")
-    else:
-        print("Game window not found. Make sure the game is running.") 
+            return None 

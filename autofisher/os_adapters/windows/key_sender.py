@@ -1,7 +1,10 @@
+"""
+Windows key sender implementation.
+"""
 import time
 import keyboard
 
-class KeySenderWin:
+class WindowsKeySender:
     def __init__(self):
         try:
             # Import Windows-specific modules
@@ -117,21 +120,4 @@ class KeySenderWin:
             return True
         except Exception as e:
             print(f"Error sending key combination: {e}")
-            return False
-
-if __name__ == "__main__":
-    # Test the key sender
-    sender = KeySenderWin()
-    
-    print("Testing key sender...")
-    print("Sending 'F' key in 3 seconds...")
-    time.sleep(3)
-    sender.send_key('f')
-    
-    print("Sending 'ESC' key in 3 seconds...")
-    time.sleep(3)
-    sender.send_key('esc')
-    
-    print("Sending Ctrl+C combination in 3 seconds...")
-    time.sleep(3)
-    sender.send_key_combination(['ctrl', 'c']) 
+            return False 

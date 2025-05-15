@@ -1,8 +1,11 @@
+"""
+macOS implementation for sending key events.
+"""
 import time
 import keyboard
 import subprocess
 
-class KeySenderMac:
+class MacOSKeySender:
     def __init__(self):
         try:
             # Test if we can execute AppleScript
@@ -165,21 +168,4 @@ class KeySenderMac:
             return True
         except Exception as e:
             print(f"Error sending key combination: {e}")
-            return False
-
-if __name__ == "__main__":
-    # Test the key sender
-    sender = KeySenderMac()
-    
-    print("Testing key sender...")
-    print("Sending 'F' key in 3 seconds...")
-    time.sleep(3)
-    sender.send_key('f')
-    
-    print("Sending 'ESC' key in 3 seconds...")
-    time.sleep(3)
-    sender.send_key('esc')
-    
-    print("Sending Command+C combination in 3 seconds...")
-    time.sleep(3)
-    sender.send_key_combination(['command', 'c']) 
+            return False 

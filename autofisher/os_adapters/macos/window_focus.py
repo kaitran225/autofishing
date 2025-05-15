@@ -1,8 +1,11 @@
+"""
+macOS implementation for window focus and manipulation.
+"""
 import time
 import subprocess
 import os
 
-class GameFocusMac:
+class MacOSWindowFocus:
     def __init__(self):
         self.game_window_title = "PLAY TOGETHER"
         try:
@@ -179,27 +182,4 @@ class GameFocusMac:
             return None
         except Exception as e:
             print(f"Error getting window rectangle: {e}")
-            return None
-
-if __name__ == "__main__":
-    # Test the game window focus
-    focus = GameFocusMac()
-    
-    # Find the game window
-    print("Searching for game window...")
-    if focus.find_game_window():
-        print("Game window found!")
-        
-        # Get window rectangle
-        rect = focus.get_game_window_rect()
-        if rect:
-            print(f"Window rect: {rect}")
-        
-        # Focus the window
-        print("Attempting to focus window...")
-        if focus.focus_game_window():
-            print("Successfully focused game window")
-        else:
-            print("Failed to focus game window")
-    else:
-        print("Game window not found. Make sure the game is running.") 
+            return None 
