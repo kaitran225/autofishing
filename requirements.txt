@@ -4,6 +4,8 @@ Pillow>=8.0.1
 matplotlib>=3.3.2
 keyboard>=0.13.5
 psutil>=5.8.0
+PyQt6>=6.2.0
+mss>=6.1.0
 
 # Platform-specific dependencies
 # These will be installed based on your OS
@@ -14,5 +16,4 @@ ctypes-callable>=1.0.0; sys_platform == 'win32'
 
 # macOS dependencies
 pyautogui>=0.9.52; sys_platform == 'darwin'
-pyobjc-framework-Quartz>=7.0; sys_platform == 'darwin'
-PyQt6>=6.2.0; sys_platform == 'darwin' 
+pyobjc-framework-Quartz>=7.0; sys_platform == 'darwin' 

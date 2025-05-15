@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Build script for AutoFishing application
+Build script for AutoFisher application
 Builds both Mac and Windows versions depending on the platform
 """
 import os
@@ -14,10 +14,10 @@ def main():
     system = platform.system().lower()
     
     # Make sure we have the correct icon format for each platform
-    if system == 'windows' and not os.path.exists('app_icon.ico'):
+    if system == 'windows' and not os.path.exists('autofisher/resources/app_icon.ico'):
         print("Converting PNG icon to ICO format for Windows...")
         try:
-            subprocess.run([sys.executable, 'convert_icon.py'], check=True)
+            subprocess.run([sys.executable, 'autofisher/utils/convert_icon.py'], check=True)
         except subprocess.CalledProcessError:
             print("Failed to convert icon. Make sure Pillow is installed and app_icon.png exists.")
             return False
@@ -40,16 +40,10 @@ def clean_build():
     print("Cleaning previous build artifacts...")
     
     # Clean directories
-    for directory in ['build', 'dist']:
+    for directory in ['build/temp', 'dist']:
         if os.path.exists(directory):
             print(f"Removing {directory}/ directory...")
             shutil.rmtree(directory)
-    
-    # Clean spec file artifact
-    for file in ['AutoFishing.spec']:
-        if os.path.exists(file):
-            print(f"Removing {file}...")
-            os.remove(file)
 
 def build_mac():
     """Build the macOS version"""
@@ -60,10 +54,10 @@ def build_mac():
         subprocess.run([sys.executable, '-m', 'pip', 'install', 'pyinstaller'], check=True)
         
         # Build using the macOS spec file
-        subprocess.run(['pyinstaller', 'autofishing_mac.spec'], check=True)
+        subprocess.run(['pyinstaller', 'build/autofishing_mac.spec'], check=True)
         
         print("\nBuild successful!")
-        print("The macOS application is available at: dist/AutoFishing.app")
+        print("The macOS application is available at: dist/AutoFisher.app")
         return True
     except subprocess.CalledProcessError as e:
         print(f"Build failed: {e}")
@@ -78,10 +72,10 @@ def build_windows():
         subprocess.run([sys.executable, '-m', 'pip', 'install', 'pyinstaller'], check=True)
         
         # Build using the Windows spec file
-        subprocess.run(['pyinstaller', 'autofishing_windows.spec'], check=True)
+        subprocess.run(['pyinstaller', 'build/autofishing_windows.spec'], check=True)
         
         print("\nBuild successful!")
-        print("The Windows application is available at: dist/AutoFishing_Windows.exe")
+        print("The Windows application is available at: dist/AutoFisher_Windows.exe")
         return True
     except subprocess.CalledProcessError as e:
         print(f"Build failed: {e}")

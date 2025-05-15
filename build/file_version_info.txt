@@ -29,13 +29,13 @@ VSVersionInfo(
       [
       StringTable(
         u'040904B0',
-        [StringStruct(u'CompanyName', u'AutoFishing'),
-        StringStruct(u'FileDescription', u'Pixel Change Detector for Fishing Games'),
+        [StringStruct(u'CompanyName', u'AutoFisher'),
+        StringStruct(u'FileDescription', u'AutoFisher - Pixel Change Detection and Automation'),
         StringStruct(u'FileVersion', u'1.0.0'),
-        StringStruct(u'InternalName', u'AutoFishing'),
-        StringStruct(u'LegalCopyright', u'Copyright (c) 2024'),
-        StringStruct(u'OriginalFilename', u'AutoFishing_Windows.exe'),
-        StringStruct(u'ProductName', u'AutoFishing'),
+        StringStruct(u'InternalName', u'AutoFisher'),
+        StringStruct(u'LegalCopyright', u'Copyright (c) 2023'),
+        StringStruct(u'OriginalFilename', u'AutoFisher_Windows.exe'),
+        StringStruct(u'ProductName', u'AutoFisher'),
         StringStruct(u'ProductVersion', u'1.0.0')])
       ]), 
     VarFileInfo([VarStruct(u'Translation', [1033, 1200])])

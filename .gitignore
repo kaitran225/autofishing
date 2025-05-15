@@ -1,51 +1,84 @@
-# Python bytecode
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
+env/
+build/temp/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project specific
+release/
+logs/
+screenshots/
+*.log
+
+# Generated resources
+autofisher/resources/app_icon.ico
 
 # Distribution / packaging
-dist/
-build/
 *.egg-info/
 *.egg
 
 # PyInstaller
 *.manifest
 
-# Virtual environments
-venv/
-env/
-.env/
-.venv/
-
 # IDE specific files
-.idea/
-.vscode/
 *.sublime-project
 *.sublime-workspaceß
 
 # macOS specific
-.DS_Store
 .AppleDouble
 .LSOverride
 Icon?
-._*
 
 # Logs and debugging
-*.log
 debug_output.txt
 crash_report.txt
 
 # Application bundles
 *.app
-release/
 *.zip
 
 # MSS and screencast related
 *.png
 *.jpg
 *.jpeg
-screenshots/
 
 # Temporary files
 tmp/

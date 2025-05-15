@@ -1,95 +1,139 @@
-# AutoFishing
+# AutoFisher
 
-A cross-platform application for automatically detecting pixel changes on screen and triggering keyboard actions. Perfect for automating fishing in games.
+A cross-platform automated fishing bot for games. Detects pixel changes on screen and automatically responds with keypresses to catch fish.
 
 ## Features
 
-- Advanced pixel change detection with special handling for bright backgrounds
-- Customizable detection threshold
-- Real-time visualization of changes
-- Automatic keyboard actions when change is detected
-- Support for both Windows and macOS
-
-## Platform Support
-
-- **Windows**: Full support with a terminal-inspired modern UI
-- **macOS**: Full support with a modern macOS UI design
+- **Cross-Platform Support**: Works on both Windows and macOS
+- **Modern UI**: Clean, dark-themed PyQt6 interface
+- **Visual Monitoring**: Real-time display of screen capture and pixel changes
+- **Customizable Detection**: Adjust sensitivity and enhancement settings
+- **Timeline Visualization**: Track detection events over time
+- **Robust Detection**: Enhanced detection algorithms for varying lighting conditions
 
 ## Installation
 
-### Pre-built Binaries
-1. Download the latest release for your operating system
-2. For macOS: Move `AutoFishing.app` to your Applications folder
-3. For Windows: Extract the zip file and run the executable
+### Prerequisites
 
-### Running from Source
-1. Clone this repository
-2. Install dependencies: `pip install -r requirements.txt`
-3. Run `python autofishing.py` (automatically selects correct version for your OS)
+- Python 3.7+
+- PIP package manager
 
-## Required Permissions
+### Setup
 
-### macOS
-This app requires the following macOS permissions to function properly:
+1. Clone the repository:
+```
+git clone https://github.com/yourusername/autofisher.git
+cd autofisher
+```
 
-1. **Screen Recording Permission**: To detect pixel changes on screen
-2. **Accessibility Permission**: To send keyboard commands
+2. Create a virtual environment (recommended):
+```
+python -m venv .venv
+```
 
-### Windows
-This app requires:
+3. Activate the virtual environment:
+   - Windows: `.venv\Scripts\activate`
+   - macOS/Linux: `source .venv/bin/activate`
 
-1. **Administrator privileges**: May be required for some keyboard actions
-2. **No special firewall permissions**: The app does not connect to the internet
+4. Install dependencies:
+```
+pip install -r requirements.txt
+```
 
 ## Usage
 
-1. Launch the application
-2. Click "Select Region" to select the area of the screen to monitor (fishing float/bobber)
-3. Adjust the threshold as needed (lower values = more sensitive)
-4. Click "Start" to begin monitoring
-5. The app will automatically press F when a change is detected, wait for a bite, press ESC if no bite, then cast again
+1. Run the application:
+```
+python autofishing.py
+```
 
-## Project Structure
+2. Select a screen region to monitor (where fishing activity occurs)
+3. Adjust detection sensitivity if needed
+4. Click "Start Detection" to begin automated fishing
+5. Use "Pause Detection" to temporarily pause or "Stop Detection" to end
 
-- `autofishing.py` - Main entry point that detects OS and launches appropriate version
-- `src/windows` - Windows-specific implementation
-- `src/mac` - macOS-specific implementation
+## Configuration
+
+- **Sensitivity**: Adjust the threshold slider to control detection sensitivity
+- **Noise Reduction**: Enable/disable to filter out minor pixel variations
+- **Enhanced Bright Detection**: Improves detection in bright or high-contrast areas
+- **Reference Frame**: Capture a new reference frame when lighting conditions change
+
+## Building Standalone Application
+
+To build a standalone executable:
+
+```
+python build.py
+```
+
+This will create a platform-specific executable in the `dist` directory.
+
+### Manual Build Process
+
+If you prefer to build manually using PyInstaller:
+
+1. Ensure you have PyInstaller installed:
+   ```
+   pip install pyinstaller
+   ```
+
+2. For Windows:
+   ```
+   pyinstaller build/autofishing_windows.spec
+   ```
+   
+3. For macOS:
+   ```
+   pyinstaller build/autofishing_mac.spec
+   ```
+
+### Creating Release Packages
+
+To create a ZIP package for distribution:
+
+```
+mkdir -p release
+cd dist
+# For macOS
+zip -r ../release/AutoFisher-macOS.zip AutoFisher.app/
+# For Windows
+zip -r ../release/AutoFisher-Windows.zip AutoFisher_Windows.exe
+cd ..
+```
+
+### Platform-Specific Considerations
+
+#### macOS
+- The application requires Screen Recording permission
+- You may need to right-click and select "Open" the first time you run it
+- If the app quits unexpectedly, check Console.app for crash logs
+
+#### Windows
+- The application requires permission to send keyboard input
+- The app will focus the game window automatically when using keyboard commands
+
+## Development
+
+The project has been restructured for better organization:
+
+- `autofisher/` - Main package
+  - `core/` - Core detection functionality
+  - `ui/` - PyQt6 user interface
+  - `backends/` - Platform-specific implementations
+  - `utils/` - Utility functions
 
 ## Troubleshooting
 
-If the application quits unexpectedly:
-
-1. Make sure you've granted all required permissions
-2. Try running from the command line to see error messages
-
-## Support
-
-For questions or assistance, please create an issue in the project repository.
+- **No Detection**: Try adjusting the sensitivity or capturing a new reference frame
+- **Game Window Not Found**: Make sure the game window is visible and not minimized
+- **Keypresses Not Working**: Ensure the application has permission to send key events
 
 ## License
 
-MIT License
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Building from Source
+## Acknowledgments
 
-If you want to build the application from source:
-
-### macOS
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Build the application
-pyinstaller autofishing_mac.spec
-```
-
-### Windows
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Build the application
-pyinstaller autofishing_windows.spec
-```
-
-The compiled app will be in the `dist` folder. 
+- PyQt6 for the cross-platform UI framework
+- OpenCV for image processing capabilities 
