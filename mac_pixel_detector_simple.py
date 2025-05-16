@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import subprocess  # For running AppleScript to focus on windows
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QSlider, QFrame, QSplitter, QTextEdit,
     QGroupBox, QMessageBox, QDialog, QDialogButtonBox, QCheckBox
 )
@@ -78,13 +78,28 @@ class PixelChangeDetector(QObject):
         self.in_action_sequence = False
         self.action_sequence_step = 0
         
-        # Updated action sequence with longer delays for better detection on bright backgrounds
+        # Template images for repair dialog and button detection
+        self.repair_dialog_template = None
+        self.repair_button_template = None
+        
+        # Template matching thresholds
+        self.template_match_threshold = 0.7
+        
+        # Path to template images - will be loaded when needed
+        self.repair_dialog_path = "repair.png"
+        self.repair_button_path = "button.png"
+        
+        # Updated action sequence with repair detection and button clicking
         self.action_sequence = [
             {"action": "press_f", "delay": 0.0},
-            {"action": "wait", "delay": 4.0},  # Increased from 3.0 to 4.0
-            {"action": "press_esc", "delay": 1.5},  # Increased from 1.0 to 1.5
-            {"action": "wait", "delay": 2.0},  # Increased from 1.0 to 2.0
-            {"action": "press_f", "delay": 2.0}   # Increased from 1.0 to 2.0
+            {"action": "wait", "delay": 6.0},
+            {"action": "press_esc", "delay": 2.0},
+            {"action": "wait", "delay": 2.0},
+            {"action": "press_f", "delay": 0.5},  # Wait 0.5s after pressing F
+            {"action": "check_repair_dialog", "delay": 0.0},  # Check for repair dialog
+            {"action": "click_repair_button", "delay": 0.5},  # Click repair button if found
+            {"action": "press_esc", "delay": 1.0},  # Press ESC and wait 1s
+            {"action": "press_f", "delay": 1.0}    # Final F press to end sequence
         ]
         
     def log(self, message):
@@ -116,6 +131,48 @@ class PixelChangeDetector(QObject):
             self.capture_reference()
             
         return True
+        
+    def load_template_images(self):
+        """Load template images for repair dialog and button detection"""
+        try:
+            # Check if template files exist with absolute paths
+            repair_dialog_abs_path = os.path.abspath(self.repair_dialog_path)
+            repair_button_abs_path = os.path.abspath(self.repair_button_path)
+            
+            self.log(f"Looking for repair dialog template at: {repair_dialog_abs_path}")
+            self.log(f"Looking for repair button template at: {repair_button_abs_path}")
+            
+            if os.path.exists(repair_dialog_abs_path):
+                self.repair_dialog_template = cv2.imread(repair_dialog_abs_path)
+                if self.repair_dialog_template is None:
+                    self.log(f"Error: Failed to load repair dialog template despite file existing")
+                else:
+                    self.log(f"Loaded repair dialog template: {repair_dialog_abs_path}")
+                    self.log(f"Template size: {self.repair_dialog_template.shape}")
+            else:
+                self.log(f"Warning: Repair dialog template not found at {repair_dialog_abs_path}")
+                
+            if os.path.exists(repair_button_abs_path):
+                self.repair_button_template = cv2.imread(repair_button_abs_path)
+                if self.repair_button_template is None:
+                    self.log(f"Error: Failed to load repair button template despite file existing")
+                else:
+                    self.log(f"Loaded repair button template: {repair_button_abs_path}")
+                    self.log(f"Template size: {self.repair_button_template.shape}")
+            else:
+                self.log(f"Warning: Repair button template not found at {repair_button_abs_path}")
+                
+            # Lower the matching threshold for more permissive matching
+            self.template_match_threshold = 0.5
+            self.log(f"Repair template matching threshold set to: {self.template_match_threshold}")
+                
+            return self.repair_dialog_template is not None and self.repair_button_template is not None
+                
+        except Exception as e:
+            self.log(f"Error loading template images: {e}")
+            import traceback
+            self.log(traceback.format_exc())
+            return False
     
     def capture_screen(self):
         """Capture the defined region of the screen with optimized performance"""
@@ -275,6 +332,10 @@ class PixelChangeDetector(QObject):
             
         self.previous_frame = self.reference_frame
         
+        # Load template images if not already loaded
+        if self.repair_dialog_template is None or self.repair_button_template is None:
+            self.load_template_images()
+        
         # Start detection thread
         self.detection_thread = threading.Thread(target=self._detection_loop)
         self.detection_thread.daemon = True
@@ -425,6 +486,15 @@ class PixelChangeDetector(QObject):
                 self.log(f"Action sequence: Waiting {action['delay']}s")
                 # No actual action needed for wait
                 pass
+            elif action_type == "check_repair_dialog":
+                self.log(f"Action sequence: Checking for repair dialog")
+                if not self._check_repair_dialog():
+                    # Skip repair button click if no dialog found
+                    self.log("No repair dialog found, skipping repair button click")
+                    self.action_sequence_step += 1
+            elif action_type == "click_repair_button":
+                self.log(f"Action sequence: Clicking repair button")
+                self._click_repair_button()
         
         # Wait for the specified delay AFTER executing the action
         time.sleep(action["delay"])
@@ -439,6 +509,391 @@ class PixelChangeDetector(QObject):
             
             # Take a new reference frame after completing the sequence
             self.capture_reference()
+            
+    def _check_repair_dialog(self):
+        """Check if the repair dialog is present in the current screen"""
+        # Make sure we have the template loaded
+        if self.repair_dialog_template is None:
+            success = self.load_template_images()
+            if not success or self.repair_dialog_template is None:
+                self.log("Error: Repair dialog template not loaded")
+                return False
+                
+        try:
+            # Capture the current screen
+            screen_frame = self.capture_screen()
+            if self.color_frame is None:
+                self.log("Error: Failed to capture screen for repair dialog check")
+                return False
+                
+            # Get a copy of the current color frame for debugging and visualization
+            display_frame = self.color_frame.copy()
+            
+            # Convert template to grayscale if needed
+            if len(self.repair_dialog_template.shape) == 3 and self.repair_dialog_template.shape[2] == 3:
+                template_gray = cv2.cvtColor(self.repair_dialog_template, cv2.COLOR_BGR2GRAY)
+            else:
+                template_gray = self.repair_dialog_template
+                
+            # Convert screen to grayscale
+            if len(self.color_frame.shape) == 3 and self.color_frame.shape[2] == 3:
+                screen_gray = cv2.cvtColor(self.color_frame, cv2.COLOR_BGR2GRAY)
+            else:
+                screen_gray = self.color_frame
+                
+            # Log template and screen dimensions for debugging
+            self.log(f"Repair dialog template dimensions: {template_gray.shape}")
+            self.log(f"Screen dimensions: {screen_gray.shape}")
+            
+            # Check if the screen is big enough for the template
+            if (screen_gray.shape[0] < template_gray.shape[0] or 
+                screen_gray.shape[1] < template_gray.shape[1]):
+                self.log("Error: Screen is smaller than template, cannot perform matching")
+                return False
+                
+            # Perform template matching
+            self.log("Performing template matching for repair dialog...")
+            result = cv2.matchTemplate(screen_gray, template_gray, cv2.TM_CCOEFF_NORMED)
+            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+            
+            self.log(f"Repair dialog match confidence: {max_val:.2f}")
+            
+            # Draw rectangle around match on debug frame
+            top_left = max_loc
+            bottom_right = (top_left[0] + template_gray.shape[1], top_left[1] + template_gray.shape[0])
+            cv2.rectangle(display_frame, top_left, bottom_right, (0, 255, 0), 2)
+            
+            # Save debug image if confidence is above a minimum threshold
+            if max_val > 0.3:
+                debug_path = "repair_dialog_match.png"
+                cv2.imwrite(debug_path, display_frame)
+                self.log(f"Saved debug image to: {debug_path}")
+            
+            # If the match is good enough, return the position
+            if max_val >= self.template_match_threshold:
+                self.log(f"Repair dialog found at {max_loc} with confidence {max_val:.2f}")
+                # Store the dialog position for later use
+                self.repair_dialog_position = max_loc
+                self.repair_dialog_size = (template_gray.shape[1], template_gray.shape[0])
+                return True
+            
+            return False
+            
+        except Exception as e:
+            self.log(f"Error checking for repair dialog: {e}")
+            import traceback
+            self.log(traceback.format_exc())
+            return False
+    
+    def _click_repair_button(self):
+        """Find and click the repair button in the dialog"""
+        try:
+            # Check if we have already found the repair dialog
+            if not hasattr(self, 'repair_dialog_position'):
+                self.log("No repair dialog position found, checking again")
+                if not self._check_repair_dialog():
+                    self.log("Could not find repair dialog for button click")
+                    return False
+                    
+            # Make sure we have the template loaded
+            if self.repair_button_template is None:
+                success = self.load_template_images()
+                if not success or self.repair_button_template is None:
+                    self.log("Error: Repair button template not loaded")
+                    return False
+            
+            # Capture the current screen
+            self.capture_screen()
+            if self.color_frame is None:
+                self.log("Error: Failed to capture screen for repair button check")
+                return False
+                
+            # Get a copy of the current color frame for debugging
+            display_frame = self.color_frame.copy()
+            
+            # ======== COLOR-BASED DETECTION ========
+            # Try color-based detection for blue/green button first
+            self.log("Attempting color-based detection for blue/green button...")
+            
+            # Convert to HSV for better color detection
+            hsv_frame = cv2.cvtColor(self.color_frame, cv2.COLOR_BGR2HSV)
+            
+            # Define color ranges for blue with hint of green (teal/cyan range)
+            # Lower and upper bounds for blue-green colors in HSV
+            lower_blue_green = np.array([80, 50, 50])   # Cyan/teal lower bound
+            upper_blue_green = np.array([110, 255, 255]) # Cyan/teal upper bound
+            
+            # Create a mask for the blue-green color
+            blue_green_mask = cv2.inRange(hsv_frame, lower_blue_green, upper_blue_green)
+            
+            # Also try a more pure blue range as backup
+            lower_blue = np.array([100, 50, 50])
+            upper_blue = np.array([130, 255, 255])
+            blue_mask = cv2.inRange(hsv_frame, lower_blue, upper_blue)
+            
+            # Combine masks
+            combined_mask = cv2.bitwise_or(blue_green_mask, blue_mask)
+            
+            # Clean up mask with morphological operations
+            kernel = np.ones((5, 5), np.uint8)
+            clean_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel)
+            clean_mask = cv2.morphologyEx(clean_mask, cv2.MORPH_OPEN, kernel)
+            
+            # Find contours of potential button areas
+            contours, hierarchy = cv2.findContours(clean_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            # Debug - save color mask
+            color_mask_path = "button_color_mask.png"
+            cv2.imwrite(color_mask_path, clean_mask)
+            self.log(f"Saved color mask to: {color_mask_path}")
+            
+            # Initialize variables for button detection
+            button_center = None
+            button_rect = None
+            largest_area = 0
+            
+            # Process contours, looking for button-like shapes
+            self.log(f"Found {len(contours)} potential button contours")
+            for contour in contours:
+                area = cv2.contourArea(contour)
+                
+                # Log contour area for debugging
+                self.log(f"Contour area: {area}")
+                
+                # Filter out very small contours
+                if area < 200:  # Minimum area threshold
+                    continue
+                    
+                # Get bounding rectangle
+                x, y, w, h = cv2.boundingRect(contour)
+                
+                # Filter based on aspect ratio - buttons are usually wider than tall
+                aspect_ratio = float(w) / h
+                self.log(f"Contour aspect ratio: {aspect_ratio:.2f}")
+                
+                if 1.5 < aspect_ratio < 5.0:  # Typical button aspect ratio
+                    # Draw contour and rectangle on debug image
+                    cv2.drawContours(display_frame, [contour], -1, (0, 255, 255), 2)
+                    cv2.rectangle(display_frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                    
+                    # Compute center
+                    center_x = x + w // 2
+                    center_y = y + h // 2
+                    
+                    # Check for text or dollar sign - money buttons often have dollar signs or text
+                    roi = self.color_frame[y:y+h, x:x+w]
+                    
+                    # Convert to grayscale for template matching
+                    if roi.size > 0:  # Ensure ROI is not empty
+                        roi_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+                        
+                        # Simple check for brightness variation that might indicate text
+                        stddev = np.std(roi_gray)
+                        self.log(f"ROI standard deviation: {stddev:.2f}")
+                        
+                        # Higher stddev indicates more variation, likely text
+                        if stddev > 15:  # Adjust this threshold based on testing
+                            cv2.putText(display_frame, f"Button? {area:.0f}", (x, y-5), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+                            
+                            # If this is the largest valid button so far, save it
+                            if area > largest_area:
+                                largest_area = area
+                                button_center = (center_x, center_y)
+                                button_rect = (x, y, w, h)
+            
+            # If we found a button using color detection
+            if button_center is not None:
+                self.log(f"Found button using color detection at {button_center}")
+                
+                # Draw a crosshair at button center
+                cv2.drawMarker(display_frame, button_center, (255, 0, 0), 
+                              cv2.MARKER_CROSS, 20, 3)
+                
+                # Save button detection image
+                button_detect_path = "button_color_detection.png"
+                cv2.imwrite(button_detect_path, display_frame)
+                self.log(f"Saved color detection image to: {button_detect_path}")
+                
+                # Adjust for the region offset if we're not capturing full screen
+                click_x, click_y = button_center
+                if self.region:
+                    left, top, _, _ = self.region
+                    click_x += left
+                    click_y += top
+                
+                self.log(f"Clicking button from color detection at ({click_x}, {click_y})")
+                
+                # Use AppleScript to click the button
+                click_script = f'''
+                tell application "System Events"
+                    set frontmost of process "{self.game_process_name}" to true
+                    click at {{{click_x}, {click_y}}}
+                end tell
+                '''
+                
+                subprocess.run(['osascript', '-e', click_script], check=True, capture_output=True)
+                self.log("Clicked repair button (color detection)")
+                
+                # Save a verification image after clicking
+                time.sleep(0.5)  # Brief pause to let UI update
+                self.capture_screen()
+                if self.color_frame is not None:
+                    verify_path = "after_button_click_color.png"
+                    cv2.imwrite(verify_path, self.color_frame)
+                    self.log(f"Saved verification image to: {verify_path}")
+                
+                return True
+            
+            # ======== TEMPLATE MATCHING (FALLBACK) ========
+            # If color detection failed, fall back to template matching
+            self.log("Color detection didn't find a button, falling back to template matching...")
+                
+            # Convert template to grayscale if needed
+            if len(self.repair_button_template.shape) == 3 and self.repair_button_template.shape[2] == 3:
+                button_gray = cv2.cvtColor(self.repair_button_template, cv2.COLOR_BGR2GRAY)
+            else:
+                button_gray = self.repair_button_template
+                
+            # Convert screen to grayscale
+            if len(self.color_frame.shape) == 3 and self.color_frame.shape[2] == 3:
+                screen_gray = cv2.cvtColor(self.color_frame, cv2.COLOR_BGR2GRAY)
+            else:
+                screen_gray = self.color_frame
+                
+            # Log dimensions
+            self.log(f"Repair button template dimensions: {button_gray.shape}")
+            self.log(f"Screen dimensions: {screen_gray.shape}")
+            
+            # Check if we should limit the search to just the dialog area
+            if hasattr(self, 'repair_dialog_position') and hasattr(self, 'repair_dialog_size'):
+                # Restrict search to the area of the dialog plus a margin
+                dialog_x, dialog_y = self.repair_dialog_position
+                dialog_w, dialog_h = self.repair_dialog_size
+                margin = 50  # pixels margin around dialog
+                
+                # Ensure we don't go out of bounds
+                roi_x = max(0, dialog_x - margin)
+                roi_y = max(0, dialog_y - margin)
+                roi_w = min(screen_gray.shape[1] - roi_x, dialog_w + 2*margin)
+                roi_h = min(screen_gray.shape[0] - roi_y, dialog_h + 2*margin)
+                
+                # Extract region of interest
+                screen_roi = screen_gray[roi_y:roi_y+roi_h, roi_x:roi_x+roi_w]
+                self.log(f"Using ROI for button detection: x={roi_x}, y={roi_y}, w={roi_w}, h={roi_h}")
+                
+                # Ensure ROI is big enough for template matching
+                if (screen_roi.shape[0] < button_gray.shape[0] or 
+                    screen_roi.shape[1] < button_gray.shape[1]):
+                    self.log("ROI is too small for button template, using full screen")
+                    screen_roi = screen_gray
+                    roi_x, roi_y = 0, 0
+                else:
+                    # Draw ROI on debug image
+                    cv2.rectangle(display_frame, (roi_x, roi_y), 
+                                 (roi_x + roi_w, roi_y + roi_h), (0, 0, 255), 2)
+            else:
+                # Use the full screen
+                screen_roi = screen_gray
+                roi_x, roi_y = 0, 0
+                
+            # Try multiple template matching methods for better results
+            methods = [
+                (cv2.TM_CCOEFF_NORMED, "CCOEFF_NORMED"),
+                (cv2.TM_CCORR_NORMED, "CCORR_NORMED"),
+                (cv2.TM_SQDIFF_NORMED, "SQDIFF_NORMED")
+            ]
+            
+            best_max_val = 0
+            best_max_loc = None
+            best_method = None
+            
+            for method, method_name in methods:
+                # Perform template matching
+                self.log(f"Trying button match with method: {method_name}")
+                result = cv2.matchTemplate(screen_roi, button_gray, method)
+                
+                # For SQDIFF, best match is minimum; for others, it's maximum
+                if method == cv2.TM_SQDIFF_NORMED:
+                    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+                    curr_val = 1.0 - min_val  # Convert to a score where higher is better
+                    curr_loc = min_loc
+                else:
+                    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+                    curr_val = max_val
+                    curr_loc = max_loc
+                    
+                self.log(f"Method {method_name} confidence: {curr_val:.2f}")
+                
+                # Keep track of best result
+                if curr_val > best_max_val:
+                    best_max_val = curr_val
+                    best_max_loc = curr_loc
+                    best_method = method_name
+            
+            # Now use the best result
+            if best_max_loc is not None:
+                # Adjust for ROI offset
+                max_loc = (best_max_loc[0] + roi_x, best_max_loc[1] + roi_y)
+                max_val = best_max_val
+                self.log(f"Best button match: method={best_method}, confidence={max_val:.2f}, loc={max_loc}")
+                
+                # Draw match on debug image
+                top_left = max_loc
+                bottom_right = (top_left[0] + button_gray.shape[1], top_left[1] + button_gray.shape[0])
+                cv2.rectangle(display_frame, top_left, bottom_right, (255, 0, 0), 2)
+                
+                # Save debug image
+                debug_path = "repair_button_match.png"
+                cv2.imwrite(debug_path, display_frame)
+                self.log(f"Saved button match debug image to: {debug_path}")
+            else:
+                self.log("No button match found")
+                return False
+            
+            # If the match is good enough, click the button
+            if max_val >= self.template_match_threshold:
+                # Calculate button center position
+                button_x = max_loc[0] + button_gray.shape[1] // 2
+                button_y = max_loc[1] + button_gray.shape[0] // 2
+                
+                # Adjust for the region offset
+                if self.region:
+                    left, top, _, _ = self.region
+                    button_x += left
+                    button_y += top
+                
+                self.log(f"Clicking repair button at ({button_x}, {button_y})")
+                
+                # Use AppleScript to click the button
+                click_script = f'''
+                tell application "System Events"
+                    set frontmost of process "{self.game_process_name}" to true
+                    click at {{{button_x}, {button_y}}}
+                end tell
+                '''
+                
+                subprocess.run(['osascript', '-e', click_script], check=True, capture_output=True)
+                self.log("Clicked repair button")
+                
+                # Save a verification image after clicking
+                time.sleep(0.5)  # Brief pause to let UI update
+                self.capture_screen()
+                if self.color_frame is not None:
+                    verify_path = "after_button_click.png"
+                    cv2.imwrite(verify_path, self.color_frame)
+                    self.log(f"Saved verification image to: {verify_path}")
+                
+                return True
+            else:
+                self.log(f"Button match confidence {max_val:.2f} below threshold {self.template_match_threshold}")
+                return False
+                
+        except Exception as e:
+            self.log(f"Error clicking repair button: {e}")
+            import traceback
+            self.log(traceback.format_exc())
+            return False
             
     def _send_f_key(self):
         """Send F key press using AppleScript with game focus"""
@@ -629,15 +1084,15 @@ class RegionSelectionOverlay(QDialog):
             self.box_height
         )
         
-        # Modern macOS theme colors
+        # Matcha wood theme colors
         self.colors = {
-            'bg_overlay': QColor(25, 25, 25, 150),     # Dark background with transparency
-            'bg_medium': QColor(53, 54, 57, 220),      # Medium background with transparency
-            'accent_blue': QColor(10, 132, 255, 255),  # macOS blue accent
-            'accent_blue_light': QColor(50, 172, 255, 200), # Lighter blue
-            'accent_green': QColor(48, 209, 88, 255),  # macOS green
-            'text': QColor(255, 255, 255, 255),        # White text
-            'border': QColor(90, 90, 95, 180)          # Border color with transparency
+            'bg_overlay': QColor(44, 36, 23, 150),     # Dark oak wood with transparency
+            'bg_medium': QColor(67, 52, 31, 220),      # Medium oak wood with transparency
+            'accent_green': QColor(141, 195, 112, 255), # Matcha green
+            'accent_green_light': QColor(167, 207, 144, 200), # Light matcha green
+            'accent_dark': QColor(93, 112, 82, 255),   # Dark grass green
+            'text': QColor(248, 244, 227, 255),        # Cream text
+            'border': QColor(94, 73, 41, 180)          # Oak border color with transparency
         }
         
         # For finding "PLAY TOGETHER" window
@@ -744,39 +1199,39 @@ class RegionSelectionOverlay(QDialog):
             return None
     
     def _init_ui(self):
-        """Initialize the UI components with modern macOS theme"""
-        # Add label with instructions
+        """Initialize the UI components with matcha wood theme"""
+        # Add label with instructions - more compact
         self.instructions = QLabel("Click and drag to move selection box. Release to place. (ESC to cancel)", self)
         self.instructions.setStyleSheet("""
-            color: white; 
-            background-color: rgba(53, 54, 57, 220); 
-            padding: 12px;
-            border-radius: 10px;
+            color: #F8F4E3; 
+            background-color: rgba(67, 52, 31, 220); 
+            padding: 8px;
+            border-radius: 8px;
             font-family: Helvetica, Arial, sans-serif;
             font-weight: 500;
-            font-size: 13px;
+            font-size: 12px;
         """)
         self.instructions.setGeometry(
-            (self.screen_width - 500) // 2,  # Center horizontally
-            30,  # Position from top
-            500,  # Width
-            40   # Height
+            (self.screen_width - 480) // 2,  # Center horizontally
+            25,  # Position from top
+            480,  # Width
+            32   # Height
         )
         self.instructions.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        # Add "Position on PLAY TOGETHER" button
+        # Add "Position on PLAY TOGETHER" button - more compact
         self.play_together_button = QPushButton("Position on PLAY TOGETHER", self)
         self.play_together_button.setStyleSheet("""
-            background-color: rgba(10, 132, 255, 220); 
-            color: white; 
+            background-color: rgba(141, 195, 112, 220); 
+            color: #2C2417; 
             border: none; 
-            padding: 10px 16px;
-            border-radius: 10px;
+            padding: 6px 12px;
+            border-radius: 8px;
             font-family: Helvetica, Arial, sans-serif;
-            font-weight: 500;
-            font-size: 13px;
+            font-weight: 600;
+            font-size: 12px;
         """)
-        self.play_together_button.setGeometry(self.screen_width - 250, 70, 220, 40)
+        self.play_together_button.setGeometry(self.screen_width - 220, 65, 200, 30)
         self.play_together_button.clicked.connect(self.position_on_play_together)
         
         # Show button only if PLAY TOGETHER window was found
@@ -883,7 +1338,7 @@ class RegionSelectionOverlay(QDialog):
             print(f"Error focusing window: {e}")
         
     def paintEvent(self, event):
-        """Draw the selection overlay with modern macOS theme"""
+        """Draw the selection overlay with matcha wood theme"""
         painter = QPainter(self)
         
         # Set up rendering hints for better quality
@@ -897,7 +1352,7 @@ class RegionSelectionOverlay(QDialog):
                              QRect(0, 0, self.background_pixmap.width(), self.background_pixmap.height()))
             
             # Apply a slight darkening overlay
-            painter.fillRect(target_rect, QColor(25, 25, 25, 100))  # Dark overlay
+            painter.fillRect(target_rect, QColor(44, 36, 23, 100))  # Dark oak overlay
         else:
             # Fallback to a semi-transparent background if no screenshot
             painter.fillRect(self.rect(), self.colors['bg_overlay'])
@@ -910,20 +1365,20 @@ class RegionSelectionOverlay(QDialog):
                 self.play_together_rect.width(),
                 self.play_together_rect.height()
             )
-            painter.fillRect(play_together_highlight, QColor(10, 132, 255, 30))  # Blue highlight
-            painter.setPen(QPen(self.colors['accent_blue'], 2, Qt.PenStyle.DashLine))
+            painter.fillRect(play_together_highlight, QColor(141, 195, 112, 30))  # Light matcha highlight
+            painter.setPen(QPen(self.colors['accent_green'], 1, Qt.PenStyle.DashLine))
             painter.drawRect(play_together_highlight)
             
-            # Display a label identifying the window
+            # Display a label identifying the window - more compact
             game_label_rect = QRect(
                 self.play_together_rect.left(), 
-                self.play_together_rect.top() - 30,
+                self.play_together_rect.top() - 24,
                 self.play_together_rect.width(), 
-                30
+                24
             )
-            painter.fillRect(game_label_rect, QColor(53, 54, 57, 220))  # Dark background
-            painter.setPen(self.colors['accent_blue'])
-            painter.setFont(QFont("Helvetica", 10, QFont.Weight.Medium))
+            painter.fillRect(game_label_rect, QColor(67, 52, 31, 220))  # Oak background
+            painter.setPen(self.colors['accent_green'])
+            painter.setFont(QFont("Helvetica", 9, QFont.Weight.Medium))
             painter.drawText(game_label_rect, Qt.AlignmentFlag.AlignCenter, "PLAY TOGETHER WINDOW")
         
         # Draw dimmed rectangle around the selection area to highlight it
@@ -931,53 +1386,53 @@ class RegionSelectionOverlay(QDialog):
         # Top area
         painter.fillRect(
             QRect(0, 0, self.screen_width, self.box_rect.top()),
-            QColor(25, 25, 25, 150)  # Dark with transparency
+            QColor(44, 36, 23, 150)  # Dark oak with transparency
         )
         # Bottom area
         painter.fillRect(
             QRect(0, self.box_rect.bottom() + 1, self.screen_width, self.screen_height - self.box_rect.bottom() - 1),
-            QColor(25, 25, 25, 150)
+            QColor(44, 36, 23, 150)
         )
         # Left area
         painter.fillRect(
             QRect(0, self.box_rect.top(), self.box_rect.left(), self.box_rect.height()),
-            QColor(25, 25, 25, 150)
+            QColor(44, 36, 23, 150)
         )
         # Right area
         painter.fillRect(
             QRect(self.box_rect.right() + 1, self.box_rect.top(), 
                   self.screen_width - self.box_rect.right() - 1, self.box_rect.height()),
-            QColor(25, 25, 25, 150)
+            QColor(44, 36, 23, 150)
         )
         
-        # Draw crosshairs - blue accent
-        painter.setPen(QPen(self.colors['accent_blue'], 1, Qt.PenStyle.DashLine))
+        # Draw crosshairs - matcha green - thinner line
+        painter.setPen(QPen(self.colors['accent_green'], 1, Qt.PenStyle.DotLine))
         painter.drawLine(0, self.mouse_pos.y(), self.screen_width, self.mouse_pos.y())
         painter.drawLine(self.mouse_pos.x(), 0, self.mouse_pos.x(), self.screen_height)
         
         # Ensure box stays within screen bounds
         self.constrain_box_to_screen()
         
-        # Draw selection box border - blue accent
-        outer_pen = QPen(self.colors['accent_blue'], 2)
+        # Draw selection box border - matcha green - thinner line
+        outer_pen = QPen(self.colors['accent_green'], 1.5)
         painter.setPen(outer_pen)
-        painter.drawRoundedRect(self.box_rect, 10, 10)  # Rounded corners
+        painter.drawRoundedRect(self.box_rect, 8, 8)  # Smaller rounded corners
         
-        # Add a second, inner border for better visibility
+        # Add a second, inner border for better visibility - thinner
         inner_rect = QRect(
-            self.box_rect.left() + 3, 
-            self.box_rect.top() + 3, 
-            self.box_rect.width() - 6, 
-            self.box_rect.height() - 6
+            self.box_rect.left() + 2, 
+            self.box_rect.top() + 2, 
+            self.box_rect.width() - 4, 
+            self.box_rect.height() - 4
         )
-        painter.setPen(QPen(self.colors['accent_blue_light'], 1))
-        painter.drawRoundedRect(inner_rect, 8, 8)  # Rounded corners
+        painter.setPen(QPen(self.colors['accent_green_light'], 1))
+        painter.drawRoundedRect(inner_rect, 6, 6)  # Smaller rounded corners
         
         # Draw semi-transparent fill
-        painter.fillRect(self.box_rect, QColor(10, 132, 255, 15))  # Very light blue
+        painter.fillRect(self.box_rect, QColor(141, 195, 112, 15))  # Very light matcha green
         
-        # Draw grid lines
-        painter.setPen(QPen(self.colors['accent_blue_light'], 1, Qt.PenStyle.DashLine))
+        # Draw grid lines - thinner
+        painter.setPen(QPen(self.colors['accent_green_light'], 0.5, Qt.PenStyle.DashLine))
         # Vertical grid lines
         cell_width = self.box_width // 3
         for i in range(1, 3):
@@ -993,27 +1448,27 @@ class RegionSelectionOverlay(QDialog):
                 self.box_rect.right(), self.box_rect.top() + i * cell_height
             )
         
-        # Draw coordinates with macOS-style pill background
+        # Draw coordinates with oak-style pill background - more compact
         coord_text = f"Position: ({self.box_rect.left()},{self.box_rect.top()}) • Size: {self.box_width}×{self.box_height}"
-        text_width = 400
-        text_height = 30
+        text_width = 360
+        text_height = 24
         
         # Create pill background
         coord_rect = QRect(
             (self.screen_width - text_width) // 2,
-            self.screen_height - 50, 
+            self.screen_height - 40, 
             text_width, 
             text_height
         )
         
         # Draw background pill
         path = QPainterPath()
-        path.addRoundedRect(QRectF(coord_rect), 15, 15)
-        painter.fillPath(path, QColor(53, 54, 57, 220))  # Dark background
+        path.addRoundedRect(QRectF(coord_rect), 12, 12)
+        painter.fillPath(path, QColor(67, 52, 31, 220))  # Oak background
         
-        # Draw text
+        # Draw text - smaller font
         painter.setPen(self.colors['text'])
-        painter.setFont(QFont("Helvetica", 11, QFont.Weight.Medium))
+        painter.setFont(QFont("Helvetica", 10, QFont.Weight.Medium))
         painter.drawText(
             coord_rect, 
             Qt.AlignmentFlag.AlignCenter, 
@@ -1123,43 +1578,43 @@ class TimelinePlot(FigureCanvas):
     def __init__(self, parent=None, width=6, height=1, dpi=100):
         # Define matcha wood theme colors for plot
         self.colors = {
-            'bg_dark': '#2C3639',      # Deep charcoal background
-            'bg_wood': '#3F4E4F',      # Wood tone
-            'grid': '#555555',         # Grid color
-            'matcha': '#A0C49D',       # Medium matcha
-            'matcha_light': '#DAE5D0', # Light matcha
-            'alert': '#F87474',        # Soft red
-            'text': '#FFFFFF',         # White text
-            'text_dim': '#DCD7C9',     # Dim text
+            'bg_dark': '#2C2417',      # Dark oak wood background
+            'bg_card': '#43341F',      # Medium oak wood background
+            'grid': '#5E4929',         # Grid color - oak with more contrast
+            'accent': '#8DC370',       # Matcha green accent
+            'accent_light': '#A7CF90', # Light matcha green
+            'alert': '#D95F4E',        # Error - burnt sienna
+            'text': '#F8F4E3',         # Cream text
+            'text_dim': '#E6DFC8',     # Light cream text
         }
         
-        # Create figure and axes with matcha wood theme
+        # Create figure and axes with modern dark theme
         self.fig, self.ax = plt.subplots(figsize=(width, height), dpi=dpi)
-        self.fig.set_facecolor(self.colors['bg_wood'])
-        self.ax.set_facecolor(self.colors['bg_wood'])
+        self.fig.set_facecolor(self.colors['bg_dark'])
+        self.ax.set_facecolor(self.colors['bg_dark'])
         
         # Initialize with empty data
         self.x_data = np.arange(100)
         self.y_data = np.zeros(100)
         
-        # Create the plot with matcha colors
-        self.activity_line, = self.ax.plot(self.x_data, self.y_data, color=self.colors['matcha'], linewidth=1.5)
-        self.threshold_line = self.ax.axhline(y=0.05, color=self.colors['alert'], linestyle='--', alpha=0.7, linewidth=1)
+        # Create the plot with teal accent colors
+        self.activity_line, = self.ax.plot(self.x_data, self.y_data, color=self.colors['accent'], linewidth=1.5)
+        self.threshold_line = self.ax.axhline(y=0.05, color=self.colors['alert'], linestyle='--', alpha=0.8, linewidth=1)
         
-        # Configure appearance for matcha wood theme
+        # Configure appearance for modern dark theme
         self.ax.set_xlim(0, 99)
         self.ax.set_ylim(0, 1)
         self.ax.set_xticks([])
         
         # Add subtle grid lines
-        self.ax.grid(True, alpha=0.15, color=self.colors['grid'])
+        self.ax.grid(True, alpha=0.2, color=self.colors['grid'])
         
-        # Set text styling - using standard fonts that matplotlib supports
-        self.ax.set_title("Activity Timeline", color=self.colors['matcha_light'], fontsize=11, 
+        # Set text styling with smaller font - using standard fonts that matplotlib supports
+        self.ax.set_title("Activity Timeline", color=self.colors['accent_light'], fontsize=10, 
                          fontweight='medium')
         
-        # Set text color for axis labels and ticks
-        self.ax.tick_params(axis='y', colors=self.colors['text_dim'], labelsize=9)
+        # Set text color for axis labels and ticks - smaller font
+        self.ax.tick_params(axis='y', colors=self.colors['text_dim'], labelsize=8)
         self.ax.yaxis.label.set_color(self.colors['text'])
         
         # Remove spines
@@ -1171,8 +1626,8 @@ class TimelinePlot(FigureCanvas):
         super().__init__(self.fig)
         self.setParent(parent)
         
-        # Set up a tight layout
-        self.fig.tight_layout(pad=1.2)
+        # Set up a tight layout with smaller padding
+        self.fig.tight_layout(pad=0.8)
         
     def update_plot(self, history, threshold):
         """Update the plot with new data"""
@@ -1188,9 +1643,9 @@ class TimelinePlot(FigureCanvas):
         self.activity_line.set_ydata(data)
         self.threshold_line.set_ydata([threshold, threshold])
         
-        # Update title with threshold value in minimal format - using standard fonts
-        self.ax.set_title(f"Activity Timeline [threshold: {threshold:.2f}]", 
-                        color=self.colors['matcha_light'], fontsize=11, 
+        # Update title with threshold value in minimal format - smaller font
+        self.ax.set_title(f"Activity [threshold: {threshold:.2f}]", 
+                        color=self.colors['accent_light'], fontsize=9, 
                         fontweight='medium')
         
         # Redraw the canvas
@@ -1201,18 +1656,19 @@ class MonitoringDisplay(QWidget):
     """Widget for displaying the captured region and difference visualization"""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumSize(400, 250)
+        self.setMinimumSize(380, 230)  # Even smaller minimum size
         
-        # Define colors
+        # Define colors - use the matcha wood theme
         self.colors = {
-            'bg_dark': '#2C3639',      # Deep charcoal background
-            'bg_wood': '#3F4E4F',      # Wood tone
-            'matcha': '#A0C49D',       # Medium matcha
-            'matcha_light': '#DAE5D0', # Light matcha
-            'matcha_dark': '#7D8F69',  # Dark matcha
-            'alert': '#F87474',        # Soft red
-            'warning': '#F9B572',      # Soft orange
-            'text': '#FFFFFF',         # White text
+            'bg_dark': '#2C2417',      # Dark oak wood for background
+            'bg_card': '#43341F',      # Medium oak wood for cards/controls
+            'accent': '#8DC370',       # Matcha green accent
+            'accent_light': '#A7CF90',  # Light matcha green
+            'accent_dark': '#6B9E4F',   # Dark matcha green
+            'alert': '#D95F4E',        # Error - burnt sienna
+            'warning': '#E6A948',      # Warning - golden oak
+            'text': '#F8F4E3',         # Cream text
+            'text_dim': '#E6DFC8',     # Light cream text
         }
         
         # Initialize bright mode tracking
@@ -1221,37 +1677,37 @@ class MonitoringDisplay(QWidget):
         # Create layout
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)  # Reduced spacing for slimmer appearance
+        layout.setSpacing(4)  # Further reduced spacing
         
         # Image display label with rounded corners
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_label.setStyleSheet(f"""
-            background-color: {self.colors['bg_wood']}; 
+            background-color: {self.colors['bg_card']}; 
             border: none; 
-            border-radius: 10px;
+            border-radius: 8px;
             padding: 4px;
         """)
         layout.addWidget(self.image_label)
         
-        # Status indicators in a ultra-slim frame
+        # Status indicators in a slim frame
         status_frame = QFrame()
-        status_frame.setMaximumHeight(28)  # Make it slimmer
+        status_frame.setMaximumHeight(28)  # Even smaller height
         status_frame.setStyleSheet(f"""
-            background-color: {self.colors['bg_wood']};
+            background-color: {self.colors['bg_card']};
             border-radius: 6px;
             padding: 0px;
         """)
         status_layout = QHBoxLayout(status_frame)
-        status_layout.setContentsMargins(8, 2, 8, 2)  # Very slim padding
-        status_layout.setSpacing(6)
+        status_layout.setContentsMargins(8, 2, 8, 2)  # Further reduced padding
+        status_layout.setSpacing(6)  # Reduced spacing
         
         self.status_label = QLabel("Status: Idle")
-        self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
+        self.status_label.setStyleSheet(f"color: {self.colors['accent_light']}; font-weight: 500; font-size: 12px;")
         status_layout.addWidget(self.status_label)
         
         self.change_label = QLabel("Change: 0.00%")
-        self.change_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
+        self.change_label.setStyleSheet(f"color: {self.colors['accent_light']}; font-weight: 500; font-size: 12px;")
         status_layout.addWidget(self.change_label, alignment=Qt.AlignmentFlag.AlignRight)
         
         layout.addWidget(status_frame)
@@ -1261,103 +1717,23 @@ class MonitoringDisplay(QWidget):
         self._last_display_time = 0
         self._display_throttle_ms = 16.67  # ~60fps
         
-    def update_display(self, color_frame, diff_frame, change_percent):
-        """Update the display with improved rendering to reduce noise - optimized for performance"""
-        if color_frame is None:
-            return
-            
-        # Throttle updates for better performance, but with higher frame rate
-        current_time = time.time() * 1000  # Convert to ms
-        if current_time - self._last_display_time < self._display_throttle_ms:
-            return
-            
-        self._last_display_time = current_time
-            
-        try:
-            # Create a clean copy for display - optimize by avoiding unnecessary copies
-            display_frame = color_frame
-
-            if diff_frame is not None:
-                # Apply a more selective highlighting approach
-                # Convert diff_frame to 3 channel if it's grayscale
-                if len(diff_frame.shape) == 2:
-                    # Create a colored mask for changes - using blue for visibility (macOS style)
-                    # Optimized version with fewer operations
-                    change_indices = diff_frame > 0
-                    if np.any(change_indices):
-                        # Only modify pixels that actually changed - create a copy only when needed
-                        if id(display_frame) == id(color_frame):
-                            display_frame = color_frame.copy()
-                        # Use matcha green for highlights
-                        display_frame[change_indices, 0] = 157   # B value (in BGR)
-                        display_frame[change_indices, 1] = 196   # G value
-                        display_frame[change_indices, 2] = 160   # R value
-            
-            # Convert BGR to RGB for proper display
-            display_frame_rgb = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
-            
-            # Add a small indicator for bright detection mode if enabled
-            if hasattr(self, 'bright_mode_enabled') and self.bright_mode_enabled:
-                # Add a small "B" indicator in the bottom right corner
-                height, width = display_frame_rgb.shape[:2]
-                cv2.putText(display_frame_rgb, "BRIGHT", (width-70, height-10), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 200, 255), 1, cv2.LINE_AA)
-            
-            # Convert to QImage for display - avoid memory copies when possible
-            height, width, channels = display_frame_rgb.shape
-            bytes_per_line = channels * width
-            
-            q_img = QImage(display_frame_rgb.data, width, height, 
-                          bytes_per_line, QImage.Format.Format_RGB888)
-            
-            # Scale image to fit label while maintaining aspect ratio
-            pixmap = QPixmap.fromImage(q_img)
-            
-            # Only rescale if the size changed
-            if (self._last_pixmap is None or 
-                self.image_label.width() != self._last_pixmap.width() or 
-                self.image_label.height() != self._last_pixmap.height()):
-                
-                scaled_pixmap = pixmap.scaled(
-                    self.image_label.size(),
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation  # Use smooth transformation for better quality
-                )
-                self._last_pixmap = scaled_pixmap
-            else:
-                # Use cached pixmap size
-                scaled_pixmap = pixmap.scaled(
-                    self._last_pixmap.size(),
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation
-                )
-                self._last_pixmap = scaled_pixmap
-                
-            self.image_label.setPixmap(self._last_pixmap)
-            
-            # Update change percentage display
-            self.change_label.setText(f"Change: {change_percent:.2%}")
-            
-        except Exception as e:
-            print(f"Error updating display: {e}")
-    
     def set_status(self, status):
-        """Update the status display with Matcha Wood theme colors"""
+        """Update the status display with Modern Dark theme colors"""
         if status == "running":
             self.status_label.setText("Status: Running")
-            self.status_label.setStyleSheet(f"color: {self.colors['matcha']}; font-weight: 500; font-size: 12px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['accent']}; font-weight: 500; font-size: 14px;")
         elif status == "stopped":
             self.status_label.setText("Status: Stopped")
-            self.status_label.setStyleSheet(f"color: {self.colors['alert']}; font-weight: 500; font-size: 12px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['alert']}; font-weight: 500; font-size: 14px;")
         elif status == "paused":
             self.status_label.setText("Status: Paused")
-            self.status_label.setStyleSheet(f"color: {self.colors['warning']}; font-weight: 500; font-size: 12px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['warning']}; font-weight: 500; font-size: 14px;")
         elif status == "action_sequence":
             self.status_label.setText("Status: Action Sequence")
-            self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['primary_light']}; font-weight: 500; font-size: 14px;")
         else:
             self.status_label.setText(f"Status: {status}")
-            self.status_label.setStyleSheet(f"color: {self.colors['text']}; font-weight: 500; font-size: 12px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['text']}; font-weight: 500; font-size: 14px;")
             
     def set_bright_mode(self, enabled):
         """Set whether bright detection mode is enabled"""
@@ -1369,7 +1745,7 @@ class PixelChangeApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Pixel Change Detector")
-        self.setMinimumSize(800, 550)  # More compact minimum size
+        self.setMinimumSize(780, 520)  # Even more compact minimum size
         
         # Initialize detector
         self.detector = PixelChangeDetector()
@@ -1391,287 +1767,339 @@ class PixelChangeApp(QMainWindow):
         # Define color scheme - Matcha Wood Theme
         self.colors = {
             # Base colors
-            'bg_dark': '#2C3639',      # Deep charcoal for background
-            'bg_wood': '#3F4E4F',      # Darker wood tone
-            'bg_light': '#A27B5C',     # Light wood accent
-            'bg_control': '#A27B5C',   # Wood tone for controls
+            'bg_dark': '#2C2417',      # Dark oak wood for background
+            'bg_panel': '#372D1C',     # Slightly lighter oak wood for panels
+            'bg_card': '#43341F',      # Medium oak wood for cards/controls
+            'bg_accent': '#4E3C22',    # Lighter oak wood for accents
             
             # Text colors
-            'text': '#FFFFFF',         # White text
-            'text_dim': '#DCD7C9',     # Soft beige for secondary text
-            'text_secondary': '#C8B6A6', # Muted wood tone for tertiary text
-            'text_dark': '#2C3639',    # Dark text for light backgrounds
+            'text': '#F8F4E3',         # Cream text
+            'text_dim': '#E6DFC8',     # Light cream for secondary text
+            'text_muted': '#BDB59A',   # Muted cream for tertiary text
+            'text_dark': '#2C2417',    # Dark text for light backgrounds
             
-            # Accent colors - Matcha and wood tones
-            'matcha': '#A0C49D',       # Medium matcha green
-            'matcha_light': '#DAE5D0',  # Light matcha
-            'matcha_dark': '#7D8F69',   # Dark matcha
-            'wood_accent': '#C8B6A6',   # Light wood accent
+            # Accent colors
+            'primary': '#8DC370',      # Matcha green primary
+            'primary_light': '#A7CF90', # Light matcha green
+            'primary_dark': '#6B9E4F',  # Dark matcha green
+            'secondary': '#5D7052',    # Dark grass green secondary accent
+            'highlight': '#B9C784',    # Light grass green highlight
             
             # Status colors
-            'success': '#A0C49D',      # Success - matcha green
-            'alert': '#F87474',        # Error - soft red
-            'warning': '#F9B572',      # Warning - soft orange
-            'border': '#454649',       # Border color
+            'success': '#8DC370',      # Success - matcha green
+            'alert': '#D95F4E',        # Error - burnt sienna 
+            'warning': '#E6A948',      # Warning - golden oak
+            'border': '#43341F',       # Border color - medium oak
         }
         
     def _init_ui(self):
-        """Initialize the user interface - Matcha Wood theme"""
+        """Initialize the user interface - Modern Dark theme"""
         # Create central widget and main layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(16)
+        main_layout.setContentsMargins(8, 8, 8, 8)  # Even smaller margins
+        main_layout.setSpacing(6)  # Reduced spacing further
         
-        # Set application-wide stylesheet - Matcha Wood theme
+        # Set application-wide stylesheet - Modern Dark theme with smaller fonts
         self.setStyleSheet(f"""
             QMainWindow, QWidget {{ 
                 background-color: {self.colors['bg_dark']}; 
                 color: {self.colors['text']}; 
-                font-family: Helvetica, Arial, sans-serif;
+                font-family: 'SF Pro Display', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
             }}
             
             QGroupBox {{ 
-                background-color: {self.colors['bg_wood']}; 
+                background-color: {self.colors['bg_panel']}; 
                 color: {self.colors['text_dim']}; 
                 border: none;
-                border-radius: 10px; 
+                border-radius: 8px; 
                 margin-top: 1.2em;
                 font-weight: 500;
                 font-size: 13px;
+                padding: 4px;
             }}
             QGroupBox::title {{ 
                 subcontrol-origin: margin; 
-                left: 12px; 
-                padding: 0 8px 0 8px;
-                color: {self.colors['matcha_light']};
-            }}
-            
-            QLabel {{ 
-                color: {self.colors['text']}; 
-                font-size: 13px;
-                background: transparent;
+                left: 8px; 
+                padding: 0 6px;
+                color: {self.colors['primary_light']};
             }}
             
             QPushButton {{ 
-                background-color: {self.colors['bg_wood']}; 
+                background-color: {self.colors['bg_card']}; 
                 color: {self.colors['text']}; 
                 border: none; 
-                padding: 8px 16px; 
-                border-radius: 8px;
-                font-size: 13px;
+                padding: 4px 10px; 
+                border-radius: 6px;
+                font-size: 12px;
                 font-weight: 500;
-                min-height: 28px;
-                margin: 2px;
+                min-height: 24px;
+                margin: 1px;
             }}
             QPushButton:hover {{ 
-                background-color: {self.colors['matcha_dark']}; 
+                background-color: {self.colors['primary_dark']}; 
             }}
             QPushButton:pressed {{ 
-                background-color: {self.colors['matcha']}; 
-                color: {self.colors['text_dark']};
+                background-color: {self.colors['primary']}; 
+                color: {self.colors['text']};
             }}
             QPushButton:disabled {{ 
-                color: {self.colors['text_secondary']}; 
-                background-color: {self.colors['bg_wood']};
+                color: {self.colors['text_muted']}; 
+                background-color: {self.colors['bg_card']};
                 opacity: 0.8;
-            }}
-            
-            QTextEdit {{ 
-                background-color: {self.colors['bg_wood']}; 
-                color: {self.colors['text']}; 
-                border: none; 
-                border-radius: 8px;
-                font-family: 'Menlo', 'Monaco', monospace;
-                font-size: 12px;
-                padding: 6px;
-                selection-background-color: {self.colors['matcha']};
-            }}
-            
-            QSlider::groove:horizontal {{
-                border: none;
-                height: 4px;
-                background: {self.colors['bg_dark']};
-                margin: 0px;
-                border-radius: 2px;
-            }}
-            QSlider::handle:horizontal {{
-                background: {self.colors['matcha']};
-                border: none;
-                width: 16px;
-                height: 16px;
-                margin: -6px 0;
-                border-radius: 8px;
-            }}
-            QSlider::handle:horizontal:hover {{
-                background: {self.colors['matcha_light']};
-            }}
-            
-            QCheckBox {{
-                color: {self.colors['text']};
-                font-size: 13px;
-                spacing: 8px;
-            }}
-            QCheckBox::indicator {{
-                width: 18px;
-                height: 18px;
-                border-radius: 4px;
-                border: none;
-                background-color: {self.colors['bg_dark']};
-            }}
-            QCheckBox::indicator:checked {{
-                background-color: {self.colors['matcha']};
-                image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNCIgaGVpZ2h0PSIxNCIgdmlld0JveD0iMCAwIDE0IDE0Ij48cGF0aCBmaWxsPSIjRkZGRkZGIiBkPSJNNS43MzMgMTBMMTIgMy43MzMgMTAuMjY3IDIgNS43MzMgNi41MzMgMy43MzMgNC41MzMgMiA2LjI2N3oiLz48L3N2Zz4=);
             }}
         """)
         
-        # Create left panel (controls) with macOS spacing
-        left_panel = QWidget()
-        left_panel.setFixedWidth(280)  # Slightly wider for better readability
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(12)  # Standard macOS spacing
-        main_layout.addWidget(left_panel)
+        # Create a container that will resize with window
+        self.container = QWidget()
+        container_layout = QHBoxLayout(self.container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+        main_layout.addWidget(self.container)
+        
+        # Create a splitter for the main panels
+        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        container_layout.addWidget(self.main_splitter)
+        
+        # Create left panel (controls)
+        self.left_panel = QWidget()
+        self.left_panel.setFixedWidth(320)  # Even narrower left panel
+        left_layout = QVBoxLayout(self.left_panel)
+        left_layout.setContentsMargins(0, 0, 6, 0)
+        left_layout.setSpacing(8)  # Reduced spacing further
+        self.main_splitter.addWidget(self.left_panel)
         
         # Create right panel (visualization)
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(12)  # Standard macOS spacing
-        main_layout.addWidget(right_panel)
+        self.right_panel = QWidget()
+        right_layout = QVBoxLayout(self.right_panel)
+        right_layout.setContentsMargins(6, 0, 0, 0)
+        right_layout.setSpacing(8)  # Reduced spacing
+        self.main_splitter.addWidget(self.right_panel)
+        
+        # Create a persistent button frame that stays visible when right panel is collapsed
+        self.persistent_button_frame = QFrame()
+        self.persistent_button_frame.setFixedWidth(36)  # Slimmer button
+        self.persistent_button_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {self.colors['bg_dark']};
+                border: none;
+                padding: 0px;
+            }}
+        """)
+        persistent_layout = QVBoxLayout(self.persistent_button_frame)
+        persistent_layout.setContentsMargins(0, 0, 0, 0)
+        persistent_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        
+        # Create expand button for collapsed state
+        self.expand_button = QPushButton("▶")
+        self.expand_button.setFixedSize(36, 80)  # Smaller button
+        self.expand_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {self.colors['primary_dark']};
+                color: {self.colors['text']};
+                border-radius: 0px 6px 6px 0px;
+                padding: 2px;
+                font-size: 14px;
+                font-weight: bold;
+                margin: 0px;
+            }}
+            QPushButton:hover {{
+                background-color: {self.colors['primary']};
+            }}
+        """)
+        self.expand_button.clicked.connect(self.expand_right_panel)
+        persistent_layout.addWidget(self.expand_button)
+        persistent_layout.addStretch()
+        
+        # Initially hide the expand button
+        self.expand_button.hide()
+        
+        # Don't add this to main layout yet - will add only when needed
+        self.persistent_button_widget = self.persistent_button_frame
+        
+        # Add "Controls" header to left panel
+        header_font = QFont()
+        header_font.setPointSize(14)  # Even smaller font
+        header_font.setBold(True)
+        
+        left_header = QLabel("Controls")
+        left_header.setFont(header_font)
+        left_header.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        left_header.setStyleSheet(f"color: {self.colors['primary_light']}; margin-bottom: 2px; padding-left: 2px;")
+        left_layout.addWidget(left_header)
+        
+        # Create toggle button
+        self.toggle_button = QPushButton("◀ Hide")
+        self.toggle_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {self.colors['bg_card']};
+                border-radius: 4px;
+                padding: 3px 6px;
+                font-size: 11px;
+                max-width: 60px;
+                margin-left: auto;
+            }}
+            QPushButton:hover {{
+                background-color: {self.colors['primary_dark']};
+            }}
+        """)
+        self.toggle_button.clicked.connect(self.toggle_right_panel)
+        
+        # Add "View" header to right panel with collapse button
+        right_header = QLabel("Monitoring View")
+        right_header.setFont(header_font)
+        right_header.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        right_header.setStyleSheet(f"color: {self.colors['primary_light']}; margin-bottom: 2px; padding-left: 2px;")
+        
+        header_layout = QHBoxLayout()
+        header_layout.addWidget(right_header)
+        header_layout.addStretch()
+        header_layout.addWidget(self.toggle_button)
+        right_layout.addLayout(header_layout)
+        
+        # Store the original sizes for later restoration
+        self.original_sizes = [320, 440]  # Default sizes for left and right panels
+        self.right_panel_collapsed = False
         
         # === LEFT PANEL COMPONENTS ===
         
-        # 1. Settings group - macOS style
+        # 1. Settings group - more compact style
         settings_group = QGroupBox("Settings")
         settings_layout = QVBoxLayout(settings_group)
-        settings_layout.setContentsMargins(16, 24, 16, 16)  # macOS padding
-        settings_layout.setSpacing(12)
+        settings_layout.setContentsMargins(12, 20, 12, 12)  # Further reduced padding
+        settings_layout.setSpacing(10)  # Further reduced spacing
         left_layout.addWidget(settings_group)
         
-        # Threshold control
-        threshold_layout = QHBoxLayout()
-        threshold_layout.setSpacing(10)
+        # Threshold control - using grid layout for better alignment
+        settings_grid = QGridLayout()
+        settings_grid.setColumnStretch(1, 1)  # Make slider column stretch
+        settings_grid.setVerticalSpacing(10)  # Reduced spacing between rows
+        settings_grid.setHorizontalSpacing(8)  # Reduced spacing between columns
+        
         threshold_label = QLabel("Threshold:")
-        threshold_label.setStyleSheet(f"color: {self.colors['text_dim']};")
-        threshold_layout.addWidget(threshold_label)
+        threshold_label.setStyleSheet(f"color: {self.colors['text_dim']}; font-size: 12px;")
+        threshold_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        settings_grid.addWidget(threshold_label, 0, 0)
         
         self.threshold_slider = QSlider(Qt.Orientation.Horizontal)
+        self.threshold_slider.setFixedHeight(28)  # Shorter slider
         self.threshold_slider.setRange(1, 50)  # 0.01 to 0.50
         self.threshold_slider.setValue(5)      # Default 0.05
         self.threshold_slider.valueChanged.connect(self.update_threshold)
-        threshold_layout.addWidget(self.threshold_slider)
+        settings_grid.addWidget(self.threshold_slider, 0, 1)
         
         self.threshold_value_label = QLabel("0.05")
-        self.threshold_value_label.setStyleSheet(f"color: {self.colors['text_dim']};")
-        threshold_layout.addWidget(self.threshold_value_label)
-        settings_layout.addLayout(threshold_layout)
+        self.threshold_value_label.setStyleSheet(f"color: {self.colors['text_dim']}; font-size: 12px;")
+        self.threshold_value_label.setFixedWidth(36) # Narrower fixed width
+        self.threshold_value_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        settings_grid.addWidget(self.threshold_value_label, 0, 2)
         
         # Region size control
-        size_layout = QHBoxLayout()
-        size_layout.setSpacing(10)
         size_label = QLabel("Region Size:")
-        size_label.setStyleSheet(f"color: {self.colors['text_dim']};")
-        size_layout.addWidget(size_label)
+        size_label.setStyleSheet(f"color: {self.colors['text_dim']}; font-size: 12px;")
+        size_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        settings_grid.addWidget(size_label, 1, 0)
         
         self.size_slider = QSlider(Qt.Orientation.Horizontal)
+        self.size_slider.setFixedHeight(28)  # Shorter slider
         self.size_slider.setRange(20, 200)  # 20 to 200 pixels
         self.size_slider.setValue(50)      # Default 100
         self.size_slider.valueChanged.connect(self.update_size_label)
-        size_layout.addWidget(self.size_slider)
+        settings_grid.addWidget(self.size_slider, 1, 1)
         
         self.size_value_label = QLabel("50")
-        self.size_value_label.setStyleSheet(f"color: {self.colors['text_dim']};")
-        size_layout.addWidget(self.size_value_label)
-        settings_layout.addLayout(size_layout)
+        self.size_value_label.setStyleSheet(f"color: {self.colors['text_dim']}; font-size: 12px;")
+        self.size_value_label.setFixedWidth(36) # Narrower fixed width
+        self.size_value_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        settings_grid.addWidget(self.size_value_label, 1, 2)
         
-        # Add noise reduction controls
-        settings_layout.addSpacing(4)
+        settings_layout.addLayout(settings_grid)
         
-        # Noise reduction settings
-        noise_layout = QHBoxLayout()
-        noise_layout.setSpacing(10)
-        noise_label = QLabel("Noise Reduction:")
-        noise_label.setStyleSheet(f"color: {self.colors['text_dim']};")
-        noise_layout.addWidget(noise_label)
+        # Compact settings layout with checkboxes in horizontal arrangement
+        checkbox_layout = QHBoxLayout()
+        checkbox_layout.setSpacing(24)  # Reduced spacing between checkboxes
+        checkbox_layout.setContentsMargins(0, 6, 0, 0)  # Less top margin
         
-        self.noise_checkbox = QCheckBox("On")
+        # Noise reduction checkbox - more compact
+        self.noise_checkbox = QCheckBox("Noise Reduction")
+        self.noise_checkbox.setStyleSheet("font-size: 12px;")
         self.noise_checkbox.setChecked(True)
         self.noise_checkbox.toggled.connect(self.toggle_noise_reduction)
-        noise_layout.addWidget(self.noise_checkbox)
+        checkbox_layout.addWidget(self.noise_checkbox)
         
-        settings_layout.addLayout(noise_layout)
-        
-        # Bright background detection settings
-        bright_layout = QHBoxLayout()
-        bright_layout.setSpacing(10)
-        bright_label = QLabel("Bright Detection:")
-        bright_label.setStyleSheet(f"color: {self.colors['text_dim']};")
-        bright_layout.addWidget(bright_label)
-        
-        self.bright_checkbox = QCheckBox("Enhanced")
+        # Bright background detection checkbox - more compact
+        self.bright_checkbox = QCheckBox("Bright Detection")
+        self.bright_checkbox.setStyleSheet("font-size: 12px;")
         self.bright_checkbox.setChecked(True)
         self.bright_checkbox.toggled.connect(self.toggle_bright_detection)
-        bright_layout.addWidget(self.bright_checkbox)
+        checkbox_layout.addWidget(self.bright_checkbox)
         
-        settings_layout.addLayout(bright_layout)
+        settings_layout.addLayout(checkbox_layout)
         
-        # 2. Monitoring group - macOS style
+        # 2. Monitoring group - more compact style
         monitoring_group = QGroupBox("Monitoring")
         monitoring_layout = QVBoxLayout(monitoring_group)
-        monitoring_layout.setContentsMargins(16, 24, 16, 16)  # macOS padding
-        monitoring_layout.setSpacing(12)
+        monitoring_layout.setContentsMargins(12, 20, 12, 12)  # Further reduced padding
+        monitoring_layout.setSpacing(8)  # Further reduced spacing
         left_layout.addWidget(monitoring_group)
         
         # Region selection button
         self.region_button = QPushButton("Select Region")
         self.region_button.setStyleSheet(f"""
             QPushButton {{
-                background-color: {self.colors['matcha_dark']};
+                background-color: {self.colors['primary_dark']};
                 color: {self.colors['text']};
-                font-weight: 500;
+                font-weight: 600;
+                padding: 6px 12px;
+                font-size: 13px;
             }}
             QPushButton:hover {{
-                background-color: {self.colors['matcha']};
+                background-color: {self.colors['primary']};
             }}
         """)
+        self.region_button.setMinimumHeight(28)  # Shorter height
         self.region_button.clicked.connect(self.select_region)
         monitoring_layout.addWidget(self.region_button)
         
         # Region info display
         region_info_layout = QHBoxLayout()
-        region_info_layout.setSpacing(8)
+        region_info_layout.setSpacing(6)  # Further reduced spacing
+        region_info_layout.setContentsMargins(2, 2, 2, 2)  # Further reduced padding
         status_label = QLabel("Status:")
-        status_label.setStyleSheet(f"color: {self.colors['text_dim']};")
+        status_label.setStyleSheet(f"color: {self.colors['text_dim']}; font-size: 12px;")
         region_info_layout.addWidget(status_label)
         
         self.region_info_label = QLabel("No region selected")
+        self.region_info_label.setStyleSheet("font-size: 12px;")
         region_info_layout.addWidget(self.region_info_label)
         monitoring_layout.addLayout(region_info_layout)
         
-        # 3. Control group - macOS style
+        # 3. Control group - more compact style
         control_group = QGroupBox("Control")
         control_layout = QVBoxLayout(control_group)
-        control_layout.setContentsMargins(16, 24, 16, 16)  # macOS padding
-        control_layout.setSpacing(12)
+        control_layout.setContentsMargins(12, 20, 12, 12)  # Further reduced padding
+        control_layout.setSpacing(8)  # Further reduced spacing
         left_layout.addWidget(control_group)
         
-        # Control buttons
+        # Control buttons - more compact
         button_layout = QHBoxLayout()
-        button_layout.setSpacing(8)
+        button_layout.setSpacing(6)  # Further reduced spacing
         
         self.start_button = QPushButton("Start")
         self.start_button.setStyleSheet(f"""
             QPushButton {{
-                background-color: {self.colors['matcha']};
-                color: {self.colors['text_dark']};
+                background-color: {self.colors['success']};
+                color: {self.colors['text']};
                 font-weight: 600;
+                font-size: 13px;
+                padding: 6px 10px;
             }}
             QPushButton:hover {{
-                background-color: {self.colors['matcha_light']};
+                background-color: #34D399;
             }}
         """)
+        self.start_button.setMinimumHeight(28)  # Shorter height
         self.start_button.clicked.connect(self.start_detection)
         button_layout.addWidget(self.start_button)
         
@@ -1681,11 +2109,14 @@ class PixelChangeApp(QMainWindow):
                 background-color: {self.colors['alert']};
                 color: #FFFFFF;
                 font-weight: 600;
+                font-size: 13px;
+                padding: 6px 10px;
             }}
             QPushButton:hover {{
-                background-color: #FF8A8A;
+                background-color: #F87171;
             }}
         """)
+        self.stop_button.setMinimumHeight(28)  # Shorter height
         self.stop_button.clicked.connect(self.stop_detection)
         self.stop_button.setEnabled(False)
         button_layout.addWidget(self.stop_button)
@@ -1694,103 +2125,117 @@ class PixelChangeApp(QMainWindow):
         self.pause_button.setStyleSheet(f"""
             QPushButton {{
                 background-color: {self.colors['warning']};
-                color: {self.colors['text_dark']};
+                color: {self.colors['text']};
                 font-weight: 600;
+                font-size: 13px;
+                padding: 6px 10px;
             }}
             QPushButton:hover {{
-                background-color: #FFCA85;
+                background-color: #FBBF24;
             }}
         """)
+        self.pause_button.setMinimumHeight(28)  # Shorter height
         self.pause_button.clicked.connect(self.toggle_pause)
         self.pause_button.setEnabled(False)
         button_layout.addWidget(self.pause_button)
         
         control_layout.addLayout(button_layout)
         
-        # Second row of buttons
+        # Second row of buttons - more compact
         button_layout2 = QHBoxLayout()
-        button_layout2.setSpacing(8)
+        button_layout2.setSpacing(6)  # Further reduced spacing
         
         self.reference_button = QPushButton("Capture Reference")
         self.reference_button.setStyleSheet(f"""
             QPushButton {{
-                background-color: {self.colors['bg_light']};
+                background-color: {self.colors['highlight']};
                 color: {self.colors['text']};
+                font-size: 12px;
+                padding: 4px 8px;
             }}
             QPushButton:hover {{
-                background-color: {self.colors['wood_accent']};
-                color: {self.colors['text_dark']};
+                background-color: #94A3B8;
             }}
         """)
+        self.reference_button.setMinimumHeight(26)  # Shorter height
         self.reference_button.clicked.connect(self.capture_reference)
         button_layout2.addWidget(self.reference_button)
         
         self.clear_button = QPushButton("Clear Logs")
+        self.clear_button.setMinimumHeight(26)  # Shorter height
+        self.clear_button.setStyleSheet(f"""
+            font-size: 12px; 
+            padding: 4px 8px;
+            background-color: {self.colors['bg_accent']};
+        """)
         self.clear_button.clicked.connect(self.clear_logs)
         button_layout2.addWidget(self.clear_button)
         
         control_layout.addLayout(button_layout2)
         
-        # 4. Log display - macOS style
+        # 4. Log display - more compact style
         log_group = QGroupBox("Logs")
         log_layout = QVBoxLayout(log_group)
-        log_layout.setContentsMargins(16, 24, 16, 16)  # macOS padding
-        log_layout.setSpacing(8)
+        log_layout.setContentsMargins(12, 20, 12, 12)  # Further reduced padding
+        log_layout.setSpacing(6)
         left_layout.addWidget(log_group, stretch=1)
         
         self.log_display = QTextEdit()
         self.log_display.setReadOnly(True)
+        self.log_display.setMinimumHeight(100)  # Shorter minimum height
+        self.log_display.setStyleSheet("font-size: 11px;")  # Smaller font for logs
         log_layout.addWidget(self.log_display)
         
         # === RIGHT PANEL COMPONENTS ===
         
-        # 1. Monitoring display with matcha wood theme
+        # 1. Monitoring display with more compact theme
         monitor_group = QGroupBox("Live Monitor")
         monitor_layout = QVBoxLayout(monitor_group)
-        monitor_layout.setContentsMargins(16, 24, 16, 16)  # macOS padding
-        monitor_layout.setSpacing(8)
+        monitor_layout.setContentsMargins(12, 20, 12, 12)  # Further reduced padding
+        monitor_layout.setSpacing(6)
         
         self.monitor_display = MonitoringDisplay()
         self.monitor_display.setStyleSheet(f"""
             QLabel {{ 
-                background-color: {self.colors['bg_wood']}; 
+                background-color: {self.colors['bg_card']}; 
                 border: none; 
                 border-radius: 8px;
+                font-size: 12px;
             }}
         """)
         monitor_layout.addWidget(self.monitor_display)
         right_layout.addWidget(monitor_group, stretch=3)
         
-        # 2. Timeline plot in its own group
+        # 2. Timeline plot in its own group - more compact
         timeline_group = QGroupBox("Activity Timeline")
         timeline_layout = QVBoxLayout(timeline_group)
-        timeline_layout.setContentsMargins(16, 24, 16, 16)  # macOS padding
+        timeline_layout.setContentsMargins(12, 20, 12, 12)  # Further reduced padding
         
-        self.timeline_plot = TimelinePlot(width=5, height=1.5)
+        self.timeline_plot = TimelinePlot(width=5, height=1.5)  # Shorter height
         timeline_layout.addWidget(self.timeline_plot)
         
         right_layout.addWidget(timeline_group, stretch=1)
         
-        # 3. Status and count display
+        # 3. Status and count display - more compact
         status_frame = QFrame()
-        status_frame.setMaximumHeight(28)  # Keep it slim
+        status_frame.setMinimumHeight(28)  # Shorter height
         status_frame.setStyleSheet(f"""
             QFrame {{
-                background-color: {self.colors['bg_wood']};
+                background-color: {self.colors['bg_card']};
                 border-radius: 6px;
                 padding: 0px;
             }}
         """)
         status_layout = QHBoxLayout(status_frame)
-        status_layout.setContentsMargins(8, 2, 8, 2)  # Very slim padding
-        status_layout.setSpacing(8)
+        status_layout.setContentsMargins(10, 3, 10, 3)  # Further reduced padding
+        status_layout.setSpacing(6)
         
         self.status_label = QLabel("Status: Waiting")
-        self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
+        self.status_label.setStyleSheet(f"color: {self.colors['primary_light']}; font-weight: 500; font-size: 12px;")
         status_layout.addWidget(self.status_label)
         
         self.count_label = QLabel("Detections: 0")
-        self.count_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
+        self.count_label.setStyleSheet(f"color: {self.colors['primary_light']}; font-weight: 500; font-size: 12px;")
         status_layout.addWidget(self.count_label, alignment=Qt.AlignmentFlag.AlignRight)
         
         right_layout.addWidget(status_frame)
@@ -1802,6 +2247,54 @@ class PixelChangeApp(QMainWindow):
         
         # Set initial state of bright detection in monitor display
         self.monitor_display.set_bright_mode(self.detector.enhanced_bright_detection)
+    
+    def toggle_right_panel(self):
+        """Toggle the right panel between collapsed and expanded states"""
+        if self.right_panel_collapsed:
+            self.expand_right_panel()
+        else:
+            # Save current sizes before collapsing
+            self.original_sizes = self.main_splitter.sizes()
+            
+            # Hide the right panel
+            self.right_panel.hide()
+            
+            # Show the expand button by adding it to the layout
+            container_layout = self.container.layout()
+            container_layout.addWidget(self.persistent_button_frame)
+            self.expand_button.show()
+            
+            # Resize the window to be more compact
+            current_width = self.width()
+            new_width = self.left_panel.width() + 70  # Left panel + margins + expand button
+            self.resize(new_width, self.height())
+            
+            # Update toggle button
+            self.toggle_button.setText("▶ Show View")
+            
+            # Update state
+            self.right_panel_collapsed = True
+    
+    def expand_right_panel(self):
+        """Expand the previously collapsed right panel"""
+        # Show the right panel
+        self.right_panel.show()
+        
+        # Remove and hide the expand button
+        self.persistent_button_frame.setParent(None)
+        self.expand_button.hide()
+        
+        # Restore original window size
+        self.resize(880, self.height())
+        
+        # Restore original panel sizes after a short delay to ensure layout is updated
+        QTimer.singleShot(100, lambda: self.main_splitter.setSizes(self.original_sizes))
+        
+        # Update toggle button text
+        self.toggle_button.setText("◀ Hide View")
+        
+        # Update state
+        self.right_panel_collapsed = False
     
     def update_threshold(self):
         """Update threshold value from slider"""
@@ -1926,7 +2419,7 @@ class PixelChangeApp(QMainWindow):
         self.pause_button.setEnabled(True)
         self.monitor_display.set_status("running")
         self.status_label.setText("Status: Running")
-        self.status_label.setStyleSheet(f"color: {self.colors['matcha']}; font-weight: 500; font-size: 12px;")
+        self.status_label.setStyleSheet(f"color: {self.colors['success']}; font-weight: 500; font-size: 14px;")
     
     def stop_detection(self):
         """Stop the detection process"""
@@ -1938,7 +2431,7 @@ class PixelChangeApp(QMainWindow):
         self.pause_button.setEnabled(False)
         self.monitor_display.set_status("stopped")
         self.status_label.setText("Status: Stopped")
-        self.status_label.setStyleSheet(f"color: {self.colors['alert']}; font-weight: 500; font-size: 12px;")
+        self.status_label.setStyleSheet(f"color: {self.colors['alert']}; font-weight: 500; font-size: 14px;")
     
     def toggle_pause(self):
         """Pause or resume detection"""
@@ -1948,13 +2441,13 @@ class PixelChangeApp(QMainWindow):
             self.pause_button.setText("Resume")
             self.monitor_display.set_status("paused")
             self.status_label.setText("Status: Paused")
-            self.status_label.setStyleSheet(f"color: {self.colors['warning']}; font-weight: 500; font-size: 12px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['warning']}; font-weight: 500; font-size: 14px;")
         else:
             self.pause_button.setText("Pause")
             self.monitor_display.set_status("running")
             self.status_label.setText("Status: Running")
-            self.status_label.setStyleSheet(f"color: {self.colors['matcha']}; font-weight: 500; font-size: 12px;")
-    
+            self.status_label.setStyleSheet(f"color: {self.colors['success']}; font-weight: 500; font-size: 14px;")
+            
     def capture_reference(self):
         """Capture a reference frame"""
         if self.detector.region:
@@ -1984,7 +2477,7 @@ class PixelChangeApp(QMainWindow):
         # Update status to show action sequence
         self.monitor_display.set_status("action_sequence")
         self.status_label.setText("Status: Action Sequence")
-        self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
+        self.status_label.setStyleSheet(f"color: {self.colors['primary_light']}; font-weight: 500; font-size: 14px;")
         
         # Add a log message
         self.add_log(f"Detection #{self.detection_count} - executing action sequence")
@@ -2013,7 +2506,7 @@ class PixelChangeApp(QMainWindow):
                 step = self.detector.action_sequence_step
                 total_steps = len(self.detector.action_sequence)
                 self.status_label.setText(f"Status: Action Sequence ({step}/{total_steps})")
-                self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
+                self.status_label.setStyleSheet(f"color: {self.colors['primary_light']}; font-weight: 500; font-size: 12px;")
         except Exception as e:
             print(f"Error updating visualization: {e}")
             # Don't stop the application on visualization errors
