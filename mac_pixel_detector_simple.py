@@ -408,10 +408,17 @@ class PixelChangeDetector(QObject):
                     time.sleep(local_interval)
                     continue
                 
-                # Calculate difference
-                self.diff_frame, change_percent = self.calculate_frame_difference(
-                    self.current_frame, compare_frame
-                )
+                # Calculate difference - wrap in try/except for more reliability
+                try:
+                    self.diff_frame, change_percent = self.calculate_frame_difference(
+                        self.current_frame, compare_frame
+                    )
+                except Exception as e:
+                    self.log(f"Error calculating frame difference: {e}")
+                    # Reset and try again next cycle with fresh frames
+                    self.consecutive_failures += 1
+                    time.sleep(local_interval)
+                    continue
                 
                 # Store in history
                 self.change_history.append(change_percent)
@@ -450,7 +457,27 @@ class PixelChangeDetector(QObject):
                 
             except Exception as e:
                 self.log(f"Error in detection loop: {e}")
+                import traceback
+                self.log(traceback.format_exc())
                 self.consecutive_failures += 1
+                
+                # Implement a failsafe - if too many consecutive failures, try to reset the state
+                if self.consecutive_failures > self.max_consecutive_failures * 2:
+                    self.log("Too many critical failures, attempting recovery...")
+                    # Reset frames to force fresh capture
+                    self.current_frame = None
+                    self.previous_frame = None
+                    self.diff_frame = None
+                    
+                    # Pause briefly to let the system stabilize
+                    time.sleep(0.5)
+                    
+                    # Try to recapture reference frame
+                    self.capture_reference()
+                    
+                    # Reset failure counter to avoid immediate re-entry to this block
+                    self.consecutive_failures = 0
+                
                 time.sleep(local_interval)
                 
         # Cleanup when loop exits
@@ -458,58 +485,85 @@ class PixelChangeDetector(QObject):
         
     def _process_action_sequence(self):
         """Process the current step in the action sequence"""
-        if not self.in_action_sequence or self.action_sequence_step >= len(self.action_sequence):
-            self.in_action_sequence = False
-            self.action_sequence_step = 0
-            return
+        try:
+            if not self.in_action_sequence or self.action_sequence_step >= len(self.action_sequence):
+                self.in_action_sequence = False
+                self.action_sequence_step = 0
+                return
+                
+            # Get the current action
+            action = self.action_sequence[self.action_sequence_step]
             
-        # Get the current action
-        action = self.action_sequence[self.action_sequence_step]
-        
-        # Execute the action based on type
-        action_type = action["action"]
-        
-        # Special case for first F key press (step 0) - execute immediately with high priority
-        if self.action_sequence_step == 0 and action_type == "press_f":
-            self.log(f"Action sequence: Pressing F key (IMMEDIATE)")
-            # Execute F key press with high priority
-            self._send_f_key()
-        else:
-            # Normal action execution
-            if action_type == "press_f":
-                self.log(f"Action sequence: Pressing F key")
+            # Execute the action based on type
+            action_type = action["action"]
+            
+            # Special case for first F key press (step 0) - execute immediately with high priority
+            if self.action_sequence_step == 0 and action_type == "press_f":
+                self.log(f"Action sequence: Pressing F key (IMMEDIATE)")
+                # Execute F key press with high priority
                 self._send_f_key()
-            elif action_type == "press_esc":
-                self.log(f"Action sequence: Pressing ESC key")
-                self._send_esc_key()
-            elif action_type == "wait":
-                self.log(f"Action sequence: Waiting {action['delay']}s")
-                # No actual action needed for wait
-                pass
-            elif action_type == "check_repair_dialog":
-                self.log(f"Action sequence: Checking for repair dialog")
-                if not self._check_repair_dialog():
-                    # Skip repair button click if no dialog found
-                    self.log("No repair dialog found, skipping repair button click")
-                    self.action_sequence_step += 1
-            elif action_type == "click_repair_button":
-                self.log(f"Action sequence: Clicking repair button")
-                self._click_repair_button()
-        
-        # Wait for the specified delay AFTER executing the action
-        time.sleep(action["delay"])
-        
-        # Move to next step
-        self.action_sequence_step += 1
-        
-        # If we've reached the end, exit the sequence
-        if self.action_sequence_step >= len(self.action_sequence):
-            self.in_action_sequence = False
-            self.log("Action sequence completed")
+            else:
+                # Normal action execution
+                if action_type == "press_f":
+                    self.log(f"Action sequence: Pressing F key")
+                    self._send_f_key()
+                elif action_type == "press_esc":
+                    self.log(f"Action sequence: Pressing ESC key")
+                    self._send_esc_key()
+                elif action_type == "wait":
+                    self.log(f"Action sequence: Waiting {action['delay']}s")
+                    # No actual action needed for wait
+                    pass
+                elif action_type == "check_repair_dialog":
+                    self.log(f"Action sequence: Checking for repair dialog")
+                    if not self._check_repair_dialog():
+                        # Skip repair button click if no dialog found
+                        self.log("No repair dialog found, skipping rest of action sequence")
+                        # Skip the entire sequence by terminating it
+                        self.in_action_sequence = False
+                        self.action_sequence_step = 0
+                        
+                        # Take a new reference frame since we're exiting the sequence
+                        self.log("Taking new reference frame before exiting sequence")
+                        self.capture_reference()
+                        return
+                elif action_type == "click_repair_button":
+                    self.log(f"Action sequence: Clicking repair button")
+                    self._click_repair_button()
             
-            # Take a new reference frame after completing the sequence
-            self.capture_reference()
+            # Wait for the specified delay AFTER executing the action
+            time.sleep(action["delay"])
             
+            # Move to next step
+            self.action_sequence_step += 1
+            
+            # If we've reached the end, exit the sequence
+            if self.action_sequence_step >= len(self.action_sequence):
+                self.in_action_sequence = False
+                self.log("Action sequence completed")
+                
+                # Take a new reference frame after completing the sequence
+                self.capture_reference()
+        except Exception as e:
+            self.log(f"Error in action sequence step {self.action_sequence_step}: {e}")
+            import traceback
+            self.log(traceback.format_exc())
+            
+            # Safety mechanism: if an error occurs, try to continue with the next step
+            self.action_sequence_step += 1
+            
+            # If we're at the end or past it, safely terminate the sequence
+            if self.action_sequence_step >= len(self.action_sequence):
+                self.in_action_sequence = False
+                self.action_sequence_step = 0
+                self.log("Action sequence terminated due to error")
+                
+                # Attempt to take a new reference frame after error
+                try:
+                    self.capture_reference()
+                except Exception:
+                    pass
+    
     def _check_repair_dialog(self):
         """Check if the repair dialog is present in the current screen"""
         # Make sure we have the template loaded
@@ -1422,8 +1476,8 @@ class RegionSelectionOverlay(QDialog):
         inner_rect = QRect(
             self.box_rect.left() + 2, 
             self.box_rect.top() + 2, 
-            self.box_rect.width() - 4, 
-            self.box_rect.height() - 4
+            self.box_width - 4, 
+            self.box_height - 4
         )
         painter.setPen(QPen(self.colors['accent_green_light'], 1))
         painter.drawRoundedRect(inner_rect, 6, 6)  # Smaller rounded corners
@@ -1717,23 +1771,122 @@ class MonitoringDisplay(QWidget):
         self._last_display_time = 0
         self._display_throttle_ms = 16.67  # ~60fps
         
+    def update_display(self, current_frame, diff_frame, change_percent):
+        """Update the display with current frame, difference visualization, and change percentage"""
+        try:
+            # Check if we have valid frames
+            if current_frame is None:
+                return
+                
+            # Convert the current frame to a QImage for display
+            height, width = current_frame.shape[:2]
+            
+            # Create a composite view: current frame on the left, diff on the right (if available)
+            if diff_frame is not None:
+                # Resize diff frame to match current frame height if needed
+                if diff_frame.shape[0] != height:
+                    scale_factor = height / diff_frame.shape[0]
+                    new_width = int(diff_frame.shape[1] * scale_factor)
+                    diff_frame = cv2.resize(diff_frame, (new_width, height))
+                
+                # Create a colorized version of diff frame (convert grayscale to color heatmap)
+                if len(diff_frame.shape) == 2:  # Grayscale
+                    diff_color = cv2.applyColorMap(diff_frame, cv2.COLORMAP_JET)
+                else:
+                    diff_color = diff_frame
+                    
+                # Handle input frame with proper channel checking
+                if len(current_frame.shape) == 3:
+                    if current_frame.shape[2] == 4:  # BGRA format (4 channels)
+                        current_rgb = cv2.cvtColor(current_frame, cv2.COLOR_BGRA2RGB)
+                    elif current_frame.shape[2] == 3:  # BGR format (3 channels)
+                        current_rgb = cv2.cvtColor(current_frame, cv2.COLOR_BGR2RGB)
+                    else:
+                        # Unknown format, just use as is
+                        current_rgb = current_frame
+                else:
+                    # Convert grayscale to RGB
+                    current_rgb = cv2.cvtColor(current_frame, cv2.COLOR_GRAY2RGB)
+                
+                # Create a side-by-side composite view
+                composite_width = width + diff_color.shape[1]
+                composite = np.zeros((height, composite_width, 3), dtype=np.uint8)
+                
+                # Add the frames to the composite
+                composite[:, :width, :] = current_rgb
+                composite[:, width:width+diff_color.shape[1], :] = diff_color
+                
+                # Create QImage from the composite
+                bytes_per_line = 3 * composite_width
+                q_img = QImage(composite.data, composite_width, height, bytes_per_line, QImage.Format.Format_RGB888)
+            else:
+                # Just display the current frame with proper format handling
+                if len(current_frame.shape) == 3:
+                    if current_frame.shape[2] == 4:  # BGRA format
+                        current_rgb = cv2.cvtColor(current_frame, cv2.COLOR_BGRA2RGB)
+                        bytes_per_line = 3 * width
+                        q_img = QImage(current_rgb.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
+                    elif current_frame.shape[2] == 3:  # BGR format
+                        current_rgb = cv2.cvtColor(current_frame, cv2.COLOR_BGR2RGB)
+                        bytes_per_line = 3 * width
+                        q_img = QImage(current_rgb.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
+                    else:
+                        # Unknown format, create a blank image as fallback
+                        q_img = QImage(width, height, QImage.Format.Format_RGB888)
+                        q_img.fill(QColor(0, 0, 0))
+                elif len(current_frame.shape) == 2:  # Grayscale
+                    bytes_per_line = width
+                    q_img = QImage(current_frame.data, width, height, bytes_per_line, QImage.Format.Format_Grayscale8)
+                else:
+                    # Invalid format, create a blank image
+                    q_img = QImage(width, height, QImage.Format.Format_RGB888)
+                    q_img.fill(QColor(0, 0, 0))
+            
+            # Convert QImage to QPixmap for display
+            pixmap = QPixmap.fromImage(q_img)
+            
+            # Scale pixmap to fit the label while maintaining aspect ratio
+            self.image_label.setPixmap(pixmap.scaled(
+                self.image_label.width(), 
+                self.image_label.height(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            ))
+            
+            # Update change percentage display
+            if change_percent is not None:
+                self.change_label.setText(f"Change: {change_percent:.2%}")
+                
+                # Adjust color based on threshold
+                if change_percent > 0.2:
+                    self.change_label.setStyleSheet(f"color: {self.colors['alert']}; font-weight: 600; font-size: 12px;")
+                elif change_percent > 0.1:
+                    self.change_label.setStyleSheet(f"color: {self.colors['warning']}; font-weight: 600; font-size: 12px;")
+                else:
+                    self.change_label.setStyleSheet(f"color: {self.colors['accent_light']}; font-weight: 500; font-size: 12px;")
+                    
+        except Exception as e:
+            print(f"Error updating display: {e}")
+            import traceback
+            traceback.print_exc()
+        
     def set_status(self, status):
-        """Update the status display with Modern Dark theme colors"""
+        """Update the status display with matcha wood theme colors"""
         if status == "running":
             self.status_label.setText("Status: Running")
-            self.status_label.setStyleSheet(f"color: {self.colors['accent']}; font-weight: 500; font-size: 14px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['accent']}; font-weight: 500; font-size: 12px;")
         elif status == "stopped":
             self.status_label.setText("Status: Stopped")
-            self.status_label.setStyleSheet(f"color: {self.colors['alert']}; font-weight: 500; font-size: 14px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['alert']}; font-weight: 500; font-size: 12px;")
         elif status == "paused":
             self.status_label.setText("Status: Paused")
-            self.status_label.setStyleSheet(f"color: {self.colors['warning']}; font-weight: 500; font-size: 14px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['warning']}; font-weight: 500; font-size: 12px;")
         elif status == "action_sequence":
             self.status_label.setText("Status: Action Sequence")
-            self.status_label.setStyleSheet(f"color: {self.colors['primary_light']}; font-weight: 500; font-size: 14px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['accent_light']}; font-weight: 500; font-size: 12px;")
         else:
             self.status_label.setText(f"Status: {status}")
-            self.status_label.setStyleSheet(f"color: {self.colors['text']}; font-weight: 500; font-size: 14px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['text']}; font-weight: 500; font-size: 12px;")
             
     def set_bright_mode(self, enabled):
         """Set whether bright detection mode is enabled"""
@@ -1806,7 +1959,7 @@ class PixelChangeApp(QMainWindow):
             QMainWindow, QWidget {{ 
                 background-color: {self.colors['bg_dark']}; 
                 color: {self.colors['text']}; 
-                font-family: 'SF Pro Display', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+                font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
             }}
             
             QGroupBox {{ 
@@ -1823,7 +1976,7 @@ class PixelChangeApp(QMainWindow):
                 subcontrol-origin: margin; 
                 left: 8px; 
                 padding: 0 6px;
-                color: {self.colors['primary_light']};
+                color: {self.colors['highlight']};
             }}
             
             QPushButton {{ 
@@ -1926,7 +2079,7 @@ class PixelChangeApp(QMainWindow):
         left_header = QLabel("Controls")
         left_header.setFont(header_font)
         left_header.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        left_header.setStyleSheet(f"color: {self.colors['primary_light']}; margin-bottom: 2px; padding-left: 2px;")
+        left_header.setStyleSheet(f"color: {self.colors['highlight']}; margin-bottom: 2px; padding-left: 2px;")
         left_layout.addWidget(left_header)
         
         # Create toggle button
@@ -1950,7 +2103,7 @@ class PixelChangeApp(QMainWindow):
         right_header = QLabel("Monitoring View")
         right_header.setFont(header_font)
         right_header.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        right_header.setStyleSheet(f"color: {self.colors['primary_light']}; margin-bottom: 2px; padding-left: 2px;")
+        right_header.setStyleSheet(f"color: {self.colors['highlight']}; margin-bottom: 2px; padding-left: 2px;")
         
         header_layout = QHBoxLayout()
         header_layout.addWidget(right_header)
@@ -2231,11 +2384,11 @@ class PixelChangeApp(QMainWindow):
         status_layout.setSpacing(6)
         
         self.status_label = QLabel("Status: Waiting")
-        self.status_label.setStyleSheet(f"color: {self.colors['primary_light']}; font-weight: 500; font-size: 12px;")
+        self.status_label.setStyleSheet(f"color: {self.colors['highlight']}; font-weight: 500; font-size: 12px;")
         status_layout.addWidget(self.status_label)
         
         self.count_label = QLabel("Detections: 0")
-        self.count_label.setStyleSheet(f"color: {self.colors['primary_light']}; font-weight: 500; font-size: 12px;")
+        self.count_label.setStyleSheet(f"color: {self.colors['highlight']}; font-weight: 500; font-size: 12px;")
         status_layout.addWidget(self.count_label, alignment=Qt.AlignmentFlag.AlignRight)
         
         right_layout.addWidget(status_frame)
@@ -2470,20 +2623,25 @@ class PixelChangeApp(QMainWindow):
     
     def handle_detection(self):
         """Handle a detection event"""
-        # Increment detection counter
-        self.detection_count += 1
-        self.count_label.setText(f"Detections: {self.detection_count}")
-        
-        # Update status to show action sequence
-        self.monitor_display.set_status("action_sequence")
-        self.status_label.setText("Status: Action Sequence")
-        self.status_label.setStyleSheet(f"color: {self.colors['primary_light']}; font-weight: 500; font-size: 14px;")
-        
-        # Add a log message
-        self.add_log(f"Detection #{self.detection_count} - executing action sequence")
-        
-        # Note: The actual key presses are handled by the detector's action sequence
-        
+        try:
+            # Increment detection counter
+            self.detection_count += 1
+            self.count_label.setText(f"Detections: {self.detection_count}")
+            
+            # Update status to show action sequence
+            self.monitor_display.set_status("action_sequence")
+            self.status_label.setText("Status: Action Sequence")
+            self.status_label.setStyleSheet(f"color: {self.colors['primary_light']}; font-weight: 500; font-size: 12px;")
+            
+            # Add a log message
+            self.add_log(f"Detection #{self.detection_count} - executing action sequence")
+            
+            # Note: The actual key presses are handled by the detector's action sequence
+        except Exception as e:
+            self.add_log(f"Error handling detection: {e}")
+            import traceback
+            self.add_log(traceback.format_exc())
+     
     def update_visualization(self):
         """Update visualization components"""
         if not self.detector:
@@ -2506,17 +2664,17 @@ class PixelChangeApp(QMainWindow):
                 step = self.detector.action_sequence_step
                 total_steps = len(self.detector.action_sequence)
                 self.status_label.setText(f"Status: Action Sequence ({step}/{total_steps})")
-                self.status_label.setStyleSheet(f"color: {self.colors['primary_light']}; font-weight: 500; font-size: 12px;")
+                self.status_label.setStyleSheet(f"color: {self.colors['highlight']}; font-weight: 500; font-size: 12px;")
         except Exception as e:
             print(f"Error updating visualization: {e}")
             # Don't stop the application on visualization errors
-    
+     
     def toggle_noise_reduction(self, checked):
         """Toggle noise reduction processing"""
         if self.detector:
             self.detector.apply_blur = checked
             self.add_log(f"Noise reduction {'enabled' if checked else 'disabled'}")
-    
+     
     def toggle_bright_detection(self, checked):
         """Toggle enhanced bright detection"""
         if self.detector:
