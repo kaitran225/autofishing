@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QApplication, QGridLayout
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QIcon
 
 from src.models.detector import PixelChangeDetector
 from src.ui.components.monitoring_display import MonitoringDisplay
@@ -19,8 +19,8 @@ class PixelChangeApp(QMainWindow):
     """Main application window"""
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Pixel Change Detector")
-        self.setMinimumSize(800, 550)  # More compact minimum size
+        self.setWindowTitle("AutoFishing")
+        self.setMinimumSize(800, 550)
         
         # Initialize detector
         self.detector = PixelChangeDetector()
@@ -29,8 +29,8 @@ class PixelChangeApp(QMainWindow):
         self.detector.detection_signal.connect(self.handle_detection)
         
         # Add new properties for toggleable features
-        self.detector.enable_repair_detection = True    # Toggle for repair dialog detection
-        self.detector.enable_action_sequence = True     # Toggle for action sequence execution
+        self.detector.enable_repair_detection = True
+        self.detector.enable_action_sequence = True
         
         # Define color scheme first
         self._define_colors()
@@ -43,53 +43,83 @@ class PixelChangeApp(QMainWindow):
         
         # Add properties for right panel collapse/expand
         self.right_panel_collapsed = False
-        self.original_sizes = [320, 440]  # Default sizes for left and right panels
+        self.original_sizes = [300, 460]  # Default sizes for left and right panels
         
     def _define_colors(self):
-        """Define the color scheme for the application - Modern Clean Theme"""
-        # Define color scheme - Modern Clean Theme
-        self.colors = {
-            # Base colors - Subtle dark theme
-            'bg_dark': '#1E1E2E',      # Deep blue-gray for background
-            'bg_panel': '#2A2A3C',     # Slightly lighter panel bg
-            'bg_card': '#313244',      # Card/control backgrounds
-            'bg_accent': '#45475A',    # Accent backgrounds
-            
-            # Text colors
-            'text': '#CDD6F4',         # Main text - light lavender
-            'text_dim': '#A6ADC8',     # Secondary text
-            'text_muted': '#7F849C',   # Muted text
-            'text_dark': '#181825',    # Dark text for light backgrounds
-            
-            # Accent colors
-            'primary': '#89B4FA',      # Light blue primary
-            'primary_light': '#B4BEFE', # Light blue highlight
-            'primary_dark': '#74C7EC',  # Darker blue
-            'secondary': '#CBA6F7',    # Purple secondary
-            'highlight': '#F5E0DC',    # Peach highlight
-            
-            # Status colors
-            'success': '#A6E3A1',      # Success - light green
-            'alert': '#F38BA8',        # Error - soft red 
-            'warning': '#FAB387',      # Warning - soft orange
-            'border': '#313244',       # Border color
-        }
+        """Define the color scheme for the application - macOS style theme"""
+        # Use more native macOS-like colors
+        is_dark_mode = False  # Can be made dynamic in the future
+        
+        if is_dark_mode:
+            self.colors = {
+                # Dark mode
+                'bg_dark': '#1E1E1E',        # Background
+                'bg_panel': '#252525',       # Panel background
+                'bg_card': '#2D2D2D',        # Card background
+                'bg_accent': '#3A3A3A',      # Accent background
+                
+                # Text
+                'text': '#FFFFFF',           # Primary text
+                'text_dim': '#CCCCCC',       # Secondary text
+                'text_muted': '#999999',     # Muted text
+                'text_dark': '#000000',      # Dark text for light elements
+                
+                # Accent
+                'primary': '#0A84FF',        # macOS blue
+                'primary_light': '#40A8FF',  # Light blue
+                'primary_dark': '#0074E0',   # Dark blue
+                'secondary': '#5E5CE6',      # Purple accent
+                'highlight': '#30D158',      # Green highlight
+                
+                # Status
+                'success': '#30D158',        # macOS green
+                'alert': '#FF453A',          # macOS red
+                'warning': '#FF9F0A',        # macOS orange
+                'border': '#3A3A3A',         # Border
+            }
+        else:
+            # Light mode
+            self.colors = {
+                'bg_dark': '#FFFFFF',        # Background
+                'bg_panel': '#F5F5F7',       # Panel background
+                'bg_card': '#F0F0F2',        # Card background
+                'bg_accent': '#E9E9EB',      # Accent background
+                
+                # Text
+                'text': '#1D1D1F',           # Primary text
+                'text_dim': '#484848',       # Secondary text
+                'text_muted': '#86868B',     # Muted text
+                'text_dark': '#000000',      # Dark text
+                
+                # Accent
+                'primary': '#0A84FF',        # macOS blue
+                'primary_light': '#40A8FF',  # Light blue
+                'primary_dark': '#0074E0',   # Dark blue
+                'secondary': '#5E5CE6',      # Purple accent
+                'highlight': '#30D158',      # Green highlight
+                
+                # Status
+                'success': '#30D158',        # macOS green
+                'alert': '#FF453A',          # macOS red
+                'warning': '#FF9F0A',        # macOS orange
+                'border': '#E6E6E6',         # Border
+            }
         
     def _init_ui(self):
-        """Initialize the user interface - Modern Clean theme"""
+        """Initialize the user interface - macOS-style theme"""
         # Create central widget and main layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(16, 16, 16, 16)
-        main_layout.setSpacing(14)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(16)
         
-        # Set application-wide stylesheet - Modern Clean theme, using system fonts
+        # Set application-wide stylesheet - macOS style, using system fonts
         self.setStyleSheet(f"""
             QMainWindow, QWidget {{ 
                 background-color: {self.colors['bg_dark']}; 
                 color: {self.colors['text']}; 
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif;
                 font-size: 13px;
             }}
             
@@ -101,12 +131,14 @@ class PixelChangeApp(QMainWindow):
                 margin-top: 1.5em;
                 font-weight: 500;
                 font-size: 13px;
+                padding-bottom: 8px;
             }}
             QGroupBox::title {{ 
                 subcontrol-origin: margin; 
                 left: 12px; 
                 padding: 0 8px 0 8px;
-                color: {self.colors['secondary']};
+                color: {self.colors['text']};
+                font-weight: 600;
             }}
             
             QLabel {{ 
@@ -119,20 +151,20 @@ class PixelChangeApp(QMainWindow):
                 background-color: {self.colors['bg_card']}; 
                 color: {self.colors['text']}; 
                 border: none; 
-                border-radius: 8px;
+                border-radius: 6px;
                 padding: 8px 16px; 
                 font-size: 13px;
                 font-weight: 500;
-                min-height: 32px;
-                margin: 2px;
+                min-height: 18px;
+                margin: 3px;
             }}
             QPushButton:hover {{ 
                 background-color: {self.colors['primary_dark']}; 
-                color: {self.colors['text_dark']};
+                color: white;
             }}
             QPushButton:pressed {{ 
                 background-color: {self.colors['primary']}; 
-                color: {self.colors['text_dark']};
+                color: white;
             }}
             QPushButton:disabled {{ 
                 color: {self.colors['text_muted']}; 
@@ -144,28 +176,28 @@ class PixelChangeApp(QMainWindow):
                 background-color: {self.colors['bg_card']}; 
                 color: {self.colors['text']}; 
                 border: none; 
-                border-radius: 8px;
-                font-family: Menlo, Monaco, 'Courier New', monospace;
+                border-radius: 6px;
+                font-family: 'SF Mono', Menlo, Monaco, 'Courier New', monospace;
                 font-size: 12px;
                 padding: 8px;
                 selection-background-color: {self.colors['primary']};
-                selection-color: {self.colors['text_dark']};
+                selection-color: white;
             }}
             
             QSlider::groove:horizontal {{
                 border: none;
-                height: 6px;
+                height: 4px;
                 background: {self.colors['bg_accent']};
                 margin: 2px 0;
-                border-radius: 3px;
+                border-radius: 2px;
             }}
             QSlider::handle:horizontal {{
                 background: {self.colors['primary']};
                 border: none;
-                width: 18px;
-                height: 18px;
+                width: 16px;
+                height: 16px;
                 margin: -6px 0;
-                border-radius: 9px;
+                border-radius: 8px;
             }}
             QSlider::handle:horizontal:hover {{
                 background: {self.colors['primary_light']};
@@ -175,21 +207,27 @@ class PixelChangeApp(QMainWindow):
                 color: {self.colors['text']};
                 font-size: 13px;
                 spacing: 8px;
-                min-height: 24px;
+                min-height: 20px;
             }}
             QCheckBox::indicator {{
-                width: 18px;
-                height: 18px;
-                border-radius: 5px;
-                border: none;
-                background-color: {self.colors['bg_accent']};
+                width: 16px;
+                height: 16px;
+                border-radius: 3px;
+                border: 1px solid {self.colors['border']};
+                background-color: {self.colors['bg_card']};
             }}
             QCheckBox::indicator:checked {{
                 background-color: {self.colors['primary']};
+                border: 1px solid {self.colors['primary']};
                 image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNCIgaGVpZ2h0PSIxNCIgdmlld0JveD0iMCAwIDE0IDE0Ij48cGF0aCBmaWxsPSIjRkZGRkZGIiBkPSJNNS43MzMgMTBMMTIgMy43MzMgMTAuMjY3IDIgNS43MzMgNi41MzMgMy43MzMgNC41MzMgMiA2LjI2N3oiLz48L3N2Zz4=);
             }}
             QCheckBox::indicator:hover {{
-                background-color: {self.colors['primary_dark']};
+                border: 1px solid {self.colors['primary']};
+            }}
+            
+            QSplitter::handle {{
+                background-color: {self.colors['border']};
+                width: 1px;
             }}
         """)
         
@@ -202,28 +240,26 @@ class PixelChangeApp(QMainWindow):
         
         # Create a splitter for the main panels
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.main_splitter.setChildrenCollapsible(False) # Prevent panels from being collapsed to zero size
         container_layout.addWidget(self.main_splitter)
         
         # Create left panel (controls)
         self.left_panel = QWidget()
-        self.left_panel.setMinimumWidth(320)  # Slightly wider for better readability
-        self.left_panel.setMaximumWidth(380)  # Limit maximum width
+        self.left_panel.setFixedWidth(300)
         left_layout = QVBoxLayout(self.left_panel)
-        left_layout.setContentsMargins(0, 0, 12, 0)
+        left_layout.setContentsMargins(0, 0, 8, 0)
         left_layout.setSpacing(12)
         self.main_splitter.addWidget(self.left_panel)
         
         # Create right panel (visualization)
         self.right_panel = QWidget()
         right_layout = QVBoxLayout(self.right_panel)
-        right_layout.setContentsMargins(12, 0, 0, 0)
+        right_layout.setContentsMargins(8, 0, 0, 0)
         right_layout.setSpacing(12)
         self.main_splitter.addWidget(self.right_panel)
         
         # Create a persistent button frame that stays visible when right panel is collapsed
         self.persistent_button_frame = QFrame()
-        self.persistent_button_frame.setFixedWidth(40)
+        self.persistent_button_frame.setFixedWidth(32)
         self.persistent_button_frame.setStyleSheet(f"""
             QFrame {{
                 background-color: {self.colors['bg_dark']};
@@ -237,19 +273,19 @@ class PixelChangeApp(QMainWindow):
         
         # Create expand button for collapsed state
         self.expand_button = QPushButton("▶")
-        self.expand_button.setFixedSize(40, 80)
+        self.expand_button.setFixedSize(32, 70)
         self.expand_button.setStyleSheet(f"""
             QPushButton {{
-                background-color: {self.colors['primary_dark']};
-                color: {self.colors['text_dark']};
+                background-color: {self.colors['primary']};
+                color: white;
                 border-radius: 0px 6px 6px 0px;
                 padding: 2px;
-                font-size: 14px;
+                font-size: 12px;
                 font-weight: bold;
                 margin: 0px;
             }}
             QPushButton:hover {{
-                background-color: {self.colors['primary']};
+                background-color: {self.colors['primary_light']};
             }}
         """)
         self.expand_button.clicked.connect(self.expand_right_panel)
@@ -262,162 +298,193 @@ class PixelChangeApp(QMainWindow):
         # Don't add this to main layout yet - will add only when needed
         self.persistent_button_widget = self.persistent_button_frame
         
-        # Add "Controls" header to left panel
-        header_font = QFont()
-        header_font.setPointSize(15)
-        header_font.setBold(True)
-        
+        # Add section headers with clean styling
         left_header = QLabel("Controls")
-        left_header.setFont(header_font)
-        left_header.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        left_header.setStyleSheet(f"color: {self.colors['secondary']}; margin-bottom: 8px; padding-left: 2px;")
+        left_header.setFont(QFont("-apple-system", 16, QFont.Weight.Bold))
+        left_header.setStyleSheet(f"color: {self.colors['text']}; margin-bottom: 8px;")
         left_layout.addWidget(left_header)
         
         # Create toggle button
-        self.toggle_button = QPushButton("◀ Hide")
+        self.toggle_button = QPushButton("◀")
+        self.toggle_button.setToolTip("Hide View Panel")
         self.toggle_button.setStyleSheet(f"""
             QPushButton {{
                 background-color: {self.colors['bg_accent']};
-                border-radius: 6px;
-                padding: 4px 10px;
-                font-size: 12px;
-                max-width: 70px;
-                margin-left: auto;
+                border-radius: 4px;
+                padding: 4px;
+                font-size: 10px;
+                max-width: 24px;
+                max-height: 24px;
             }}
             QPushButton:hover {{
-                background-color: {self.colors['primary_dark']};
-                color: {self.colors['text_dark']};
+                background-color: {self.colors['primary']};
+                color: white;
             }}
         """)
         self.toggle_button.clicked.connect(self.toggle_right_panel)
         
-        # Add "View" header to right panel with collapse button
-        right_header = QLabel("Monitoring View")
-        right_header.setFont(header_font)
-        right_header.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        right_header.setStyleSheet(f"color: {self.colors['secondary']}; margin-bottom: 8px; padding-left: 2px;")
+        # Add header to right panel with collapse button
+        right_header_layout = QHBoxLayout()
+        right_header_layout.setContentsMargins(0, 0, 0, 8)
         
-        header_layout = QHBoxLayout()
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.addWidget(right_header)
-        header_layout.addStretch()
-        header_layout.addWidget(self.toggle_button)
-        right_layout.addLayout(header_layout)
+        right_header = QLabel("Monitoring")
+        right_header.setFont(QFont("-apple-system", 16, QFont.Weight.Bold))
+        right_header.setStyleSheet(f"color: {self.colors['text']}; margin-bottom: 8px;")
+        
+        right_header_layout.addWidget(right_header)
+        right_header_layout.addStretch()
+        right_header_layout.addWidget(self.toggle_button)
+        right_layout.addLayout(right_header_layout)
         
         # Store the original sizes for later restoration
-        self.original_sizes = [320, 480]  # Default sizes for left and right panels
+        self.original_sizes = [300, 460]  # Default sizes for left and right panels
+        self.right_panel_collapsed = False
         
         # === LEFT PANEL COMPONENTS ===
         
-        # 1. Settings group - cleaner style
+        # 1. Settings group with improved layout
         settings_group = QGroupBox("Settings")
         settings_layout = QVBoxLayout(settings_group)
-        settings_layout.setContentsMargins(16, 24, 16, 16)
-        settings_layout.setSpacing(14)
+        settings_layout.setContentsMargins(20, 30, 20, 20)
+        settings_layout.setSpacing(20)
         left_layout.addWidget(settings_group)
         
-        # Threshold control - using grid layout for better alignment
-        settings_grid = QGridLayout()
-        settings_grid.setVerticalSpacing(12)
-        settings_grid.setHorizontalSpacing(10)
-        settings_grid.setColumnStretch(1, 1)  # Make slider column stretch
+        # Add descriptive header for sliders
+        slider_header = QLabel("Detection Parameters")
+        slider_header.setStyleSheet(f"color: {self.colors['text']}; font-size: 14px; font-weight: 500;")
+        slider_header.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        settings_layout.addWidget(slider_header)
         
-        threshold_label = QLabel("Threshold:")
-        threshold_label.setStyleSheet(f"color: {self.colors['text_dim']};")
+        # Threshold control with improved grid layout
+        settings_grid = QGridLayout()
+        settings_grid.setColumnStretch(1, 1)  # Make slider column stretch
+        settings_grid.setVerticalSpacing(16)
+        settings_grid.setHorizontalSpacing(12)
+        
+        # Threshold label with description
+        threshold_label = QLabel("Sensitivity:")
+        threshold_label.setStyleSheet(f"color: {self.colors['text']}; font-size: 13px;")
+        threshold_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         settings_grid.addWidget(threshold_label, 0, 0)
         
         self.threshold_slider = QSlider(Qt.Orientation.Horizontal)
+        self.threshold_slider.setFixedHeight(24)
         self.threshold_slider.setRange(1, 50)  # 0.01 to 0.50
         self.threshold_slider.setValue(5)      # Default 0.05
         self.threshold_slider.valueChanged.connect(self.update_threshold)
         settings_grid.addWidget(self.threshold_slider, 0, 1)
         
         self.threshold_value_label = QLabel("0.05")
-        self.threshold_value_label.setStyleSheet(f"color: {self.colors['text_dim']};")
-        self.threshold_value_label.setFixedWidth(50)
-        self.threshold_value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.threshold_value_label.setStyleSheet(f"color: {self.colors['text_dim']}; font-size: 13px;")
+        self.threshold_value_label.setFixedWidth(45)
+        self.threshold_value_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         settings_grid.addWidget(self.threshold_value_label, 0, 2)
         
-        # Region size control
+        # Add a small description label for threshold
+        threshold_desc = QLabel("Detection sensitivity threshold")
+        threshold_desc.setStyleSheet(f"color: {self.colors['text_muted']}; font-size: 11px; font-style: italic;")
+        threshold_desc.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        settings_grid.addWidget(threshold_desc, 1, 1, 1, 2)
+        
+        # Region size control with better description
         size_label = QLabel("Region Size:")
-        size_label.setStyleSheet(f"color: {self.colors['text_dim']};")
-        settings_grid.addWidget(size_label, 1, 0)
+        size_label.setStyleSheet(f"color: {self.colors['text']}; font-size: 13px;")
+        size_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        settings_grid.addWidget(size_label, 2, 0)
         
         self.size_slider = QSlider(Qt.Orientation.Horizontal)
+        self.size_slider.setFixedHeight(24)
         self.size_slider.setRange(20, 200)  # 20 to 200 pixels
-        self.size_slider.setValue(50)      # Default 100
+        self.size_slider.setValue(50)      # Default 50
         self.size_slider.valueChanged.connect(self.update_size_label)
-        settings_grid.addWidget(self.size_slider, 1, 1)
+        settings_grid.addWidget(self.size_slider, 2, 1)
         
-        self.size_value_label = QLabel("50")
-        self.size_value_label.setStyleSheet(f"color: {self.colors['text_dim']};")
-        self.size_value_label.setFixedWidth(50)
-        self.size_value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        settings_grid.addWidget(self.size_value_label, 1, 2)
+        self.size_value_label = QLabel("50 px")
+        self.size_value_label.setStyleSheet(f"color: {self.colors['text_dim']}; font-size: 13px;")
+        self.size_value_label.setFixedWidth(45)
+        self.size_value_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        settings_grid.addWidget(self.size_value_label, 2, 2)
+        
+        # Add a small description label for size
+        size_desc = QLabel("Default selection box size")
+        size_desc.setStyleSheet(f"color: {self.colors['text_muted']}; font-size: 11px; font-style: italic;")
+        size_desc.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        settings_grid.addWidget(size_desc, 3, 1, 1, 2)
         
         settings_layout.addLayout(settings_grid)
         
-        # Add horizontal separator
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFrameShadow(QFrame.Shadow.Sunken)
-        separator.setStyleSheet(f"background-color: {self.colors['bg_accent']}; max-height: 1px;")
-        settings_layout.addWidget(separator)
+        # Add a divider for visual separation
+        divider = QFrame()
+        divider.setFrameShape(QFrame.Shape.HLine)
+        divider.setFrameShadow(QFrame.Shadow.Sunken)
+        divider.setStyleSheet(f"background-color: {self.colors['border']}; max-height: 1px;")
+        settings_layout.addWidget(divider)
         
-        # Features section title
-        features_label = QLabel("Features")
-        features_label.setStyleSheet(f"color: {self.colors['primary_light']}; font-weight: 600; font-size: 13px;")
-        settings_layout.addWidget(features_label)
+        # Add descriptive header for features
+        features_header = QLabel("Detection Features")
+        features_header.setStyleSheet(f"color: {self.colors['text']}; font-size: 14px; font-weight: 500;")
+        features_header.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        settings_layout.addWidget(features_header)
         
-        # Feature toggles - arranged in a cleaner grid
-        features_grid = QGridLayout()
-        features_grid.setVerticalSpacing(12)
-        features_grid.setHorizontalSpacing(10)
-        features_grid.setColumnStretch(1, 1)  # Make the second column stretch
+        # Checkboxes layout with better organization - first row
+        checkbox_layout = QHBoxLayout()
+        checkbox_layout.setSpacing(20)
+        checkbox_layout.setContentsMargins(0, 8, 0, 8)
         
-        # Noise reduction
-        noise_label = QLabel("Noise Reduction:")
-        noise_label.setStyleSheet(f"color: {self.colors['text_dim']};")
-        features_grid.addWidget(noise_label, 0, 0)
-        
-        self.noise_checkbox = QCheckBox("On")
+        # Noise reduction checkbox with icon-like alignment
+        self.noise_checkbox = QCheckBox("Noise Reduction")
+        self.noise_checkbox.setStyleSheet(f"""
+            font-size: 13px;
+            padding: 4px 0px;
+            color: {self.colors['text']};
+        """)
         self.noise_checkbox.setChecked(True)
         self.noise_checkbox.toggled.connect(self.toggle_noise_reduction)
-        features_grid.addWidget(self.noise_checkbox, 0, 1)
+        checkbox_layout.addWidget(self.noise_checkbox)
         
-        # Bright detection
-        bright_label = QLabel("Bright Detection:")
-        bright_label.setStyleSheet(f"color: {self.colors['text_dim']};")
-        features_grid.addWidget(bright_label, 1, 0)
-        
-        self.bright_checkbox = QCheckBox("Enhanced")
+        # Bright background detection checkbox
+        self.bright_checkbox = QCheckBox("Bright Detection")
+        self.bright_checkbox.setStyleSheet(f"""
+            font-size: 13px;
+            padding: 4px 0px;
+            color: {self.colors['text']};
+        """)
         self.bright_checkbox.setChecked(True)
         self.bright_checkbox.toggled.connect(self.toggle_bright_detection)
-        features_grid.addWidget(self.bright_checkbox, 1, 1)
+        checkbox_layout.addWidget(self.bright_checkbox)
         
-        # Repair detection
-        repair_label = QLabel("Repair Detection:")
-        repair_label.setStyleSheet(f"color: {self.colors['text_dim']};")
-        features_grid.addWidget(repair_label, 2, 0)
+        settings_layout.addLayout(checkbox_layout)
         
-        self.repair_checkbox = QCheckBox("Enabled")
+        # Second row of checkboxes with better spacing and alignment
+        checkbox_layout2 = QHBoxLayout()
+        checkbox_layout2.setSpacing(20)
+        checkbox_layout2.setContentsMargins(0, 8, 0, 8)
+        
+        # Repair detection checkbox
+        self.repair_checkbox = QCheckBox("Repair Detection")
+        self.repair_checkbox.setStyleSheet(f"""
+            font-size: 13px;
+            padding: 4px 0px;
+            color: {self.colors['text']};
+        """)
         self.repair_checkbox.setChecked(True)
         self.repair_checkbox.toggled.connect(self.toggle_repair_detection)
-        features_grid.addWidget(self.repair_checkbox, 2, 1)
+        checkbox_layout2.addWidget(self.repair_checkbox)
         
-        # Action sequence
-        action_label = QLabel("Action Sequence:")
-        action_label.setStyleSheet(f"color: {self.colors['text_dim']};")
-        features_grid.addWidget(action_label, 3, 0)
-        
-        self.action_checkbox = QCheckBox("Enabled")
+        # Action sequence checkbox
+        self.action_checkbox = QCheckBox("Action Sequence")
+        self.action_checkbox.setStyleSheet(f"""
+            font-size: 13px;
+            padding: 4px 0px;
+            color: {self.colors['text']};
+        """)
         self.action_checkbox.setChecked(True)
         self.action_checkbox.toggled.connect(self.toggle_action_sequence)
-        features_grid.addWidget(self.action_checkbox, 3, 1)
+        checkbox_layout2.addWidget(self.action_checkbox)
         
-        settings_layout.addLayout(features_grid)
+        settings_layout.addLayout(checkbox_layout2)
         
-        # 2. Monitoring group - cleaner style
+        # 2. Monitoring group
         monitoring_group = QGroupBox("Monitoring")
         monitoring_layout = QVBoxLayout(monitoring_group)
         monitoring_layout.setContentsMargins(16, 24, 16, 16)
@@ -429,122 +496,129 @@ class PixelChangeApp(QMainWindow):
         self.region_button.setStyleSheet(f"""
             QPushButton {{
                 background-color: {self.colors['primary']};
-                color: {self.colors['text_dark']};
+                color: white;
                 font-weight: 600;
-                padding: 10px 16px;
-                font-size: 14px;
+                padding: 8px 16px;
+                font-size: 13px;
             }}
             QPushButton:hover {{
                 background-color: {self.colors['primary_light']};
             }}
         """)
+        self.region_button.setMinimumHeight(32)
         self.region_button.clicked.connect(self.select_region)
         monitoring_layout.addWidget(self.region_button)
         
         # Region info display
         region_info_layout = QHBoxLayout()
         region_info_layout.setSpacing(8)
+        region_info_layout.setContentsMargins(4, 4, 4, 4)
         status_label = QLabel("Status:")
-        status_label.setStyleSheet(f"color: {self.colors['text_dim']};")
+        status_label.setStyleSheet(f"color: {self.colors['text']}; font-size: 13px;")
         region_info_layout.addWidget(status_label)
         
         self.region_info_label = QLabel("No region selected")
+        self.region_info_label.setStyleSheet("font-size: 13px;")
         region_info_layout.addWidget(self.region_info_label)
         monitoring_layout.addLayout(region_info_layout)
         
-        # 3. Control group - cleaner style
+        # 3. Control group
         control_group = QGroupBox("Control")
         control_layout = QVBoxLayout(control_group)
-        control_layout.setContentsMargins(16, 24, 16, 16)
-        control_layout.setSpacing(14)
+        control_layout.setContentsMargins(8, 8, 8, 8)
+        control_layout.setSpacing(8)
         left_layout.addWidget(control_group)
         
-        # Control buttons in a grid for better alignment
-        button_grid = QGridLayout()
-        button_grid.setHorizontalSpacing(10)
-        button_grid.setVerticalSpacing(10)
+        # Control buttons
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(8)
         
         self.start_button = QPushButton("Start")
         self.start_button.setStyleSheet(f"""
             QPushButton {{
                 background-color: {self.colors['success']};
-                color: {self.colors['text_dark']};
+                color: white;
                 font-weight: 600;
-                font-size: 14px;
+                font-size: 13px;
                 padding: 8px 16px;
             }}
             QPushButton:hover {{
-                background-color: #BEF0C0;
+                background-color: #40D168;
             }}
         """)
+        self.start_button.setMinimumHeight(32)
         self.start_button.clicked.connect(self.start_detection)
-        button_grid.addWidget(self.start_button, 0, 0)
+        button_layout.addWidget(self.start_button)
         
         self.stop_button = QPushButton("Stop")
         self.stop_button.setStyleSheet(f"""
             QPushButton {{
                 background-color: {self.colors['alert']};
-                color: {self.colors['text_dark']};
+                color: white;
                 font-weight: 600;
-                font-size: 14px;
+                font-size: 13px;
                 padding: 8px 16px;
             }}
             QPushButton:hover {{
-                background-color: #F7A8BB;
+                background-color: #FF594E;
             }}
         """)
+        self.stop_button.setMinimumHeight(32)
         self.stop_button.clicked.connect(self.stop_detection)
         self.stop_button.setEnabled(False)
-        button_grid.addWidget(self.stop_button, 0, 1)
+        button_layout.addWidget(self.stop_button)
         
         self.pause_button = QPushButton("Pause")
         self.pause_button.setStyleSheet(f"""
             QPushButton {{
                 background-color: {self.colors['warning']};
-                color: {self.colors['text_dark']};
+                color: white;
                 font-weight: 600;
-                font-size: 14px;
+                font-size: 13px;
                 padding: 8px 16px;
             }}
             QPushButton:hover {{
-                background-color: #FFC7A4;
+                background-color: #FFAF3F;
             }}
         """)
+        self.pause_button.setMinimumHeight(32)
         self.pause_button.clicked.connect(self.toggle_pause)
         self.pause_button.setEnabled(False)
-        button_grid.addWidget(self.pause_button, 0, 2)
+        button_layout.addWidget(self.pause_button)
         
-        control_layout.addLayout(button_grid)
+        control_layout.addLayout(button_layout)
         
-        # Second row of utility buttons - fixed layout
-        utility_layout = QHBoxLayout()
-        utility_layout.setSpacing(10)
+        # Second row of buttons
+        button_layout2 = QHBoxLayout()
+        button_layout2.setSpacing(8)
         
         self.reference_button = QPushButton("Capture Reference")
         self.reference_button.setStyleSheet(f"""
             QPushButton {{
                 background-color: {self.colors['secondary']};
-                color: {self.colors['text']};
+                color: white;
+                font-size: 13px;
                 padding: 6px 12px;
             }}
             QPushButton:hover {{
-                background-color: #D9B6FF;
-                color: {self.colors['text_dark']};
+                background-color: #6E6CF6;
             }}
         """)
+        self.reference_button.setMinimumHeight(28)
         self.reference_button.clicked.connect(self.capture_reference)
-        utility_layout.addWidget(self.reference_button)
+        button_layout2.addWidget(self.reference_button)
         
         self.clear_button = QPushButton("Clear Logs")
+        self.clear_button.setMinimumHeight(28)
         self.clear_button.setStyleSheet(f"""
-            QPushButton {{
-                padding: 6px 12px;
-            }}
+            font-size: 13px; 
+            padding: 6px 12px;
+            background-color: {self.colors['bg_accent']};
         """)
         self.clear_button.clicked.connect(self.clear_logs)
-        utility_layout.addWidget(self.clear_button)
+        button_layout2.addWidget(self.clear_button)
         
-        control_layout.addLayout(utility_layout)
+        control_layout.addLayout(button_layout2)
         
         # Add permissions help button
         permissions_button = QPushButton("Fix Permissions")
@@ -552,19 +626,19 @@ class PixelChangeApp(QMainWindow):
             QPushButton {{
                 background-color: {self.colors['bg_accent']};
                 color: {self.colors['text']};
-                padding: 5px 10px;
-                font-size: 12px;
-                border: 1px solid {self.colors['secondary']};
+                font-size: 13px;
+                padding: 6px 12px;
             }}
             QPushButton:hover {{
-                background-color: {self.colors['bg_card']};
-                border-color: {self.colors['primary']};
+                background-color: {self.colors['primary']};
+                color: white;
             }}
         """)
+        permissions_button.setMinimumHeight(28)
         permissions_button.clicked.connect(lambda: show_permissions_help(self))
         control_layout.addWidget(permissions_button)
         
-        # 4. Log display - cleaner style
+        # 4. Log display
         log_group = QGroupBox("Logs")
         log_layout = QVBoxLayout(log_group)
         log_layout.setContentsMargins(16, 24, 16, 16)
@@ -573,22 +647,25 @@ class PixelChangeApp(QMainWindow):
         
         self.log_display = QTextEdit()
         self.log_display.setReadOnly(True)
+        self.log_display.setMinimumHeight(100)
+        self.log_display.setStyleSheet("font-size: 12px;")
         log_layout.addWidget(self.log_display)
         
         # === RIGHT PANEL COMPONENTS ===
         
-        # 1. Monitoring display with cleaner theme
+        # 1. Monitoring display
         monitor_group = QGroupBox("Live Monitor")
         monitor_layout = QVBoxLayout(monitor_group)
         monitor_layout.setContentsMargins(16, 24, 16, 16)
-        monitor_layout.setSpacing(10)
+        monitor_layout.setSpacing(8)
         
         self.monitor_display = MonitoringDisplay()
         self.monitor_display.setStyleSheet(f"""
             QLabel {{ 
                 background-color: {self.colors['bg_card']}; 
-                border: none;
-                border-radius: 8px;
+                border: none; 
+                border-radius: 6px;
+                font-size: 13px;
             }}
         """)
         monitor_layout.addWidget(self.monitor_display)
@@ -604,36 +681,32 @@ class PixelChangeApp(QMainWindow):
         
         right_layout.addWidget(timeline_group, stretch=1)
         
-        # 3. Status and count display - cleaner style
+        # 3. Status and count display
         status_frame = QFrame()
-        status_frame.setMaximumHeight(36)
+        status_frame.setMinimumHeight(32)
         status_frame.setStyleSheet(f"""
             QFrame {{
-                background-color: {self.colors['bg_card']};
-                border-radius: 8px;
+                background-color: {self.colors['bg_panel']};
+                border-radius: 6px;
                 padding: 0px;
             }}
         """)
         status_layout = QHBoxLayout(status_frame)
-        status_layout.setContentsMargins(12, 4, 12, 4)
+        status_layout.setContentsMargins(16, 0, 16, 0)
         status_layout.setSpacing(8)
         
         self.status_label = QLabel("Status: Waiting")
-        self.status_label.setStyleSheet(f"color: {self.colors['primary_light']}; font-weight: 500; font-size: 13px;")
+        self.status_label.setStyleSheet(f"color: {self.colors['text']}; font-weight: 500; font-size: 13px;")
         status_layout.addWidget(self.status_label)
         
         self.count_label = QLabel("Detections: 0")
-        self.count_label.setStyleSheet(f"color: {self.colors['primary_light']}; font-weight: 500; font-size: 13px;")
+        self.count_label.setStyleSheet(f"color: {self.colors['text']}; font-weight: 500; font-size: 13px;")
         status_layout.addWidget(self.count_label, alignment=Qt.AlignmentFlag.AlignRight)
         
         right_layout.addWidget(status_frame)
         
-        # Set initial sizes for splitter - give more space to the right panel
-        self.main_splitter.setSizes([320, 480])
-        
         # Add a welcome log message
-        self.add_log("Pixel Change Detector initialized")
-        self.add_log("Modern Clean UI Theme")
+        self.add_log("AutoFishing initialized")
         self.add_log("Click 'Select Region' to begin")
         
         # Set initial state of bright detection in monitor display
@@ -654,7 +727,7 @@ class PixelChangeApp(QMainWindow):
     def update_size_label(self):
         """Update size value label from slider"""
         value = self.size_slider.value()
-        self.size_value_label.setText(str(value))
+        self.size_value_label.setText(f"{value} px")
     
     def select_region(self):
         """Open region selection overlay"""

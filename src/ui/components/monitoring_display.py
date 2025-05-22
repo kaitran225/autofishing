@@ -11,19 +11,19 @@ class MonitoringDisplay(QWidget):
         super().__init__(parent)
         self.setMinimumSize(360, 220)
         
-        # Define colors - use the modern clean theme
+        # Define colors - use the macOS style theme
         self.colors = {
-            'bg_dark': '#1E1E2E',      # Deep blue-gray background
-            'bg_panel': '#2A2A3C',     # Slightly lighter panel bg
-            'bg_card': '#313244',      # Card backgrounds
-            'primary': '#89B4FA',      # Light blue primary 
-            'primary_light': '#B4BEFE', # Light blue highlight
-            'secondary': '#CBA6F7',    # Purple secondary
-            'alert': '#F38BA8',        # Soft red for alerts
-            'warning': '#FAB387',      # Soft orange warning
-            'success': '#A6E3A1',      # Soft green success
-            'text': '#CDD6F4',         # Main text
-            'text_dim': '#A6ADC8',     # Secondary text
+            'bg_dark': '#FFFFFF',        # Background (light mode)
+            'bg_panel': '#F5F5F7',       # Panel background
+            'bg_card': '#F0F0F2',        # Card background
+            'primary': '#0A84FF',        # macOS blue
+            'primary_light': '#40A8FF',  # Light blue
+            'secondary': '#5E5CE6',      # Purple
+            'alert': '#FF453A',          # macOS red
+            'warning': '#FF9F0A',        # macOS orange
+            'success': '#30D158',        # macOS green
+            'text': '#1D1D1F',           # Primary text
+            'text_dim': '#484848',       # Secondary text
         }
         
         # Initialize bright mode tracking
@@ -32,7 +32,7 @@ class MonitoringDisplay(QWidget):
         # Create layout
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(8)
         
         # Image display label with rounded corners and subtle border
         self.image_label = QLabel()
@@ -40,29 +40,29 @@ class MonitoringDisplay(QWidget):
         self.image_label.setStyleSheet(f"""
             background-color: {self.colors['bg_card']}; 
             border: 1px solid {self.colors['bg_panel']}; 
-            border-radius: 8px;
-            padding: 4px;
+            border-radius: 6px;
+            padding: 8px;
         """)
         layout.addWidget(self.image_label)
         
         # Status indicators in a slim frame
         status_frame = QFrame()
-        status_frame.setMaximumHeight(30)
+        status_frame.setMaximumHeight(28)
         status_frame.setStyleSheet(f"""
-            background-color: {self.colors['bg_card']};
+            background-color: {self.colors['bg_panel']};
             border-radius: 6px;
             padding: 0px;
         """)
         status_layout = QHBoxLayout(status_frame)
-        status_layout.setContentsMargins(10, 3, 10, 3)
-        status_layout.setSpacing(6)
+        status_layout.setContentsMargins(12, 0, 12, 0)
+        status_layout.setSpacing(8)
         
         self.status_label = QLabel("Status: Idle")
-        self.status_label.setStyleSheet(f"color: {self.colors['text_dim']}; font-weight: 500; font-size: 12px;")
+        self.status_label.setStyleSheet(f"color: {self.colors['text_dim']}; font-weight: 500; font-size: 13px;")
         status_layout.addWidget(self.status_label)
         
         self.change_label = QLabel("Change: 0.00%")
-        self.change_label.setStyleSheet(f"color: {self.colors['text_dim']}; font-weight: 500; font-size: 12px;")
+        self.change_label.setStyleSheet(f"color: {self.colors['text_dim']}; font-weight: 500; font-size: 13px;")
         status_layout.addWidget(self.change_label, alignment=Qt.AlignmentFlag.AlignRight)
         
         layout.addWidget(status_frame)
@@ -92,8 +92,8 @@ class MonitoringDisplay(QWidget):
                 
                 # Create a colorized version of diff frame (convert grayscale to color heatmap)
                 if len(diff_frame.shape) == 2:  # Grayscale
-                    # Use a more modern colormap - PLASMA instead of JET
-                    diff_color = cv2.applyColorMap(diff_frame, cv2.COLORMAP_PLASMA)
+                    # Use a more macOS-friendly colormap - INFERNO instead of PLASMA
+                    diff_color = cv2.applyColorMap(diff_frame, cv2.COLORMAP_INFERNO)
                 else:
                     diff_color = diff_frame
                     
@@ -110,22 +110,30 @@ class MonitoringDisplay(QWidget):
                     # Convert grayscale to RGB
                     current_rgb = cv2.cvtColor(current_frame, cv2.COLOR_GRAY2RGB)
                 
-                # Create a side-by-side composite view
-                # Add a subtle separator line between the frames
-                composite_width = width + diff_color.shape[1]
+                # Create a side-by-side composite view with a clean separator
+                composite_width = width + diff_color.shape[1] + 1  # +1 for separator
                 composite = np.zeros((height, composite_width, 3), dtype=np.uint8)
+                
+                # Set background color for better visual appearance - light gray for light mode
+                bg_color = (240, 240, 242)  # RGB light gray
+                composite.fill(bg_color[0])  # Fill with bg color
                 
                 # Add the frames to the composite
                 composite[:, :width, :] = current_rgb
                 
-                # Draw a vertical separator line
-                separator_color = (80, 80, 120)  # Dark lavender separator
+                # Draw a vertical separator line (subtle gray)
+                separator_color = (200, 200, 200)  # Light gray separator
                 composite[:, width:width+1, :] = separator_color
                 
                 # Add diff frame with offset of 1 pixel for the separator
                 # Check if the source and target dimensions match
                 target_width = min(diff_color.shape[1], composite_width - width - 1)
-                composite[:, width+1:width+1+target_width, :] = diff_color[:, :target_width, :]
+                target_area = composite[:, width+1:width+1+target_width, :]
+                source_area = diff_color[:, :target_width, :]
+                
+                # Only copy if dimensions match
+                if target_area.shape == source_area.shape:
+                    target_area[:] = source_area
                 
                 # Create QImage from the composite
                 bytes_per_line = 3 * composite_width
@@ -144,14 +152,14 @@ class MonitoringDisplay(QWidget):
                     else:
                         # Unknown format, create a blank image as fallback
                         q_img = QImage(width, height, QImage.Format.Format_RGB888)
-                        q_img.fill(QColor(0, 0, 0))
+                        q_img.fill(QColor(240, 240, 242))  # Light gray
                 elif len(current_frame.shape) == 2:  # Grayscale
                     bytes_per_line = width
                     q_img = QImage(current_frame.data, width, height, bytes_per_line, QImage.Format.Format_Grayscale8)
                 else:
                     # Invalid format, create a blank image
                     q_img = QImage(width, height, QImage.Format.Format_RGB888)
-                    q_img.fill(QColor(0, 0, 0))
+                    q_img.fill(QColor(240, 240, 242))  # Light gray
             
             # Convert QImage to QPixmap for display
             pixmap = QPixmap.fromImage(q_img)
@@ -170,11 +178,11 @@ class MonitoringDisplay(QWidget):
                 
                 # Adjust color based on threshold
                 if change_percent > 0.2:
-                    self.change_label.setStyleSheet(f"color: {self.colors['alert']}; font-weight: 600; font-size: 12px;")
+                    self.change_label.setStyleSheet(f"color: {self.colors['alert']}; font-weight: 600; font-size: 13px;")
                 elif change_percent > 0.1:
-                    self.change_label.setStyleSheet(f"color: {self.colors['warning']}; font-weight: 600; font-size: 12px;")
+                    self.change_label.setStyleSheet(f"color: {self.colors['warning']}; font-weight: 600; font-size: 13px;")
                 else:
-                    self.change_label.setStyleSheet(f"color: {self.colors['text_dim']}; font-weight: 500; font-size: 12px;")
+                    self.change_label.setStyleSheet(f"color: {self.colors['text_dim']}; font-weight: 500; font-size: 13px;")
                     
         except Exception as e:
             print(f"Error updating display: {e}")
@@ -182,22 +190,22 @@ class MonitoringDisplay(QWidget):
             traceback.print_exc()
         
     def set_status(self, status):
-        """Update the status display with modern clean theme colors"""
+        """Update the status display with macOS style colors"""
         if status == "running":
             self.status_label.setText("Status: Running")
-            self.status_label.setStyleSheet(f"color: {self.colors['success']}; font-weight: 600; font-size: 12px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['success']}; font-weight: 600; font-size: 13px;")
         elif status == "stopped":
             self.status_label.setText("Status: Stopped")
-            self.status_label.setStyleSheet(f"color: {self.colors['alert']}; font-weight: 600; font-size: 12px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['alert']}; font-weight: 600; font-size: 13px;")
         elif status == "paused":
             self.status_label.setText("Status: Paused")
-            self.status_label.setStyleSheet(f"color: {self.colors['warning']}; font-weight: 600; font-size: 12px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['warning']}; font-weight: 600; font-size: 13px;")
         elif status == "action_sequence":
             self.status_label.setText("Status: Action Sequence")
-            self.status_label.setStyleSheet(f"color: {self.colors['primary']}; font-weight: 600; font-size: 12px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['primary']}; font-weight: 600; font-size: 13px;")
         else:
             self.status_label.setText(f"Status: {status}")
-            self.status_label.setStyleSheet(f"color: {self.colors['text']}; font-weight: 500; font-size: 12px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['text']}; font-weight: 500; font-size: 13px;")
             
     def set_bright_mode(self, enabled):
         """Set whether bright detection mode is enabled"""

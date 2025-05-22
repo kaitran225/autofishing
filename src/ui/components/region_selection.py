@@ -45,13 +45,13 @@ class RegionSelectionOverlay(QDialog):
         
         # Modern macOS theme colors
         self.colors = {
-            'bg_overlay': QColor(25, 25, 25, 150),     # Dark background with transparency
-            'bg_medium': QColor(53, 54, 57, 220),      # Medium background with transparency
-            'accent_blue': QColor(10, 132, 255, 255),  # macOS blue accent
-            'accent_blue_light': QColor(50, 172, 255, 200), # Lighter blue
-            'accent_green': QColor(48, 209, 88, 255),  # macOS green
-            'text': QColor(255, 255, 255, 255),        # White text
-            'border': QColor(90, 90, 95, 180)          # Border color with transparency
+            'bg_overlay': QColor(0, 0, 0, 120),         # Dark background overlay
+            'bg_medium': QColor(255, 255, 255, 40),     # Subtle white highlight
+            'accent': QColor(10, 132, 255, 255),        # macOS blue accent
+            'accent_light': QColor(40, 168, 255, 200),  # Lighter blue
+            'accent_green': QColor(48, 209, 88, 255),   # macOS green
+            'text': QColor(255, 255, 255, 255),         # White text
+            'border': QColor(255, 255, 255, 180)        # White border with transparency
         }
         
         # For finding "PLAY TOGETHER" window
@@ -159,38 +159,38 @@ class RegionSelectionOverlay(QDialog):
     
     def _init_ui(self):
         """Initialize the UI components with modern macOS theme"""
-        # Add label with instructions
-        self.instructions = QLabel("Click and drag to move selection box. Release to place. (ESC to cancel)", self)
+        # Add instruction label with clean macOS look
+        self.instructions = QLabel("Click and drag to select a region. Press ESC to cancel.", self)
         self.instructions.setStyleSheet("""
             color: white; 
-            background-color: rgba(53, 54, 57, 220); 
-            padding: 12px;
-            border-radius: 10px;
-            font-family: Helvetica, Arial, sans-serif;
+            background-color: rgba(0, 0, 0, 70%); 
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-family: -apple-system, 'SF Pro Text', Helvetica, Arial, sans-serif;
             font-weight: 500;
-            font-size: 13px;
+            font-size: 14px;
         """)
         self.instructions.setGeometry(
-            (self.screen_width - 500) // 2,  # Center horizontally
-            30,  # Position from top
-            500,  # Width
+            (self.screen_width - 400) // 2,  # Center horizontally
+            40,  # Position from top
+            400,  # Width
             40   # Height
         )
         self.instructions.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        # Add "Position on PLAY TOGETHER" button
-        self.play_together_button = QPushButton("Position on PLAY TOGETHER", self)
+        # Add "Position on PLAY TOGETHER" button with macOS style
+        self.play_together_button = QPushButton("Position on Game Window", self)
         self.play_together_button.setStyleSheet("""
-            background-color: rgba(10, 132, 255, 220); 
+            background-color: rgba(10, 132, 255, 90%); 
             color: white; 
             border: none; 
-            padding: 10px 16px;
-            border-radius: 10px;
-            font-family: Helvetica, Arial, sans-serif;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-family: -apple-system, 'SF Pro Text', Helvetica, Arial, sans-serif;
             font-weight: 500;
             font-size: 13px;
         """)
-        self.play_together_button.setGeometry(self.screen_width - 250, 70, 220, 40)
+        self.play_together_button.setGeometry(self.screen_width - 200, 40, 180, 36)
         self.play_together_button.clicked.connect(self.position_on_play_together)
         
         # Show button only if PLAY TOGETHER window was found
@@ -239,25 +239,6 @@ class RegionSelectionOverlay(QDialog):
                 except Exception as e:
                     print(f"Error parsing window dimensions: {e}")
                     
-            # Alternative approach - try to list all windows for debugging
-            script2 = '''
-            tell application "System Events"
-                set allWindows to {}
-                repeat with proc in application processes
-                    set procName to name of proc
-                    repeat with w in windows of proc
-                        set winName to name of w
-                        set entry to procName & ": " & winName
-                        set allWindows to allWindows & entry & return
-                    end repeat
-                end repeat
-                return allWindows
-            end tell
-            '''
-            
-            result2 = subprocess.run(['osascript', '-e', script2], capture_output=True, text=True, check=False)
-            print(f"Available windows: {result2.stdout}")
-            
             return False
         except Exception as e:
             print(f"Error finding PLAY TOGETHER window: {e}")
@@ -297,7 +278,7 @@ class RegionSelectionOverlay(QDialog):
             print(f"Error focusing window: {e}")
         
     def paintEvent(self, event):
-        """Draw the selection overlay with modern macOS theme"""
+        """Draw the selection overlay with macOS style"""
         painter = QPainter(self)
         
         # Set up rendering hints for better quality
@@ -310,13 +291,13 @@ class RegionSelectionOverlay(QDialog):
             painter.drawPixmap(target_rect, self.background_pixmap, 
                              QRect(0, 0, self.background_pixmap.width(), self.background_pixmap.height()))
             
-            # Apply a slight darkening overlay
-            painter.fillRect(target_rect, QColor(25, 25, 25, 100))  # Dark overlay
+            # Apply a semi-transparent dark overlay except for the selection area
+            painter.fillRect(target_rect, self.colors['bg_overlay'])
         else:
             # Fallback to a semi-transparent background if no screenshot
             painter.fillRect(self.rect(), self.colors['bg_overlay'])
         
-        # Highlight PLAY TOGETHER window if found
+        # Highlight PLAY TOGETHER window if found - subtle highlight
         if self.play_together_rect is not None:
             play_together_highlight = QRect(
                 self.play_together_rect.left(),
@@ -324,74 +305,36 @@ class RegionSelectionOverlay(QDialog):
                 self.play_together_rect.width(),
                 self.play_together_rect.height()
             )
-            painter.fillRect(play_together_highlight, QColor(10, 132, 255, 30))  # Blue highlight
-            painter.setPen(QPen(self.colors['accent_blue'], 2, Qt.PenStyle.DashLine))
-            painter.drawRect(play_together_highlight)
+            # Create a subtle highlight for the game window
+            highlight_color = QColor(48, 209, 88, 40)  # Very subtle green
+            painter.fillRect(play_together_highlight, highlight_color)
             
-            # Display a label identifying the window
-            game_label_rect = QRect(
-                self.play_together_rect.left(), 
-                self.play_together_rect.top() - 30,
-                self.play_together_rect.width(), 
-                30
-            )
-            painter.fillRect(game_label_rect, QColor(53, 54, 57, 220))  # Dark background
-            painter.setPen(self.colors['accent_blue'])
-            painter.setFont(QFont("Helvetica", 10, QFont.Weight.Medium))
-            painter.drawText(game_label_rect, Qt.AlignmentFlag.AlignCenter, "PLAY TOGETHER WINDOW")
+            # Draw a subtle border around the game window
+            painter.setPen(QPen(QColor(48, 209, 88, 100), 1, Qt.PenStyle.DashLine))
+            painter.drawRect(play_together_highlight)
         
-        # Draw dimmed rectangle around the selection area to highlight it
-        # Create four rectangles to cover all areas except the selection
-        # Top area
-        painter.fillRect(
-            QRect(0, 0, self.screen_width, self.box_rect.top()),
-            QColor(25, 25, 25, 150)  # Dark with transparency
-        )
-        # Bottom area
-        painter.fillRect(
-            QRect(0, self.box_rect.bottom() + 1, self.screen_width, self.screen_height - self.box_rect.bottom() - 1),
-            QColor(25, 25, 25, 150)
-        )
-        # Left area
-        painter.fillRect(
-            QRect(0, self.box_rect.top(), self.box_rect.left(), self.box_rect.height()),
-            QColor(25, 25, 25, 150)
-        )
-        # Right area
-        painter.fillRect(
-            QRect(self.box_rect.right() + 1, self.box_rect.top(), 
-                  self.screen_width - self.box_rect.right() - 1, self.box_rect.height()),
-            QColor(25, 25, 25, 150)
-        )
+        # Clear the selection rectangle from the overlay (make it transparent)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
+        painter.fillRect(self.box_rect, Qt.GlobalColor.transparent)
         
-        # Draw crosshairs - blue accent
-        painter.setPen(QPen(self.colors['accent_blue'], 1, Qt.PenStyle.DashLine))
+        # Reset composition mode for further drawing
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+        
+        # Draw crosshairs - macOS blue - thinner line
+        painter.setPen(QPen(self.colors['accent'], 1, Qt.PenStyle.DotLine))
         painter.drawLine(0, self.mouse_pos.y(), self.screen_width, self.mouse_pos.y())
         painter.drawLine(self.mouse_pos.x(), 0, self.mouse_pos.x(), self.screen_height)
         
         # Ensure box stays within screen bounds
         self.constrain_box_to_screen()
         
-        # Draw selection box border - blue accent
-        outer_pen = QPen(self.colors['accent_blue'], 2)
+        # Draw selection box border - macOS blue
+        outer_pen = QPen(self.colors['accent'], 2)
         painter.setPen(outer_pen)
-        painter.drawRoundedRect(self.box_rect, 10, 10)  # Rounded corners
+        painter.drawRect(self.box_rect)
         
-        # Add a second, inner border for better visibility
-        inner_rect = QRect(
-            self.box_rect.left() + 3, 
-            self.box_rect.top() + 3, 
-            self.box_rect.width() - 6, 
-            self.box_rect.height() - 6
-        )
-        painter.setPen(QPen(self.colors['accent_blue_light'], 1))
-        painter.drawRoundedRect(inner_rect, 8, 8)  # Rounded corners
-        
-        # Draw semi-transparent fill
-        painter.fillRect(self.box_rect, QColor(10, 132, 255, 15))  # Very light blue
-        
-        # Draw grid lines
-        painter.setPen(QPen(self.colors['accent_blue_light'], 1, Qt.PenStyle.DashLine))
+        # Draw subtle grid lines
+        painter.setPen(QPen(self.colors['accent_light'], 0.5, Qt.PenStyle.DotLine))
         # Vertical grid lines
         cell_width = self.box_width // 3
         for i in range(1, 3):
@@ -407,9 +350,9 @@ class RegionSelectionOverlay(QDialog):
                 self.box_rect.right(), self.box_rect.top() + i * cell_height
             )
         
-        # Draw coordinates with macOS-style pill background
-        coord_text = f"Position: ({self.box_rect.left()},{self.box_rect.top()}) • Size: {self.box_width}×{self.box_height}"
-        text_width = 400
+        # Draw coordinates with clean pill background
+        coord_text = f"{self.box_rect.left()}, {self.box_rect.top()} • {self.box_width}×{self.box_height}"
+        text_width = 200
         text_height = 30
         
         # Create pill background
@@ -420,14 +363,14 @@ class RegionSelectionOverlay(QDialog):
             text_height
         )
         
-        # Draw background pill
+        # Draw background pill - macOS style with blur effect simulation
         path = QPainterPath()
         path.addRoundedRect(QRectF(coord_rect), 15, 15)
-        painter.fillPath(path, QColor(53, 54, 57, 220))  # Dark background
+        painter.fillPath(path, QColor(0, 0, 0, 160))
         
-        # Draw text
+        # Draw text - clean SF Pro style
         painter.setPen(self.colors['text'])
-        painter.setFont(QFont("Helvetica", 11, QFont.Weight.Medium))
+        painter.setFont(QFont("-apple-system", 12))
         painter.drawText(
             coord_rect, 
             Qt.AlignmentFlag.AlignCenter, 
