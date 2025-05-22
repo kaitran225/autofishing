@@ -293,24 +293,37 @@ class PixelChangeApp(QMainWindow):
         """)
         self.toggle_button.clicked.connect(self.toggle_right_panel)
         
-        # Add collapse button without header
-        right_header_layout = QHBoxLayout()
-        right_header_layout.setContentsMargins(0, 0, 0, 8)
-        
-        right_header_layout.addStretch()
-        right_header_layout.addWidget(self.toggle_button)
-        right_layout.addLayout(right_header_layout)
-        
         # Store the original sizes for later restoration
         self.original_sizes = [300, 460]  # Default sizes for left and right panels
         self.right_panel_collapsed = False
         
         # === LEFT PANEL COMPONENTS ===
         
-        # 1. Detection Parameters panel (first panel)
-        parameters_group = QGroupBox("Detection Parameters")
+        # 1. Detection Parameters panel with collapse button in same row
+        # Create custom header with parameters title and collapse button
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 8)
+        
+        params_header = QLabel("Detection Parameters")
+        params_header.setStyleSheet(f"color: {self.colors['primary']}; font-size: 14px; font-weight: 600;")
+        header_layout.addWidget(params_header)
+        
+        header_layout.addStretch()
+        header_layout.addWidget(self.toggle_button)
+        left_layout.addLayout(header_layout)
+        
+        # Parameter group without title (since we have custom header)
+        parameters_group = QGroupBox()
+        parameters_group.setStyleSheet(f"""
+            QGroupBox {{
+                background-color: {self.colors['bg_panel']};
+                border: none;
+                border-radius: 8px;
+                margin-top: 0;
+            }}
+        """)
         parameters_layout = QVBoxLayout(parameters_group)
-        parameters_layout.setContentsMargins(16, 24, 16, 16)
+        parameters_layout.setContentsMargins(16, 16, 16, 16)
         parameters_layout.setSpacing(16)
         left_layout.addWidget(parameters_group)
         
@@ -339,12 +352,6 @@ class PixelChangeApp(QMainWindow):
         self.threshold_value_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         settings_grid.addWidget(self.threshold_value_label, 0, 2)
         
-        # Add a small description label for threshold
-        threshold_desc = QLabel("Detection sensitivity threshold")
-        threshold_desc.setStyleSheet(f"color: {self.colors['text_muted']}; font-size: 11px; font-style: italic;")
-        threshold_desc.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        settings_grid.addWidget(threshold_desc, 1, 1, 1, 2)
-        
         # Region size control with better description
         size_label = QLabel("Region Size:")
         size_label.setStyleSheet(f"color: {self.colors['text']}; font-size: 13px;")
@@ -364,11 +371,6 @@ class PixelChangeApp(QMainWindow):
         self.size_value_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         settings_grid.addWidget(self.size_value_label, 2, 2)
         
-        # Add a small description label for size
-        size_desc = QLabel("Default selection box size")
-        size_desc.setStyleSheet(f"color: {self.colors['text_muted']}; font-size: 11px; font-style: italic;")
-        size_desc.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        settings_grid.addWidget(size_desc, 3, 1, 1, 2)
         
         parameters_layout.addLayout(settings_grid)
         
@@ -438,7 +440,7 @@ class PixelChangeApp(QMainWindow):
         features_layout.addLayout(checkbox_layout2)
         
         # 2. Monitoring group
-        monitoring_group = QGroupBox("Monitoring")
+        monitoring_group = QGroupBox("Region Selection")
         monitoring_layout = QVBoxLayout(monitoring_group)
         monitoring_layout.setContentsMargins(16, 24, 16, 16)
         monitoring_layout.setSpacing(12)
@@ -596,7 +598,7 @@ class PixelChangeApp(QMainWindow):
         # 1. Monitoring display
         monitor_group = QGroupBox("Live Monitor")
         monitor_layout = QVBoxLayout(monitor_group)
-        monitor_layout.setContentsMargins(16, 24, 16, 16)
+        monitor_layout.setContentsMargins(8, 8, 8, 8)
         monitor_layout.setSpacing(8)
         
         self.monitor_display = MonitoringDisplay()
