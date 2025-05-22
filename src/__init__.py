@@ -1,0 +1,3 @@
+"""
+Autofishing pixel detection package
+""" 
