@@ -20,7 +20,8 @@ class PixelChangeApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("AutoFishing")
-        self.setMinimumSize(800, 600)
+        # Set minimum width to match left panel - will be updated after panel creation
+        self.setMinimumSize(320, 600)
         
         # Initialize detector
         self.detector = PixelChangeDetector()
@@ -46,64 +47,34 @@ class PixelChangeApp(QMainWindow):
         self.original_sizes = [300, 460]  # Default sizes for left and right panels
         
     def _define_colors(self):
-        """Define the color scheme for the application - macOS style theme"""
-        # Use more native macOS-like colors
-        is_dark_mode = False  # Can be made dynamic in the future
-        
-        if is_dark_mode:
-            self.colors = {
-                # Dark mode
-                'bg_dark': '#1E1E1E',        # Background
-                'bg_panel': '#252525',       # Panel background
-                'bg_card': '#2D2D2D',        # Card background
-                'bg_accent': '#3A3A3A',      # Accent background
-                
-                # Text
-                'text': '#FFFFFF',           # Primary text
-                'text_dim': '#CCCCCC',       # Secondary text
-                'text_muted': '#999999',     # Muted text
-                'text_dark': '#000000',      # Dark text for light elements
-                
-                # Accent
-                'primary': '#0A84FF',        # macOS blue
-                'primary_light': '#40A8FF',  # Light blue
-                'primary_dark': '#0074E0',   # Dark blue
-                'secondary': '#5E5CE6',      # Purple accent
-                'highlight': '#30D158',      # Green highlight
-                
-                # Status
-                'success': '#30D158',        # macOS green
-                'alert': '#FF453A',          # macOS red
-                'warning': '#FF9F0A',        # macOS orange
-                'border': '#3A3A3A',         # Border
-            }
-        else:
-            # Light mode
-            self.colors = {
-                'bg_dark': '#FFFFFF',        # Background
-                'bg_panel': '#F5F5F7',       # Panel background
-                'bg_card': '#F0F0F2',        # Card background
-                'bg_accent': '#E9E9EB',      # Accent background
-                
-                # Text
-                'text': '#1D1D1F',           # Primary text
-                'text_dim': '#484848',       # Secondary text
-                'text_muted': '#86868B',     # Muted text
-                'text_dark': '#000000',      # Dark text
-                
-                # Accent
-                'primary': '#0A84FF',        # macOS blue
-                'primary_light': '#40A8FF',  # Light blue
-                'primary_dark': '#0074E0',   # Dark blue
-                'secondary': '#5E5CE6',      # Purple accent
-                'highlight': '#30D158',      # Green highlight
-                
-                # Status
-                'success': '#30D158',        # macOS green
-                'alert': '#FF453A',          # macOS red
-                'warning': '#FF9F0A',        # macOS orange
-                'border': '#E6E6E6',         # Border
-            }
+        """Define the color scheme for the application - Matcha Wood Theme"""
+        # Define color scheme - Matcha Wood Theme
+        self.colors = {
+            # Base colors
+            'bg_dark': '#2C2417',      # Dark oak wood for background
+            'bg_panel': '#372D1C',     # Slightly lighter oak wood for panels
+            'bg_card': '#43341F',      # Medium oak wood for cards/controls
+            'bg_accent': '#4E3C22',    # Lighter oak wood for accents
+            
+            # Text colors
+            'text': '#F8F4E3',         # Cream text
+            'text_dim': '#E6DFC8',     # Light cream for secondary text
+            'text_muted': '#BDB59A',   # Muted cream for tertiary text
+            'text_dark': '#2C2417',    # Dark text for light backgrounds
+            
+            # Accent colors
+            'primary': '#8DC370',      # Matcha green primary
+            'primary_light': '#A7CF90', # Light matcha green
+            'primary_dark': '#6B9E4F',  # Dark matcha green
+            'secondary': '#5D7052',    # Dark grass green secondary accent
+            'highlight': '#B9C784',    # Light grass green highlight
+            
+            # Status colors
+            'success': '#8DC370',      # Success - matcha green
+            'alert': '#D95F4E',        # Error - burnt sienna 
+            'warning': '#E6A948',      # Warning - golden oak
+            'border': '#43341F',       # Border color - medium oak
+        }
         
     def _init_ui(self):
         """Initialize the user interface - macOS-style theme"""
@@ -250,6 +221,9 @@ class PixelChangeApp(QMainWindow):
         left_layout.setSpacing(12)
         self.main_splitter.addWidget(self.left_panel)
         
+        # Update minimum width based on the left panel
+        self.LEFT_PANEL_WIDTH = 300  # Store this for use in resize operations
+        
         # Create right panel (visualization)
         self.right_panel = QWidget()
         right_layout = QVBoxLayout(self.right_panel)
@@ -298,11 +272,7 @@ class PixelChangeApp(QMainWindow):
         # Don't add this to main layout yet - will add only when needed
         self.persistent_button_widget = self.persistent_button_frame
         
-        # Add section headers with clean styling
-        left_header = QLabel("Controls")
-        left_header.setFont(QFont("-apple-system", 16, QFont.Weight.Bold))
-        left_header.setStyleSheet(f"color: {self.colors['text']}; margin-bottom: 8px;")
-        left_layout.addWidget(left_header)
+        # No title for controls panel anymore
         
         # Create toggle button
         self.toggle_button = QPushButton("◀")
@@ -323,15 +293,10 @@ class PixelChangeApp(QMainWindow):
         """)
         self.toggle_button.clicked.connect(self.toggle_right_panel)
         
-        # Add header to right panel with collapse button
+        # Add collapse button without header
         right_header_layout = QHBoxLayout()
         right_header_layout.setContentsMargins(0, 0, 0, 8)
         
-        right_header = QLabel("Monitoring")
-        right_header.setFont(QFont("-apple-system", 16, QFont.Weight.Bold))
-        right_header.setStyleSheet(f"color: {self.colors['text']}; margin-bottom: 8px;")
-        
-        right_header_layout.addWidget(right_header)
         right_header_layout.addStretch()
         right_header_layout.addWidget(self.toggle_button)
         right_layout.addLayout(right_header_layout)
@@ -342,18 +307,12 @@ class PixelChangeApp(QMainWindow):
         
         # === LEFT PANEL COMPONENTS ===
         
-        # 1. Settings group with improved layout
-        settings_group = QGroupBox("Settings")
-        settings_layout = QVBoxLayout(settings_group)
-        settings_layout.setContentsMargins(20, 30, 20, 20)
-        settings_layout.setSpacing(20)
-        left_layout.addWidget(settings_group)
-        
-        # Add descriptive header for sliders
-        slider_header = QLabel("Detection Parameters")
-        slider_header.setStyleSheet(f"color: {self.colors['text']}; font-size: 14px; font-weight: 500;")
-        slider_header.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        settings_layout.addWidget(slider_header)
+        # 1. Detection Parameters panel (first panel)
+        parameters_group = QGroupBox("Detection Parameters")
+        parameters_layout = QVBoxLayout(parameters_group)
+        parameters_layout.setContentsMargins(16, 24, 16, 16)
+        parameters_layout.setSpacing(16)
+        left_layout.addWidget(parameters_group)
         
         # Threshold control with improved grid layout
         settings_grid = QGridLayout()
@@ -411,20 +370,14 @@ class PixelChangeApp(QMainWindow):
         size_desc.setAlignment(Qt.AlignmentFlag.AlignLeft)
         settings_grid.addWidget(size_desc, 3, 1, 1, 2)
         
-        settings_layout.addLayout(settings_grid)
+        parameters_layout.addLayout(settings_grid)
         
-        # Add a divider for visual separation
-        divider = QFrame()
-        divider.setFrameShape(QFrame.Shape.HLine)
-        divider.setFrameShadow(QFrame.Shadow.Sunken)
-        divider.setStyleSheet(f"background-color: {self.colors['border']}; max-height: 1px;")
-        settings_layout.addWidget(divider)
-        
-        # Add descriptive header for features
-        features_header = QLabel("Detection Features")
-        features_header.setStyleSheet(f"color: {self.colors['text']}; font-size: 14px; font-weight: 500;")
-        features_header.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        settings_layout.addWidget(features_header)
+        # 2. Detection Features panel (second panel, separate)
+        features_group = QGroupBox("Detection Features")
+        features_layout = QVBoxLayout(features_group)
+        features_layout.setContentsMargins(16, 24, 16, 16)
+        features_layout.setSpacing(16)
+        left_layout.addWidget(features_group)
         
         # Checkboxes layout with better organization - first row
         checkbox_layout = QHBoxLayout()
@@ -453,7 +406,7 @@ class PixelChangeApp(QMainWindow):
         self.bright_checkbox.toggled.connect(self.toggle_bright_detection)
         checkbox_layout.addWidget(self.bright_checkbox)
         
-        settings_layout.addLayout(checkbox_layout)
+        features_layout.addLayout(checkbox_layout)
         
         # Second row of checkboxes with better spacing and alignment
         checkbox_layout2 = QHBoxLayout()
@@ -482,7 +435,7 @@ class PixelChangeApp(QMainWindow):
         self.action_checkbox.toggled.connect(self.toggle_action_sequence)
         checkbox_layout2.addWidget(self.action_checkbox)
         
-        settings_layout.addLayout(checkbox_layout2)
+        features_layout.addLayout(checkbox_layout2)
         
         # 2. Monitoring group
         monitoring_group = QGroupBox("Monitoring")
@@ -1000,8 +953,9 @@ class PixelChangeApp(QMainWindow):
         if self.right_panel_collapsed:
             self.expand_right_panel()
         else:
-            # Save current sizes before collapsing
+            # Save current sizes and width before collapsing
             self.original_sizes = self.main_splitter.sizes()
+            self.original_width = self.width()
             
             # Hide the right panel
             self.right_panel.hide()
@@ -1011,9 +965,9 @@ class PixelChangeApp(QMainWindow):
             container_layout.addWidget(self.persistent_button_frame)
             self.expand_button.show()
             
-            # Resize the window to be more compact
-            current_width = self.width()
-            new_width = self.left_panel.width() + 70  # Left panel + margins + expand button
+            # Resize the window to exactly match the left panel width
+            # Account for the expand button (32px) and small buffer
+            new_width = self.LEFT_PANEL_WIDTH + 40  # Left panel + expand button + minimal buffer
             self.resize(new_width, self.height())
             
             # Update toggle button
@@ -1031,8 +985,11 @@ class PixelChangeApp(QMainWindow):
         self.persistent_button_frame.setParent(None)
         self.expand_button.hide()
         
-        # Restore original window size
-        self.resize(880, self.height())
+        # Restore original window size if available, otherwise use default
+        if hasattr(self, 'original_width'):
+            self.resize(self.original_width, self.height())
+        else:
+            self.resize(800, self.height())
         
         # Restore original panel sizes after a short delay to ensure layout is updated
         QTimer.singleShot(100, lambda: self.main_splitter.setSizes(self.original_sizes))
