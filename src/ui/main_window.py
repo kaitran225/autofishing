@@ -20,7 +20,7 @@ class PixelChangeApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("AutoFishing")
-        self.setMinimumSize(800, 550)
+        self.setMinimumSize(800, 600)
         
         # Initialize detector
         self.detector = PixelChangeDetector()
@@ -111,8 +111,8 @@ class PixelChangeApp(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(16)
+        main_layout.setContentsMargins(8, 8, 8, 8)
+        main_layout.setSpacing(8)
         
         # Set application-wide stylesheet - macOS style, using system fonts
         self.setStyleSheet(f"""
@@ -638,19 +638,6 @@ class PixelChangeApp(QMainWindow):
         permissions_button.clicked.connect(lambda: show_permissions_help(self))
         control_layout.addWidget(permissions_button)
         
-        # 4. Log display
-        log_group = QGroupBox("Logs")
-        log_layout = QVBoxLayout(log_group)
-        log_layout.setContentsMargins(16, 24, 16, 16)
-        log_layout.setSpacing(8)
-        left_layout.addWidget(log_group, stretch=1)
-        
-        self.log_display = QTextEdit()
-        self.log_display.setReadOnly(True)
-        self.log_display.setMinimumHeight(100)
-        self.log_display.setStyleSheet("font-size: 12px;")
-        log_layout.addWidget(self.log_display)
-        
         # === RIGHT PANEL COMPONENTS ===
         
         # 1. Monitoring display
@@ -671,7 +658,28 @@ class PixelChangeApp(QMainWindow):
         monitor_layout.addWidget(self.monitor_display)
         right_layout.addWidget(monitor_group, stretch=3)
         
-        # 2. Timeline plot in its own group
+        # 2. Log display (moved from left panel)
+        log_group = QGroupBox("Logs")
+        log_layout = QVBoxLayout(log_group)
+        log_layout.setContentsMargins(16, 24, 16, 16)
+        log_layout.setSpacing(8)
+        
+        self.log_display = QTextEdit()
+        self.log_display.setReadOnly(True)
+        self.log_display.setMinimumHeight(120)
+        self.log_display.setStyleSheet(f"""
+            font-family: 'SF Mono', Menlo, Monaco, 'Courier New', monospace;
+            font-size: 12px;
+            background-color: {self.colors['bg_card']};
+            color: {self.colors['text']};
+            border: none;
+            border-radius: 6px;
+            padding: 8px;
+        """)
+        log_layout.addWidget(self.log_display)
+        right_layout.addWidget(log_group, stretch=2)
+        
+        # 3. Timeline plot in its own group
         timeline_group = QGroupBox("Activity Timeline")
         timeline_layout = QVBoxLayout(timeline_group)
         timeline_layout.setContentsMargins(16, 24, 16, 16)
