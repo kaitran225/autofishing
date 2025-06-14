@@ -27,7 +27,7 @@ from PyQt6.QtCore import (
     Qt, QSize, QThread, pyqtSignal, QTimer, QRect, QMargins,
     QEvent, QObject, QMetaObject
 )
-from PyQt6.QtGui import QPixmap, QImage, QColor, QFont, QPalette, QIcon, QPainter
+from PyQt6.QtGui import QPixmap, QImage, QColor, QFont, QPalette, QIcon, QPainter, QPen
 
 # For direct key simulation
 user32 = ctypes.WinDLL('user32', use_last_error=True)
@@ -104,7 +104,7 @@ class RegionSelectorQt(QMainWindow):
     
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PLAY TOGETHER Auto-Fisher")
+        self.setWindowTitle("Auto-Fisher")
         self.setMinimumSize(700, 600)  # Reduced size for more compact layout
         
         # Minimal earth-tone color palette
@@ -211,7 +211,7 @@ class RegionSelectorQt(QMainWindow):
             padding: 6px 12px;
             font-weight: normal;
             border: none;
-            min-height: 24px;
+            min-height: 20px;
         }}
         
         QPushButton:hover {{
@@ -304,28 +304,7 @@ class RegionSelectorQt(QMainWindow):
         top_layout.addWidget(control_panel)
         
         # Add top widget to main layout
-        main_layout.addWidget(top_widget, 4)  # Increased ratio for top section
-        
-        # Create terminal output area
-        terminal_group = QGroupBox("Terminal Output")
-        terminal_layout = QVBoxLayout(terminal_group)
-        terminal_layout.setContentsMargins(4, 8, 4, 4)  # Reduced margins
-        terminal_layout.setSpacing(2)  # Reduced spacing
-        
-        # Terminal text area
-        self.terminal_output = QTextEdit()
-        self.terminal_output.setReadOnly(True)
-        self.terminal_output.setStyleSheet(
-            f"background-color: {self.colors['bg_dark']}; "
-            f"color: {self.colors['text']}; "
-            f"font-family: 'Consolas', monospace; "
-            f"font-size: 9pt;"  # Reduced font size
-        )
-        self.terminal_output.setMaximumHeight(100)  # Limit height
-        terminal_layout.addWidget(self.terminal_output)
-        
-        # Add terminal to main layout
-        main_layout.addWidget(terminal_group, 1)  # Reduced ratio for terminal
+        main_layout.addWidget(top_widget, 1)  # Give stretch factor of 1
         
         # Log initial message
         self.log_to_terminal("Application started")
@@ -338,13 +317,9 @@ class RegionSelectorQt(QMainWindow):
     
     def setup_control_panel(self, layout):
         """Set up the control panel (left side) with 2-column grid layout"""
-        # Window selection section (column 0, row 0)
-        window_group = self.create_window_section()
-        layout.addWidget(window_group, 0, 0)
-        
-        # Region selection section (column 0, row 1)
-        region_group = self.create_region_section()
-        layout.addWidget(region_group, 1, 0)
+        # Game Window & Region Selection section (column 0, row 0)
+        window_region_group = self.create_window_region_section()
+        layout.addWidget(window_region_group, 0, 0)
         
         # Action sequence section (column 1, row 0, spans 2 rows)
         action_group = self.create_action_section()
@@ -354,36 +329,173 @@ class RegionSelectorQt(QMainWindow):
         monitor_group = self.create_monitoring_section()
         layout.addWidget(monitor_group, 2, 0, 1, 2)  # Span both columns in row 2
     
-    def create_window_section(self):
-        """Create the window selection section that automatically targets PLAY TOGETHER"""
-        window_group = QGroupBox("Game Window")
-        window_layout = QVBoxLayout(window_group)
-        window_layout.setContentsMargins(4, 8, 4, 4)  # Reduced margins
-        window_layout.setSpacing(4)  # Reduced spacing
+    def create_window_region_section(self):
+        """Create a combined window selection and region selection section with 2 columns"""
+        window_region_group = QGroupBox("Game Window & Region")
+        window_region_layout = QVBoxLayout(window_region_group)  # Changed to vertical layout
+        window_region_layout.setContentsMargins(4, 8, 4, 0)  # Reduced margins
+        window_region_layout.setSpacing(4)  # Reduced spacing
+        
+        # Create a widget for the two columns
+        columns_widget = QWidget()
+        columns_layout = QHBoxLayout(columns_widget)
+        columns_layout.setContentsMargins(0, 0, 0, 0)
+        columns_layout.setSpacing(4)
+        
+        # Left column: Window info
+        left_column = QWidget()
+        left_layout = QVBoxLayout(left_column)
+        left_layout.setContentsMargins(0, 0, 2, 0)  # Add right margin
+        left_layout.setSpacing(2)  # Reduced spacing
         
         # Status label
         self.window_status = QLabel("Looking for PLAY TOGETHER window...")
         self.window_status.setWordWrap(True)
         self.window_status.setStyleSheet(f"color: {self.colors['text_secondary']}; padding: 2px;")
-        window_layout.addWidget(self.window_status)
+        left_layout.addWidget(self.window_status)
         
         # Window info
         self.window_info = QLabel("No window found")
         self.window_info.setWordWrap(True)
         self.window_info.setStyleSheet(f"color: {self.colors['text_secondary']}; background: {self.colors['bg_medium']}; padding: 2px;")
-        self.window_info.setMaximumHeight(40)  # Reduced height
-        window_layout.addWidget(self.window_info)
+        self.window_info.setMaximumHeight(50)  # Reduced height
+        left_layout.addWidget(self.window_info)
         
         # Find game window button
         find_button = QPushButton("Find Game Window")
-        find_button.setMaximumHeight(24)  # Reduced height
+        find_button.setMaximumHeight(20)  # Reduced height
         find_button.clicked.connect(self.find_game_window)
-        window_layout.addWidget(find_button)
+        left_layout.addWidget(find_button)
+        
+        # Add left column to columns layout
+        columns_layout.addWidget(left_column)
+        
+        # Right column: Region settings
+        right_column = QWidget()
+        right_layout = QVBoxLayout(right_column)
+        right_layout.setContentsMargins(2, 0, 0, 0)  # Add left margin
+        right_layout.setSpacing(2)  # Reduced spacing
+        
+        # Region settings
+        settings_widget = QWidget()
+        settings_layout = QGridLayout(settings_widget)
+        settings_layout.setContentsMargins(0, 0, 0, 0)  # No margins
+        settings_layout.setSpacing(2)  # Minimal spacing
+        
+        # Size row
+        size_label = QLabel("Size:")
+        size_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        settings_layout.addWidget(size_label, 0, 0)
+        
+        self.size_input = QSpinBox()
+        self.size_input.setMinimum(10)
+        self.size_input.setMaximum(500)
+        self.size_input.setValue(100)
+        self.size_input.setMaximumHeight(20)  # Reduced height
+        self.size_input.setFixedWidth(60)  # Fixed width
+        self.size_input.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)  # Hide buttons
+        self.size_input.setStyleSheet("padding-left: 4px;")  # Add some padding
+        settings_layout.addWidget(self.size_input, 0, 1)
+        
+        unit_label = QLabel("px")
+        unit_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        settings_layout.addWidget(unit_label, 0, 2)
+        
+        # Threshold row
+        threshold_label = QLabel("Threshold:")
+        threshold_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        settings_layout.addWidget(threshold_label, 1, 0)
+        
+        self.threshold_input = QDoubleSpinBox()
+        self.threshold_input.setMinimum(0.01)
+        self.threshold_input.setMaximum(1.0)
+        self.threshold_input.setValue(self.detection_threshold)
+        self.threshold_input.setSingleStep(0.01)
+        self.threshold_input.setDecimals(2)
+        self.threshold_input.setMaximumHeight(20)  # Reduced height
+        self.threshold_input.setFixedWidth(60)  # Fixed width
+        self.threshold_input.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)  # Hide buttons
+        self.threshold_input.setStyleSheet("padding-left: 4px;")  # Add some padding
+        settings_layout.addWidget(self.threshold_input, 1, 1)
+        
+        # Add settings widget to right column
+        right_layout.addWidget(settings_widget)
+        
+        # Region buttons
+        buttons_widget = QWidget()
+        buttons_layout = QVBoxLayout(buttons_widget)
+        buttons_layout.setContentsMargins(0, 0, 0, 0)  # No margins
+        buttons_layout.setSpacing(4)  # Small spacing
+        
+        # Select region button
+        select_region_button = QPushButton("Select Region")
+        select_region_button.setMaximumHeight(20)  # Reduced height
+        select_region_button.clicked.connect(self.select_region)
+        buttons_layout.addWidget(select_region_button)
+        
+        # Capture reference button
+        reference_button = QPushButton("Capture Reference")
+        reference_button.setMaximumHeight(20)  # Reduced height
+        reference_button.clicked.connect(self.capture_reference_frame)
+        buttons_layout.addWidget(reference_button)
+        
+        # Add buttons to right column
+        right_layout.addWidget(buttons_widget)
+        
+        # Add right column to columns layout
+        columns_layout.addWidget(right_column)
+        
+        # Add columns widget to main layout
+        window_region_layout.addWidget(columns_widget)
+        
+        # Add separator line
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setFrameShadow(QFrame.Shadow.Sunken)
+        separator.setStyleSheet(f"background-color: {self.colors['border']};")
+        separator.setMaximumHeight(1)
+        window_region_layout.addWidget(separator)
+        
+        # Control buttons in a grid layout below the columns
+        control_widget = QWidget()
+        control_layout = QGridLayout(control_widget)
+        control_layout.setContentsMargins(0, 2, 0, 0)
+        control_layout.setSpacing(4)
+        
+        # Start button
+        self.monitor_button = QPushButton("Start")
+        self.monitor_button.setMaximumHeight(20)  # Reduced height
+        self.monitor_button.setEnabled(False)
+        self.monitor_button.clicked.connect(self.toggle_monitoring)
+        control_layout.addWidget(self.monitor_button, 0, 0)
+        
+        # Stop button
+        self.stop_button = QPushButton("Stop")
+        self.stop_button.setMaximumHeight(20)  # Reduced height
+        self.stop_button.setEnabled(False)
+        self.stop_button.clicked.connect(self.stop_monitoring)
+        control_layout.addWidget(self.stop_button, 0, 1)
+        
+        # Pause button
+        self.pause_button = QPushButton("Pause")
+        self.pause_button.setMaximumHeight(20)  # Reduced height
+        self.pause_button.setEnabled(False)
+        self.pause_button.clicked.connect(self.toggle_pause)
+        control_layout.addWidget(self.pause_button, 0, 2)
+        
+        # Clear log button
+        clear_log_button = QPushButton("Clear Log")
+        clear_log_button.setMaximumHeight(20)  # Reduced height
+        clear_log_button.clicked.connect(self.clear_log)
+        control_layout.addWidget(clear_log_button, 0, 3)
+        
+        # Add control buttons to main layout
+        window_region_layout.addWidget(control_widget)
         
         # Automatically try to find the window
         QTimer.singleShot(500, self.find_game_window)
         
-        return window_group
+        return window_region_group
     
     def find_game_window(self):
         """Find the PLAY TOGETHER game window"""
@@ -421,68 +533,11 @@ class RegionSelectorQt(QMainWindow):
             self.log_to_terminal("Game window not found")
             self.target_window = None
     
-    def create_region_section(self):
-        """Create the region selection section"""
-        region_group = QGroupBox("Region Selection")
-        region_layout = QVBoxLayout(region_group)
-        region_layout.setContentsMargins(4, 8, 4, 4)  # Reduced margins
-        region_layout.setSpacing(4)  # Reduced spacing
-        
-        # Size row
-        size_widget = QWidget()
-        size_layout = QHBoxLayout(size_widget)
-        size_layout.setContentsMargins(0, 0, 0, 0)  # No margins
-        size_layout.setSpacing(2)  # Reduced spacing
-        
-        size_label = QLabel("Size:")
-        self.size_input = QSpinBox()
-        self.size_input.setMinimum(10)
-        self.size_input.setMaximum(500)
-        self.size_input.setValue(100)
-        self.size_input.setMaximumHeight(20)  # Reduced height
-        size_layout.addWidget(size_label)
-        size_layout.addWidget(self.size_input)
-        size_layout.addWidget(QLabel("px"))
-        size_layout.addStretch()
-        
-        # Threshold row
-        threshold_widget = QWidget()
-        threshold_layout = QHBoxLayout(threshold_widget)
-        threshold_layout.setContentsMargins(0, 0, 0, 0)  # No margins
-        threshold_layout.setSpacing(2)  # Reduced spacing
-        
-        threshold_label = QLabel("Threshold:")
-        self.threshold_input = QDoubleSpinBox()
-        self.threshold_input.setMinimum(0.01)
-        self.threshold_input.setMaximum(1.0)
-        self.threshold_input.setValue(self.detection_threshold)
-        self.threshold_input.setSingleStep(0.01)
-        self.threshold_input.setMaximumHeight(20)  # Reduced height
-        threshold_layout.addWidget(threshold_label)
-        threshold_layout.addWidget(self.threshold_input)
-        threshold_layout.addStretch()
-        
-        # Select button
-        select_region_button = QPushButton("Select Region")
-        select_region_button.setMaximumHeight(24)  # Reduced height
-        select_region_button.clicked.connect(self.select_region)
-        
-        # Capture reference button
-        reference_button = QPushButton("Capture Reference Frame")
-        reference_button.setMaximumHeight(24)  # Reduced height
-        reference_button.clicked.connect(self.capture_reference_frame)
-        
-        region_layout.addWidget(size_widget)
-        region_layout.addWidget(threshold_widget)
-        region_layout.addWidget(select_region_button)
-        region_layout.addWidget(reference_button)
-        
-        return region_group
-    
     def create_action_section(self):
         """Create the action sequence section"""
         action_group = QGroupBox("Action Sequence")
         action_layout = QVBoxLayout(action_group)
+        action_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         action_layout.setContentsMargins(4, 8, 4, 4)  # Reduced margins
         action_layout.setSpacing(4)  # Reduced spacing
         
@@ -490,16 +545,16 @@ class RegionSelectorQt(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setMinimumHeight(120)  # Reduced height
-        scroll.setMaximumHeight(150)  # Reduced max height
         
         # Container widget for action items
         self.action_container = QWidget()
         self.action_layout = QVBoxLayout(self.action_container)
         self.action_layout.setContentsMargins(2, 2, 2, 2)  # Reduced margins
         self.action_layout.setSpacing(2)  # Reduced spacing
+        self.action_layout.addStretch(0)  # Add stretch to push items to the top
         
         scroll.setWidget(self.action_container)
-        action_layout.addWidget(scroll)
+        action_layout.addWidget(scroll, 1)  # Give scroll area stretch factor
         
         # Action buttons
         buttons_widget = QWidget()
@@ -508,22 +563,22 @@ class RegionSelectorQt(QMainWindow):
         buttons_layout.setSpacing(2)  # Reduced spacing
         
         add_button = QPushButton("+ Add")
-        add_button.setMaximumHeight(22)  # Reduced height
+        add_button.setMaximumHeight(20)  # Further reduced height
         add_button.clicked.connect(self.add_action_item)
         
         clear_button = QPushButton("Clear")
-        clear_button.setMaximumHeight(22)  # Reduced height
+        clear_button.setMaximumHeight(20)  # Further reduced height
         clear_button.setStyleSheet(
             f"background-color: {self.colors['warning']}; color: {self.colors['text']};"
         )
         clear_button.clicked.connect(self.clear_action_sequence)
         
         default_button = QPushButton("Default")
-        default_button.setMaximumHeight(22)  # Reduced height
+        default_button.setMaximumHeight(20)  # Further reduced height
         default_button.clicked.connect(self.load_default_action_sequence)
         
         test_button = QPushButton("Test")
-        test_button.setMaximumHeight(22)  # Reduced height
+        test_button.setMaximumHeight(20)  # Further reduced height
         test_button.clicked.connect(self.test_action_sequence)
         
         buttons_layout.addWidget(add_button)
@@ -531,53 +586,32 @@ class RegionSelectorQt(QMainWindow):
         buttons_layout.addWidget(default_button)
         buttons_layout.addWidget(test_button)
         
-        action_layout.addWidget(buttons_widget)
+        action_layout.addWidget(buttons_widget, 0)  # No stretch factor
         
         return action_group
     
     def create_monitoring_section(self):
-        """Create the monitoring section with integrated monitor view"""
+        """Create the monitoring section with integrated monitor view and terminal"""
         monitor_group = QGroupBox("Monitoring")
-        monitor_layout = QHBoxLayout(monitor_group)  # Changed to horizontal layout
+        monitor_layout = QVBoxLayout(monitor_group)  # Vertical layout
         monitor_layout.setContentsMargins(4, 8, 4, 4)  # Reduced margins
         monitor_layout.setSpacing(4)  # Reduced spacing
         
-        # Left side: controls
-        controls_widget = QWidget()
-        controls_layout = QVBoxLayout(controls_widget)
-        controls_layout.setContentsMargins(0, 0, 0, 0)
-        controls_layout.setSpacing(4)
+        # Top section with monitor view and terminal side by side
+        content_widget = QWidget()
+        content_layout = QHBoxLayout(content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(4)
         
-        # Status label
-        self.status_label = QLabel("Ready to select window")
-        self.status_label.setStyleSheet(f"color: {self.colors['text_secondary']}; padding: 2px;")
-        controls_layout.addWidget(self.status_label)
-        
-        # Start/Stop button
-        self.monitor_button = QPushButton("Start Monitoring")
-        self.monitor_button.setMaximumHeight(24)  # Reduced height
-        self.monitor_button.setEnabled(False)
-        self.monitor_button.clicked.connect(self.toggle_monitoring)
-        controls_layout.addWidget(self.monitor_button)
-        
-        # Add stretch to push controls to the top
-        controls_layout.addStretch(1)
-        
-        # Right side: monitor view
+        # Left side: Monitor view
         view_widget = QWidget()
         view_layout = QVBoxLayout(view_widget)
         view_layout.setContentsMargins(0, 0, 0, 0)
         view_layout.setSpacing(2)
         
-        # Monitor view label
-        self.monitor_view_label = QLabel("Monitor View")
-        self.monitor_view_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.monitor_view_label.setStyleSheet(f"color: {self.colors['text']}; background: none; border: none;")
-        view_layout.addWidget(self.monitor_view_label)
-        
         # Canvas for the monitor view
         canvas = QLabel()
-        canvas.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        canvas.setAlignment(Qt.AlignmentFlag.AlignBottom)
         canvas.setMinimumSize(200, 200)
         canvas.setMaximumSize(200, 200)  # Enforce 200x200 size
         canvas.setStyleSheet("background-color: black;")
@@ -586,9 +620,36 @@ class RegionSelectorQt(QMainWindow):
         # Store the canvas for later use
         self.monitor_canvas = canvas
         
-        # Add both sides to the main layout
-        monitor_layout.addWidget(controls_widget, 1)  # Give controls some space
-        monitor_layout.addWidget(view_widget)  # Give view more space
+        # Right side: Terminal output
+        terminal_widget = QWidget()
+        terminal_layout = QVBoxLayout(terminal_widget)
+        terminal_layout.setContentsMargins(0, 0, 0, 0)
+        terminal_layout.setSpacing(2)
+        
+        # Terminal text area
+        self.terminal_output = QTextEdit()
+        self.terminal_output.setReadOnly(True)
+        self.terminal_output.setStyleSheet(
+            f"background-color: {self.colors['bg_dark']}; "
+            f"color: {self.colors['text']}; "
+            f"font-family: 'Consolas', monospace; "
+            f"font-size: 9pt;"  # Reduced font size
+        )
+        self.terminal_output.setMinimumHeight(60)  # Reduced height
+        self.terminal_output.setMaximumHeight(200)  # Limit maximum height
+        terminal_layout.addWidget(self.terminal_output, 1)  # Give stretch factor
+        
+        # Status label directly under the terminal
+        self.status_label = QLabel("Ready to select window")
+        self.status_label.setStyleSheet(f"color: {self.colors['text_secondary']}; padding: 2px;")
+        terminal_layout.addWidget(self.status_label)  # Add to terminal layout
+        
+        # Add view and terminal to content layout
+        content_layout.addWidget(view_widget)
+        content_layout.addWidget(terminal_widget, 1)  # Give terminal more space
+        
+        # Add content widget to main layout
+        monitor_layout.addWidget(content_widget, 1)  # Give stretch factor
         
         return monitor_group
     
@@ -631,170 +692,154 @@ class RegionSelectorQt(QMainWindow):
         self.monitor_canvas.setPixmap(pixmap)
     
     def select_region(self):
-        """Select a region of the screen to monitor"""
-        if not self.target_window:
-            self.status_label.setText("Error: No window selected")
-            self.log_to_terminal("Error: No window selected")
-            return
+        """Allow user to select a region of the screen"""
+        # Get the size from the input field
+        size = self.size_input.value()
         
-        try:
-            # Try to activate the window
-            try:
-                # Minimize our window first
-                self.showMinimized()
-                time.sleep(0.3)  # Give time to minimize
-                self.log_to_terminal(f"Selecting region for window: {self.target_window.title}")
+        # Calculate region dimensions based on 1.5:1 ratio
+        width = int(size * 1.5)
+        height = size
+        
+        # Temporarily minimize our own window
+        self.setWindowState(Qt.WindowState.WindowMinimized)
+        time.sleep(0.5)  # Give time for window to minimize
+        
+        # Create a fullscreen transparent window for selection
+        selection_window = QWidget(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        selection_window.setWindowOpacity(0.3)
+        selection_window.setStyleSheet("background-color: black;")
+        selection_window.showFullScreen()
+        
+        # Variables to track selection rectangle
+        preview_rect = None
+        rect_x, rect_y = 0, 0
+        
+        # Create a QPainter for drawing
+        class SelectionOverlay(QWidget):
+            def __init__(self, parent=None):
+                super().__init__(parent)
+                self.setGeometry(0, 0, selection_window.width(), selection_window.height())
+                self.setCursor(Qt.CursorShape.CrossCursor)
+                self.mouse_pos = QPoint(0, 0)
                 
-                # Activate target window
-                if self.target_window.isMinimized:
-                    self.target_window.restore()
-                self.target_window.activate()
-                time.sleep(0.2)  # Give time to activate
-            except Exception as e:
-                self.status_label.setText(f"Error: Window not available")
-                self.log_to_terminal(f"Error activating window: {str(e)}")
-                self.showNormal()  # Restore our window
-                return
-            
-            try:
-                # Get region size
-                size = self.size_input.value()
-                if size < 10:
-                    self.status_label.setText("Error: Size must be at least 10px")
-                    self.log_to_terminal("Error: Region size must be at least 10px")
-                    self.showNormal()
-                    return
+            def paintEvent(self, event):
+                painter = QPainter(self)
                 
-                # Get window position and size
-                win_left = self.target_window.left
-                win_top = self.target_window.top
-                win_width = self.target_window.width
-                win_height = self.target_window.height
+                # Draw crosshairs
+                painter.setPen(QPen(QColor(self.parent().parent().colors['accent']), 1, Qt.PenStyle.DashLine))
+                painter.drawLine(self.mouse_pos.x(), 0, self.mouse_pos.x(), self.height())
+                painter.drawLine(0, self.mouse_pos.y(), self.width(), self.mouse_pos.y())
                 
-                # Create selection overlay
-                overlay = QWidget()
-                overlay.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
-                overlay.setStyleSheet("background-color: rgba(0, 0, 0, 0.3);")
-                overlay.setGeometry(win_left, win_top, win_width, win_height)
-                
-                # Create overlay layout with instructions
-                overlay_layout = QVBoxLayout(overlay)
-                
-                # Instructions label
-                instructions = QLabel("Click to select region • ESC to cancel")
-                instructions.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                instructions.setStyleSheet(
-                    f"color: white; font-size: 14px; font-weight: bold; "
-                    f"background-color: rgba(0, 0, 0, 0.5); padding: 10px; border-radius: 5px;"
-                )
-                overlay_layout.addWidget(instructions, 0, Qt.AlignmentFlag.AlignTop)
-                overlay_layout.addStretch()
-                
-                # Show the overlay
-                overlay.show()
-                
-                # Variables to store selection
-                selection_rect = None
-                
-                # Event filter for handling mouse events on the overlay
-                class EventFilter(QObject):
-                    def __init__(self, parent, size, win_left, win_top, win_width, win_height):
-                        super().__init__()
-                        self.parent = parent
-                        self.size = size
-                        self.win_left = win_left
-                        self.win_top = win_top
-                        self.win_width = win_width
-                        self.win_height = win_height
-                        self.selection_made = False
+                # Draw selection rectangle
+                if rect_x != 0 and rect_y != 0:
+                    # Draw border
+                    painter.setPen(QPen(QColor(self.parent().parent().colors['accent']), 2))
+                    painter.drawRect(rect_x - width // 2, rect_y - height // 2, width, height)
                     
-                    def eventFilter(self, obj, event):
-                        if event.type() == QEvent.Type.MouseMove:
-                            # Handle mouse move to update selection preview
-                            x = event.x()
-                            y = event.y()
-                            
-                            # Calculate region coordinates
-                            left = max(0, min(x - self.size//2, self.win_width - self.size))
-                            top = max(0, min(y - self.size//2, self.win_height - self.size))
-                            
-                            # Update overlay to show selection preview
-                            # In a real implementation, you would draw this
-                            
-                            return True
-                        
-                        elif event.type() == QEvent.Type.MouseButtonPress:
-                            # Handle mouse click to finalize selection
-                            if not self.selection_made:
-                                self.selection_made = True
-                                
-                                x = event.x()
-                                y = event.y()
-                                
-                                # Calculate region coordinates
-                                left = max(0, min(x - self.size//2, self.win_width - self.size))
-                                top = max(0, min(y - self.size//2, self.win_height - self.size))
-                                
-                                # Convert to absolute screen coordinates
-                                screen_left = self.win_left + left
-                                screen_top = self.win_top + top
-                                
-                                # Store the selection information
-                                self.parent.selected_region = {
-                                    'left': screen_left,
-                                    'top': screen_top,
-                                    'width': self.size,
-                                    'height': self.size,
-                                    'mon': 0  # Default primary monitor
-                                }
-                                
-                                # Log the selection
-                                self.parent.log_to_terminal(
-                                    f"Region selected: {self.size}×{self.size} at ({screen_left}, {screen_top})"
-                                )
-                                
-                                # Close overlay
-                                overlay.close()
-                                self.parent.showNormal()
-                                
-                                # Update status
-                                self.parent.status_label.setText(
-                                    f"Region selected: {self.size}×{self.size} at ({screen_left}, {screen_top})"
-                                )
-                                
-                                # Enable monitoring button
-                                self.parent.monitor_button.setEnabled(True)
-                                
-                                # Take a preview screenshot
-                                self.parent.take_preview_screenshot()
-                                
-                                return True
-                        
-                        elif event.type() == QEvent.Type.KeyPress:
-                            # Handle escape key to cancel
-                            if event.key() == Qt.Key.Key_Escape:
-                                self.parent.log_to_terminal("Region selection canceled")
-                                overlay.close()
-                                self.parent.showNormal()
-                                return True
-                        
-                        return False
+                    # Draw grid lines
+                    painter.setPen(QPen(QColor(self.parent().parent().colors['green']), 1, Qt.PenStyle.DashLine))
+                    cell_width = width // 3
+                    cell_height = height // 3
+                    
+                    # Vertical grid lines
+                    for i in range(1, 3):
+                        painter.drawLine(
+                            rect_x - width // 2 + i * cell_width, rect_y - height // 2,
+                            rect_x - width // 2 + i * cell_width, rect_y + height // 2
+                        )
+                    
+                    # Horizontal grid lines
+                    for i in range(1, 3):
+                        painter.drawLine(
+                            rect_x - width // 2, rect_y - height // 2 + i * cell_height,
+                            rect_x + width // 2, rect_y - height // 2 + i * cell_height
+                        )
+                    
+                    # Draw coordinates
+                    painter.setPen(QPen(QColor(self.parent().parent().colors['text']), 1))
+                    painter.setFont(QFont("Consolas", 9))
+                    
+                    # Calculate actual coordinates
+                    left = max(0, rect_x - width // 2)
+                    top = max(0, rect_y - height // 2)
+                    
+                    # Ensure region stays within screen bounds
+                    if left + width > self.width():
+                        left = self.width() - width
+                    if top + height > self.height():
+                        top = self.height() - height
+                    
+                    coord_text = f"pos: ({left},{top}) • size: {width}×{height}"
+                    painter.drawText(self.width() // 2 - 100, self.height() - 20, 200, 20, 
+                                    Qt.AlignmentFlag.AlignCenter, coord_text)
                 
-                # Install event filter
-                event_filter = EventFilter(self, size, win_left, win_top, win_width, win_height)
-                overlay.installEventFilter(event_filter)
+                # Draw instructions
+                painter.setPen(QPen(QColor(self.parent().parent().colors['green']), 1))
+                painter.setFont(QFont("Consolas", 10))
+                painter.drawText(self.width() // 2 - 200, 30, 400, 20, 
+                                Qt.AlignmentFlag.AlignCenter, 
+                                "SELECT REGION • CLICK TO PLACE • ESC TO CANCEL")
+            
+            def mouseMoveEvent(self, event):
+                self.mouse_pos = event.pos()
+                nonlocal rect_x, rect_y
+                rect_x = event.pos().x()
+                rect_y = event.pos().y()
+                self.update()
+            
+            def mousePressEvent(self, event):
+                nonlocal rect_x, rect_y
+                rect_x = event.pos().x()
+                rect_y = event.pos().y()
                 
-            except Exception as e:
-                self.status_label.setText(f"Error in region selection: {str(e)}")
-                self.log_to_terminal(f"Error in region selection: {str(e)}")
-                self.showNormal()
+                # Calculate actual coordinates
+                left = max(0, rect_x - width // 2)
+                top = max(0, rect_y - height // 2)
+                
+                # Ensure region stays within screen bounds
+                if left + width > self.width():
+                    left = self.width() - width
+                if top + height > self.height():
+                    top = self.height() - height
+                
+                # Close selection window
+                selection_window.close()
+                
+                # Set region in parent
+                self.parent().parent().selected_region = (left, top, width, height)
+                self.parent().parent().log_to_terminal(f"Region selected: ({left},{top}) {width}×{height}")
+                
+                # Update UI to show selected region
+                self.parent().parent().update_region_label()
+                
+                # Enable monitoring button
+                self.parent().parent().monitor_button.setEnabled(True)
         
-        except Exception as e:
-            print(f"Error selecting region: {str(e)}")
-            self.status_label.setText(f"Error: {str(e)}")
-            self.log_to_terminal(f"Error selecting region: {str(e)}")
-            self.showNormal()
-    
+        # Create overlay widget
+        overlay = SelectionOverlay(selection_window)
+        overlay.setParent(selection_window)
+        
+        # Handle ESC key to cancel
+        def on_escape(event):
+            if event.key() == Qt.Key.Key_Escape:
+                selection_window.close()
+                self.setWindowState(Qt.WindowState.WindowActive)
+                self.log_to_terminal("Region selection cancelled")
+        
+        selection_window.keyPressEvent = on_escape
+        
+        # Show selection window
+        selection_window.show()
+        
+        # Wait for selection window to close
+        selection_window.destroyed.connect(lambda: self.setWindowState(Qt.WindowState.WindowActive))
+        
+    def update_region_label(self):
+        """Update UI to show the selected region"""
+        if hasattr(self, 'status_label') and self.selected_region:
+            x, y, w, h = self.selected_region
+            self.status_label.setText(f"Selected: ({x},{y}) {w}×{h}")
+            
     def take_preview_screenshot(self):
         """Take a preview screenshot of the selected region"""
         if not self.selected_region:
@@ -852,8 +897,12 @@ class RegionSelectorQt(QMainWindow):
                 return
                 
             # Update button text
-            self.monitor_button.setText("Stop Monitoring")
+            self.monitor_button.setText("Start")
+            self.monitor_button.setEnabled(False)
+            self.stop_button.setEnabled(True)
+            self.pause_button.setEnabled(True)
             self.is_monitoring = True
+            self.is_paused = False
             
             # Start monitoring thread
             self.monitor_thread = QThread()
@@ -865,12 +914,7 @@ class RegionSelectorQt(QMainWindow):
             self.log_to_terminal("Monitoring started")
         else:
             # Stop monitoring
-            self.is_monitoring = False
-            if self.monitor_thread:
-                self.monitor_thread.quit()
-                self.monitor_thread.wait()
-            self.monitor_button.setText("Start Monitoring")
-            self.log_to_terminal("Monitoring stopped")
+            self.stop_monitoring()
     
     def monitor_thread_function(self):
         """Thread function for continuous monitoring"""
@@ -878,6 +922,11 @@ class RegionSelectorQt(QMainWindow):
         
         with mss.mss() as sct:
             while self.is_monitoring:
+                # Check if paused
+                if hasattr(self, 'is_paused') and self.is_paused:
+                    time.sleep(0.1)
+                    continue
+                    
                 if self.target_window and self.selected_region:
                     # Capture the selected region
                     x, y, w, h = self.selected_region
@@ -913,71 +962,46 @@ class RegionSelectorQt(QMainWindow):
     
     def process_and_display_image(self, image):
         """Process and display the captured image"""
-        if image is None or not hasattr(self, 'canvases') or not self.canvases:
+        if image is None or not hasattr(self, 'monitor_canvas'):
             return
+            
+        # Convert PIL image to numpy array
+        img_np = np.array(image)
         
-        try:
-            # Convert PIL image to numpy array for OpenCV processing
-            np_img = np.array(image)
+        # Convert to RGB if needed
+        if len(img_np.shape) == 2:  # Grayscale
+            img_rgb = cv2.cvtColor(img_np, cv2.COLOR_GRAY2RGB)
+        elif img_np.shape[2] == 4:  # RGBA
+            img_rgb = cv2.cvtColor(img_np, cv2.COLOR_RGBA2RGB)
+        else:
+            img_rgb = img_np
             
-            # Display the original image
-            self.display_image(image, 0)
-            
-            # Calculate and update change percentage if we have a reference frame
-            if self.reference_frame is not None and self.current_frame is not None:
-                diff_frame, change_percent = self.calculate_frame_difference(
-                    self.current_frame, self.reference_frame)
-                
-                # Add change percentage text to status
-                QTimer.singleShot(0, lambda c=change_percent: 
-                    self.status_label.setText(f"Change: {c:.2%}")
-                )
-            
-        except Exception as e:
-            print(f"Error processing image: {str(e)}")
-            self.log_to_terminal(f"Error processing image: {str(e)}")
-    
-    def display_image(self, pil_img, index=0):
-        """Display a PIL image in the canvas"""
-        if index >= len(self.canvases) or pil_img is None:
-            return
+        # Resize to fit the canvas (200x200) while maintaining aspect ratio
+        h, w = img_rgb.shape[:2]
+        max_size = 200
+        scale = min(max_size / w, max_size / h)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
         
-        try:
-            # Get canvas dimensions for scaling
-            canvas = self.canvases[index]
-            canvas_width = canvas.width()
-            canvas_height = canvas.height()
-            
-            # Get image dimensions
-            img_width, img_height = pil_img.size
-            
-            # Calculate scaling factor to fit in canvas
-            scale_factor = min(
-                canvas_width / img_width,
-                canvas_height / img_height
-            ) * 0.9  # 90% of available space
-            
-            # Calculate new dimensions
-            new_width = int(img_width * scale_factor)
-            new_height = int(img_height * scale_factor)
-            
-            # Resize the image
-            if new_width > 0 and new_height > 0:
-                resized_img = pil_img.resize((new_width, new_height), Image.LANCZOS)
-                
-                # Convert PIL image to Qt image and pixmap
-                q_image = ImageQt.toqimage(resized_img)
-                pixmap = QPixmap.fromImage(q_image)
-                
-                # Update canvas
-                canvas.setPixmap(pixmap)
-                canvas.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Resize the image
+        img_resized = cv2.resize(img_rgb, (new_w, new_h))
         
-        except Exception as e:
-            print(f"Error displaying image: {str(e)}")
-            self.log_to_terminal(f"Error displaying image: {str(e)}")
-            import traceback
-            traceback.print_exc()
+        # Create a black background of 200x200
+        background = np.zeros((max_size, max_size, 3), dtype=np.uint8)
+        
+        # Calculate position to center the image
+        y_offset = (max_size - new_h) // 2
+        x_offset = (max_size - new_w) // 2
+        
+        # Place the resized image on the background
+        background[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = img_resized
+        
+        # Convert to QImage and display
+        h, w, c = background.shape
+        bytes_per_line = c * w
+        q_img = QImage(background.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+        pixmap = QPixmap.fromImage(q_img)
+        self.monitor_canvas.setPixmap(pixmap)
     
     def calculate_frame_difference(self, frame1, frame2):
         """Calculate the difference between two grayscale frames"""
@@ -1043,7 +1067,8 @@ class RegionSelectorQt(QMainWindow):
         type_combo = QComboBox()
         type_combo.addItems(["focus", "key", "wait"])
         type_combo.setCurrentText(action_type)
-        type_combo.setMaximumHeight(24)
+        type_combo.setMaximumWidth(60)  # Reduced width
+        type_combo.setMaximumHeight(20)  # Reduced height
         
         # Second column: Value input
         value_input = QLineEdit()
@@ -1127,84 +1152,106 @@ class RegionSelectorQt(QMainWindow):
         self.status_label.setText("Default action sequence loaded")
     
     def apply_action_sequence(self):
-        """Parse action sequence from UI elements"""
+        """Parse action frames into action sequence"""
         self.action_sequence = []
         
-        for frame in self.action_frames:
-            try:
-                action_type = frame.action_data["type"]
-                action_value = frame.action_data["value"]
+        # Get all action frames
+        for i in range(self.action_layout.count()):
+            item = self.action_layout.itemAt(i)
+            if item and item.widget() and isinstance(item.widget(), QFrame):
+                frame = item.widget()
                 
-                if action_type == "focus":
-                    self.action_sequence.append({
-                        "type": "focus",
-                        "comment": "Focus target window"
-                    })
-                elif action_type == "key":
-                    if action_value:
-                        self.action_sequence.append({
-                            "type": "key", 
-                            "key": action_value,
-                            "comment": f"Press {action_value} key"
-                        })
+                # Get values from the frame
+                action_type = frame.type_combo.currentText()
+                value = frame.value_input.text()
+                comment = frame.comment_input.text()
+                
+                # Create action based on type
+                action = {"type": action_type, "comment": comment}
+                
+                if action_type == "key":
+                    action["key"] = value
                 elif action_type == "wait":
                     try:
-                        wait_time = float(action_value)
-                        self.action_sequence.append({
-                            "type": "wait",
-                            "seconds": wait_time,
-                            "comment": f"Wait {wait_time} seconds"
-                        })
-                    except ValueError:
-                        print(f"Invalid wait time: {action_value}")
-            except Exception as e:
-                print(f"Error parsing action: {e}")
-        
+                        action["seconds"] = float(value)
+                    except:
+                        action["seconds"] = 1.0
+                elif action_type == "click":
+                    try:
+                        x, y = value.split(",")
+                        action["x"] = int(x)
+                        action["y"] = int(y)
+                    except:
+                        action["x"] = 0
+                        action["y"] = 0
+                elif action_type == "esc":
+                    action["key"] = "escape"
+                elif action_type == "f":
+                    action["key"] = "f"
+                
+                self.action_sequence.append(action)
+                
         return self.action_sequence
     
     def execute_action_sequence(self):
-        """Execute the parsed action sequence"""
-        try:
-            self.status_label.setText("Executing actions...")
-            self.log_to_terminal("Starting action sequence execution")
+        """Execute the action sequence"""
+        if not self.action_sequence:
+            self.log_to_terminal("No actions to execute")
+            return
             
-            for i, action in enumerate(self.action_sequence):
-                action_type = action["type"]
+        self.log_to_terminal("Executing action sequence...")
+        
+        # Execute each action in sequence
+        for action in self.action_sequence:
+            action_type = action.get("type")
+            
+            if action_type == "focus":
+                self.log_to_terminal("Focusing window...")
+                if self.target_window:
+                    self.focus_window(self.target_window)
+                    time.sleep(0.1)
+                    
+            elif action_type == "key":
+                key = action.get("key")
+                if key:
+                    self.log_to_terminal(f"Pressing key: {key}")
+                    self.press_key(key)
+                    time.sleep(0.1)
+                    
+            elif action_type == "wait":
+                seconds = float(action.get("seconds", 1))
+                self.log_to_terminal(f"Waiting for {seconds} seconds...")
+                time.sleep(seconds)
                 
-                if action_type == "focus":
-                    self.log_to_terminal(f"Action {i+1}/{len(self.action_sequence)}: Focusing window")
-                    self.focus_window()
-                elif action_type == "key":
-                    key = action.get("key", "").lower()
-                    if key:
-                        self.log_to_terminal(f"Action {i+1}/{len(self.action_sequence)}: Pressing key '{key}'")
-                        self.press_key(key)
-                    else:
-                        self.log_to_terminal(f"Action {i+1}/{len(self.action_sequence)}: Error - Missing key value")
-                        print(f"Missing key in action: {action}")
-                elif action_type == "wait":
-                    wait_time = float(action.get("seconds", 1.0))
-                    self.log_to_terminal(f"Action {i+1}/{len(self.action_sequence)}: Waiting {wait_time} seconds")
-                    time.sleep(wait_time)
-            
-            self.log_to_terminal("Action sequence completed")
-            # Update status in the main thread
-            QTimer.singleShot(0, lambda: self.status_label.setText("Action sequence completed"))
-            
-        except Exception as e:
-            error_msg = f"Error executing action sequence: {e}"
-            print(error_msg)
-            self.log_to_terminal(error_msg)
-            # Update status in the main thread
-            QTimer.singleShot(0, lambda: self.status_label.setText(f"Error: {str(e)}"))
-    
-    def focus_window(self):
+            elif action_type == "click":
+                coords = action.get("coords", "0,0").split(",")
+                try:
+                    x, y = int(coords[0]), int(coords[1])
+                    self.log_to_terminal(f"Clicking at ({x}, {y})...")
+                    self.click_at(x, y)
+                    time.sleep(0.1)
+                except:
+                    self.log_to_terminal(f"Invalid click coordinates: {action.get('coords')}")
+                    
+            elif action_type == "esc":
+                self.log_to_terminal("Pressing ESC key...")
+                self.press_key("escape")
+                time.sleep(0.1)
+                
+            elif action_type == "f":
+                self.log_to_terminal("Pressing F key...")
+                self.press_key("f")
+                time.sleep(0.1)
+                
+        self.log_to_terminal("Action sequence completed")
+        
+    def focus_window(self, window):
         """Focus the target window"""
         try:
-            if self.target_window:
-                if self.target_window.isMinimized:
-                    self.target_window.restore()
-                self.target_window.activate()
+            if window:
+                if window.isMinimized:
+                    window.restore()
+                window.activate()
                 time.sleep(0.2)  # Give time to activate
         except Exception as e:
             print(f"Error focusing window: {e}")
@@ -1318,7 +1365,7 @@ class RegionSelectorQt(QMainWindow):
         
         # Type combobox
         type_combo = QComboBox()
-        type_combo.addItems(["key", "focus", "wait", "click"])
+        type_combo.addItems(["key", "focus", "wait", "click", "esc", "f"])
         type_combo.setCurrentText(action_data.get("type", "key"))
         type_combo.setMaximumWidth(60)  # Reduced width
         type_combo.setMaximumHeight(20)  # Reduced height
@@ -1334,6 +1381,8 @@ class RegionSelectorQt(QMainWindow):
         elif action_data["type"] == "click":
             value_input.setText(f"{action_data.get('x', '0')},{action_data.get('y', '0')}")
             value_input.setPlaceholderText("x,y")
+        elif action_data["type"] in ["esc", "f"]:
+            value_input.setPlaceholderText("No value needed")
         value_input.setMaximumHeight(20)  # Reduced height
         
         # Comment input
@@ -1354,13 +1403,17 @@ class RegionSelectorQt(QMainWindow):
         def update_value_placeholder(action_type):
             if action_type == "key":
                 value_input.setPlaceholderText("Key (e.g. f, enter)")
+                value_input.setEnabled(True)
             elif action_type == "wait":
                 value_input.setPlaceholderText("Seconds")
+                value_input.setEnabled(True)
             elif action_type == "click":
                 value_input.setPlaceholderText("x,y")
-            elif action_type == "focus":
+                value_input.setEnabled(True)
+            elif action_type in ["focus", "esc", "f"]:
                 value_input.clear()
                 value_input.setPlaceholderText("No value needed")
+                value_input.setEnabled(False)
         
         type_combo.currentTextChanged.connect(update_value_placeholder)
         
@@ -1378,7 +1431,60 @@ class RegionSelectorQt(QMainWindow):
         # Connect delete button
         delete_button.clicked.connect(lambda: self.remove_action_frame(frame))
         
+        # Initialize value input state based on current type
+        update_value_placeholder(type_combo.currentText())
+        
         return frame
+
+    def click_at(self, x, y):
+        """Simulate a mouse click at the specified coordinates"""
+        try:
+            # Move the cursor to the position
+            win32api.SetCursorPos((x, y))
+            time.sleep(0.1)
+            
+            # Perform a click
+            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+            time.sleep(0.05)
+            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+            return True
+        except Exception as e:
+            self.log_to_terminal(f"Error clicking at ({x}, {y}): {str(e)}")
+            return False
+
+    def clear_log(self):
+        """Clear the terminal output"""
+        self.terminal_output.clear()
+        self.log_to_terminal("Log cleared")
+        
+    def stop_monitoring(self):
+        """Stop monitoring"""
+        if self.is_monitoring:
+            self.is_monitoring = False
+            if self.monitor_thread:
+                self.monitor_thread.quit()
+                self.monitor_thread.wait()
+            self.monitor_button.setText("Start")
+            self.monitor_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
+            self.pause_button.setEnabled(False)
+            self.log_to_terminal("Monitoring stopped")
+            
+    def toggle_pause(self):
+        """Toggle pause/resume monitoring"""
+        if not self.is_monitoring:
+            return
+            
+        if hasattr(self, 'is_paused') and self.is_paused:
+            # Resume monitoring
+            self.is_paused = False
+            self.pause_button.setText("Pause")
+            self.log_to_terminal("Monitoring resumed")
+        else:
+            # Pause monitoring
+            self.is_paused = True
+            self.pause_button.setText("Resume")
+            self.log_to_terminal("Monitoring paused")
 
 def main():
     """Main entry point"""
