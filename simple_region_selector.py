@@ -105,7 +105,7 @@ class RegionSelectorQt(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Auto-Fisher")
-        self.setMinimumSize(700, 600)  # Reduced size for more compact layout
+        self.setMinimumSize(600, 400)  # Reduced size for more compact layout
         
         # Minimal earth-tone color palette
         self.colors = {
@@ -319,7 +319,7 @@ class RegionSelectorQt(QMainWindow):
         """Set up the control panel (left side) with 2-column grid layout"""
         # Game Window & Region Selection section (column 0, row 0)
         window_region_group = self.create_window_region_section()
-        layout.addWidget(window_region_group, 0, 0)
+        layout.addWidget(window_region_group, 0, 0, 2, 1)  # Span 2 rows to give more space
         
         # Action sequence section (column 1, row 0, spans 2 rows)
         action_group = self.create_action_section()
@@ -331,10 +331,10 @@ class RegionSelectorQt(QMainWindow):
     
     def create_window_region_section(self):
         """Create a combined window selection and region selection section with 2 columns"""
-        window_region_group = QGroupBox("Game Window & Region")
-        window_region_layout = QVBoxLayout(window_region_group)  # Changed to vertical layout
-        window_region_layout.setContentsMargins(4, 8, 4, 0)  # Reduced margins
-        window_region_layout.setSpacing(4)  # Reduced spacing
+        window_region_group = QGroupBox()
+        window_region_layout = QVBoxLayout(window_region_group)
+        window_region_layout.setContentsMargins(4, 4, 4, 0)  # Reduced top margin
+        window_region_layout.setSpacing(0)  # Remove spacing
         
         # Create a widget for the two columns
         columns_widget = QWidget()
@@ -384,12 +384,13 @@ class RegionSelectorQt(QMainWindow):
         
         # Size row
         size_label = QLabel("Size:")
-        size_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        size_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         settings_layout.addWidget(size_label, 0, 0)
         
         self.size_input = QSpinBox()
         self.size_input.setMinimum(10)
         self.size_input.setMaximum(500)
+        self.size_input.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.size_input.setValue(100)
         self.size_input.setMaximumHeight(20)  # Reduced height
         self.size_input.setFixedWidth(60)  # Fixed width
@@ -403,12 +404,13 @@ class RegionSelectorQt(QMainWindow):
         
         # Threshold row
         threshold_label = QLabel("Threshold:")
-        threshold_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        threshold_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         settings_layout.addWidget(threshold_label, 1, 0)
         
         self.threshold_input = QDoubleSpinBox()
         self.threshold_input.setMinimum(0.01)
         self.threshold_input.setMaximum(1.0)
+        self.threshold_input.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.threshold_input.setValue(self.detection_threshold)
         self.threshold_input.setSingleStep(0.01)
         self.threshold_input.setDecimals(2)
@@ -425,7 +427,7 @@ class RegionSelectorQt(QMainWindow):
         buttons_widget = QWidget()
         buttons_layout = QVBoxLayout(buttons_widget)
         buttons_layout.setContentsMargins(0, 0, 0, 0)  # No margins
-        buttons_layout.setSpacing(4)  # Small spacing
+        buttons_layout.setSpacing(2)  # Reduced spacing
         
         # Select region button
         select_region_button = QPushButton("Select Region")
@@ -448,19 +450,11 @@ class RegionSelectorQt(QMainWindow):
         # Add columns widget to main layout
         window_region_layout.addWidget(columns_widget)
         
-        # Add separator line
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFrameShadow(QFrame.Shadow.Sunken)
-        separator.setStyleSheet(f"background-color: {self.colors['border']};")
-        separator.setMaximumHeight(1)
-        window_region_layout.addWidget(separator)
-        
         # Control buttons in a grid layout below the columns
         control_widget = QWidget()
         control_layout = QGridLayout(control_widget)
-        control_layout.setContentsMargins(0, 2, 0, 0)
-        control_layout.setSpacing(4)
+        control_layout.setContentsMargins(0, 0, 0, 0)  # No margins
+        control_layout.setSpacing(2)  # Reduced spacing
         
         # Start button
         self.monitor_button = QPushButton("Start")
@@ -535,11 +529,12 @@ class RegionSelectorQt(QMainWindow):
     
     def create_action_section(self):
         """Create the action sequence section"""
-        action_group = QGroupBox("Action Sequence")
+        action_group = QGroupBox()
+        action_group.setMaximumWidth(300)
         action_layout = QVBoxLayout(action_group)
         action_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        action_layout.setContentsMargins(4, 8, 4, 4)  # Reduced margins
-        action_layout.setSpacing(4)  # Reduced spacing
+        action_layout.setContentsMargins(0, 0, 0, 0)  # Reduced margins
+        action_layout.setSpacing(0)  # Reduced spacing
         
         # Create a scroll area for actions
         scroll = QScrollArea()
@@ -592,10 +587,11 @@ class RegionSelectorQt(QMainWindow):
     
     def create_monitoring_section(self):
         """Create the monitoring section with integrated monitor view and terminal"""
-        monitor_group = QGroupBox("Monitoring")
+        monitor_group = QGroupBox()
         monitor_layout = QVBoxLayout(monitor_group)  # Vertical layout
-        monitor_layout.setContentsMargins(4, 8, 4, 4)  # Reduced margins
-        monitor_layout.setSpacing(4)  # Reduced spacing
+        monitor_group.setMaximumHeight(220)
+        monitor_layout.setContentsMargins(0, 0, 0, 0)  # Reduced margins
+        monitor_layout.setSpacing(0)  # Reduced spacing
         
         # Top section with monitor view and terminal side by side
         content_widget = QWidget()
