@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import (
     Qt, QSize, QThread, pyqtSignal, QTimer, QRect, QMargins,
-    QEvent, QObject, QMetaObject, QPoint
+    QEvent, QObject, QMetaObject, QPoint, QEventLoop
 )
 from PyQt6.QtGui import QPixmap, QImage, QColor, QFont, QPalette, QIcon, QPainter, QPen
 
@@ -35,15 +35,56 @@ kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
 
 # Special key constants
 VK_CODES = {
-    'f': 0x46,    # F key
-    'esc': 0x1B,  # ESC key
-    'enter': 0x0D, # Enter key
-    'space': 0x20, # Space key
-    'tab': 0x09,   # Tab key
+    # Letters
+    'a': 0x41, 'b': 0x42, 'c': 0x43, 'd': 0x44, 'e': 0x45,
+    'f': 0x46, 'g': 0x47, 'h': 0x48, 'i': 0x49, 'j': 0x4A,
+    'k': 0x4B, 'l': 0x4C, 'm': 0x4D, 'n': 0x4E, 'o': 0x4F,
+    'p': 0x50, 'q': 0x51, 'r': 0x52, 's': 0x53, 't': 0x54,
+    'u': 0x55, 'v': 0x56, 'w': 0x57, 'x': 0x58, 'y': 0x59, 'z': 0x5A,
+    
+    # Numbers
+    '0': 0x30, '1': 0x31, '2': 0x32, '3': 0x33, '4': 0x34,
+    '5': 0x35, '6': 0x36, '7': 0x37, '8': 0x38, '9': 0x39,
+    
+    # Function keys
+    'f1': 0x70, 'f2': 0x71, 'f3': 0x72, 'f4': 0x73, 'f5': 0x74,
+    'f6': 0x75, 'f7': 0x76, 'f8': 0x77, 'f9': 0x78, 'f10': 0x79,
+    'f11': 0x7A, 'f12': 0x7B,
+    
+    # Special keys
+    'esc': 0x1B,       # ESC key
+    'escape': 0x1B,    # ESC key (alternate name)
+    'enter': 0x0D,     # Enter key
+    'return': 0x0D,    # Enter key (alternate name)
+    'space': 0x20,     # Space key
+    'spacebar': 0x20,  # Space key (alternate name)
+    'tab': 0x09,       # Tab key
     'backspace': 0x08, # Backspace key
-    'shift': 0x10,  # Shift key
-    'ctrl': 0x11,   # Ctrl key
-    'alt': 0x12     # Alt key
+    
+    # Modifier keys
+    'shift': 0x10,     # Shift key
+    'ctrl': 0x11,      # Ctrl key
+    'control': 0x11,   # Ctrl key (alternate name)
+    'alt': 0x12,       # Alt key
+    
+    # Arrow keys
+    'left': 0x25,      # Left arrow
+    'up': 0x26,        # Up arrow
+    'right': 0x27,     # Right arrow
+    'down': 0x28,      # Down arrow
+    
+    # Additional keys
+    'insert': 0x2D,    # Insert key
+    'delete': 0x2E,    # Delete key
+    'del': 0x2E,       # Delete key (alternate name)
+    'home': 0x24,      # Home key
+    'end': 0x23,       # End key
+    'pageup': 0x21,    # Page Up key
+    'pagedown': 0x22,  # Page Down key
+    'caps': 0x14,      # Caps Lock key
+    'capslock': 0x14,  # Caps Lock key (alternate name)
+    'numlock': 0x90,   # Num Lock key
+    'scrolllock': 0x91 # Scroll Lock key
 }
 KEYEVENTF_KEYUP = 0x0002
 INPUT_KEYBOARD = 1
@@ -99,6 +140,90 @@ class MonitorWorker(QObject):
         """Run the monitoring function"""
         self.parent.monitor_thread_function()
 
+class PreviewWorker(QObject):
+    """Worker class for preview in a separate thread"""
+    
+    def __init__(self, parent):
+        super().__init__()
+        self.parent = parent
+        
+    def run(self):
+        """Run the preview function"""
+        self.parent.preview_thread_function()
+
+class KeyCaptureLineEdit(QLineEdit):
+    """A special LineEdit that captures keyboard input"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setReadOnly(True)
+        self.setPlaceholderText("Press any key...")
+        self.captured_key = ""
+        # Use the same style as all other input fields
+        self.setStyleSheet("background-color: #414C33; color: #A4AC86; font-weight: bold;")
+        
+    def keyPressEvent(self, event):
+        # Don't process modifiers alone
+        if event.key() in (Qt.Key.Key_Control, Qt.Key.Key_Shift, Qt.Key.Key_Alt, Qt.Key.Key_Meta):
+            super().keyPressEvent(event)
+            return
+            
+        # Get key name
+        key_name = self.get_key_name(event)
+        if key_name:
+            self.captured_key = key_name
+            self.setText(key_name)
+            # Keep the same style after capturing
+            self.setStyleSheet("background-color: #414C33; color: #A4AC86; font-weight: bold;")
+        
+        # Stop event from propagating
+        event.accept()
+    
+    def get_key_name(self, event):
+        """Convert Qt key event to a standard key name"""
+        # Handle special keys
+        if event.key() == Qt.Key.Key_Escape:
+            return "escape"
+        elif event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
+            return "enter"
+        elif event.key() == Qt.Key.Key_Tab:
+            return "tab"
+        elif event.key() == Qt.Key.Key_Backspace:
+            return "backspace"
+        elif event.key() == Qt.Key.Key_Space:
+            return "space"
+        elif event.key() == Qt.Key.Key_Up:
+            return "up"
+        elif event.key() == Qt.Key.Key_Down:
+            return "down"
+        elif event.key() == Qt.Key.Key_Left:
+            return "left"
+        elif event.key() == Qt.Key.Key_Right:
+            return "right"
+        elif event.key() == Qt.Key.Key_Delete:
+            return "delete"
+        elif event.key() == Qt.Key.Key_Home:
+            return "home"
+        elif event.key() == Qt.Key.Key_End:
+            return "end"
+        elif event.key() == Qt.Key.Key_PageUp:
+            return "pageup"
+        elif event.key() == Qt.Key.Key_PageDown:
+            return "pagedown"
+        elif event.key() == Qt.Key.Key_Insert:
+            return "insert"
+        elif Qt.Key.Key_F1 <= event.key() <= Qt.Key.Key_F12:
+            # Function keys F1-F12
+            return f"f{event.key() - Qt.Key.Key_F1 + 1}"
+        else:
+            # Regular keys
+            key_text = event.text()
+            if key_text and key_text.isprintable():
+                return key_text.lower()
+        
+        # Unknown key
+        return ""
+
 class RegionSelectorQt(QMainWindow):
     """PyQt6 implementation of the Region Selector with iOS-style UI"""
     
@@ -134,6 +259,10 @@ class RegionSelectorQt(QMainWindow):
         self.is_monitoring = False
         self.monitor_thread = None
         
+        # For preview functionality
+        self.is_previewing = False
+        self.preview_thread = None
+        
         # For difference detection
         self.current_frame = None
         self.reference_frame = None
@@ -154,7 +283,7 @@ class RegionSelectorQt(QMainWindow):
             {"type": "focus", "comment": "Focus the window"},
             {"type": "key", "key": "f", "comment": "Press F key"},
             {"type": "wait", "seconds": 5, "comment": "Wait 5 seconds"},
-            {"type": "key", "key": "esc", "comment": "Press ESC key"},
+            {"type": "key", "key": "escape", "comment": "Press ESC key"},
             {"type": "wait", "seconds": 2, "comment": "Wait 2 seconds"},
             {"type": "key", "key": "f", "comment": "Press F key again"}
         ]
@@ -653,150 +782,162 @@ class RegionSelectorQt(QMainWindow):
     
     def select_region(self):
         """Allow user to select a region of the screen"""
-        # Get the size from the input field
-        size = self.size_input.value()
+        if not self.target_window:
+            self.status_label.setText("Error: No window selected")
+            return
         
-        # Calculate region dimensions based on 1.5:1 ratio
-        width = int(size * 1.5)
-        height = size
-        
-        # Temporarily minimize our own window
-        self.setWindowState(Qt.WindowState.WindowMinimized)
-        time.sleep(0.5)  # Give time for window to minimize
-        
-        # Create a selection overlay widget
-        class SelectionOverlay(QWidget):
-            def __init__(self, parent=None):
-                super().__init__(parent, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
-                self.setWindowOpacity(0.3)
-                self.setStyleSheet("background-color: black;")
-                self.showFullScreen()
-                self.setCursor(Qt.CursorShape.CrossCursor)
+        # Ensure window is still valid
+        try:
+            title = self.target_window.title
+            if not self.target_window.isActive:
+                self.target_window.activate()
+                time.sleep(0.2)  # Give time to activate
+        except Exception as e:
+            self.status_label.setText(f"Error: Window not available")
+            return
+            
+        try:
+            # Get region size
+            size = self.size_input.value()
+            if size < 10:
+                self.status_label.setText("Error: Size must be at least 10px")
+                return
+            
+            # Temporarily minimize our window
+            self.setWindowState(Qt.WindowState.WindowMinimized)
+            time.sleep(0.3)
+            
+            # Get window position and size
+            win_left = self.target_window.left
+            win_top = self.target_window.top
+            win_width = self.target_window.width
+            win_height = self.target_window.height
+            
+            # Focus the game window and move cursor to center
+            self.target_window.activate()
+            win32api.SetCursorPos((win_left + win_width // 2, win_top + win_height // 2))
+            time.sleep(0.2)  # Give time for window to focus and cursor to move
+            
+            # Create selection overlay
+            overlay = QWidget(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+            overlay.setWindowOpacity(0.3)
+            overlay.setGeometry(win_left, win_top, win_width, win_height)
+            overlay.setStyleSheet("background-color: black;")
+            overlay.setCursor(Qt.CursorShape.CrossCursor)  # Set crosshair cursor
+            
+            class SelectionOverlay(QWidget):
+                def __init__(self, parent=None):
+                    super().__init__(parent, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+                    self.mouse_x = win_width // 2
+                    self.mouse_y = win_height // 2
+                    self.region_size = size
+                    self.win_left = win_left
+                    self.win_top = win_top
+                    self.win_width = win_width
+                    self.win_height = win_height
+                    self.accept_selection = False
+                    self.selected_region = None
+                    self.setMouseTracking(True)
+                    self.setCursor(Qt.CursorShape.CrossCursor)
                 
-                # Variables to track selection rectangle
-                self.rect_x = 0
-                self.rect_y = 0
-                self.rect_width = width
-                self.rect_height = height
-                self.selected = False
-                self.screen_width = self.width()
-                self.screen_height = self.height()
-                
-            def paintEvent(self, event):
-                painter = QPainter(self)
-                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                
-                # Draw crosshairs
-                painter.setPen(QPen(QColor('#A68A64'), 1, Qt.PenStyle.DashLine))
-                painter.drawLine(self.rect_x, 0, self.rect_x, self.screen_height)
-                painter.drawLine(0, self.rect_y, self.screen_width, self.rect_y)
-                
-                # Draw selection rectangle
-                if self.rect_x != 0 and self.rect_y != 0:
-                    # Calculate actual coordinates
-                    left = max(0, self.rect_x - self.rect_width // 2)
-                    top = max(0, self.rect_y - self.rect_height // 2)
+                def paintEvent(self, event):
+                    painter = QPainter(self)
+                    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
                     
-                    # Ensure region stays within screen bounds
-                    if left + self.rect_width > self.screen_width:
-                        left = self.screen_width - self.rect_width
-                    if top + self.rect_height > self.screen_height:
-                        top = self.screen_height - self.rect_height
+                    # Calculate region coordinates
+                    left = max(0, min(self.mouse_x - self.region_size // 2, self.win_width - self.region_size))
+                    top = max(0, min(self.mouse_y - self.region_size // 2, self.win_height - self.region_size))
                     
-                    # Draw semi-transparent fill
-                    painter.setBrush(QColor(255, 255, 255, 30))
-                    painter.setPen(QPen(QColor('#A68A64'), 2))
-                    painter.drawRect(left, top, self.rect_width, self.rect_height)
+                    # Draw selection rectangle with green outline
+                    painter.setPen(QPen(QColor('#00FF00'), 2))
+                    painter.drawRect(left, top, self.region_size, self.region_size)
                     
-                    # Draw grid lines
-                    painter.setPen(QPen(QColor(255, 255, 255, 120), 1, Qt.PenStyle.DotLine))
-                    cell_width = self.rect_width // 3
-                    cell_height = self.rect_height // 3
+                    # Draw crosshair
+                    painter.setPen(QPen(QColor('#00FFFF'), 1, Qt.PenStyle.DashLine))
+                    painter.drawLine(0, self.mouse_y, self.win_width, self.mouse_y)  # Horizontal line
+                    painter.drawLine(self.mouse_x, 0, self.mouse_x, self.win_height)  # Vertical line
                     
-                    # Vertical grid lines
-                    for i in range(1, 3):
-                        painter.drawLine(
-                            left + i * cell_width, top,
-                            left + i * cell_width, top + self.rect_height
-                        )
+                    # Show coordinates
+                    painter.setPen(QPen(QColor('white'), 1))
+                    painter.setFont(QFont("Arial", 10))
+                    coord_text = f"Position: ({self.win_left + left}, {self.win_top + top}) • Size: {self.region_size}×{self.region_size}"
+                    painter.drawText(self.win_width//2 - 150, self.win_height - 30, 300, 30, 
+                                    Qt.AlignmentFlag.AlignCenter, coord_text)
                     
-                    # Horizontal grid lines
-                    for i in range(1, 3):
-                        painter.drawLine(
-                            left, top + i * cell_height,
-                            left + self.rect_width, top + i * cell_height
-                        )
+                    # Add instruction text
+                    painter.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+                    painter.drawText(self.win_width//2 - 200, 30, 400, 30, 
+                                    Qt.AlignmentFlag.AlignCenter, "Click to select region • ESC to cancel")
+                
+                def mouseMoveEvent(self, event):
+                    self.mouse_x = int(event.position().x())
+                    self.mouse_y = int(event.position().y())
+                    self.update()  # Trigger repaint
+                
+                def mousePressEvent(self, event):
+                    # Calculate region coordinates
+                    left = max(0, min(self.mouse_x - self.region_size // 2, self.win_width - self.region_size))
+                    top = max(0, min(self.mouse_y - self.region_size // 2, self.win_height - self.region_size))
                     
-                    # Draw coordinates with better visibility
-                    painter.setPen(QPen(QColor(255, 255, 255), 1))
-                    painter.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+                    # Convert to absolute screen coordinates
+                    screen_left = self.win_left + left
+                    screen_top = self.win_top + top
                     
-                    # Draw text with background for better visibility
-                    coord_text = f"Position: ({left},{top}) • Size: {self.rect_width}×{self.rect_height}"
-                    text_rect = QRect(self.screen_width // 2 - 150, self.screen_height - 40, 300, 30)
+                    # Store the selected region
+                    self.selected_region = (int(screen_left), int(screen_top), self.region_size, self.region_size)
+                    self.accept_selection = True
                     
-                    # Draw text background
-                    painter.fillRect(text_rect, QColor(0, 0, 0, 180))
-                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, coord_text)
-                
-                # Draw instructions with better visibility
-                painter.setPen(QPen(QColor(255, 255, 255), 1))
-                painter.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-                
-                # Draw text with background for better visibility
-                instr_rect = QRect(self.screen_width // 2 - 200, 20, 400, 30)
-                painter.fillRect(instr_rect, QColor(0, 0, 0, 180))
-                painter.drawText(instr_rect, Qt.AlignmentFlag.AlignCenter, 
-                               "CLICK TO SELECT REGION • ESC TO CANCEL")
-                
-            def mouseMoveEvent(self, event):
-                self.rect_x = event.pos().x()
-                self.rect_y = event.pos().y()
-                self.update()  # Trigger repaint
-                
-            def mousePressEvent(self, event):
-                self.rect_x = event.pos().x()
-                self.rect_y = event.pos().y()
-                self.selected = True
-                
-                # Calculate actual coordinates
-                left = max(0, self.rect_x - self.rect_width // 2)
-                top = max(0, self.rect_y - self.rect_height // 2)
-                
-                # Ensure region stays within screen bounds
-                if left + self.rect_width > self.screen_width:
-                    left = self.screen_width - self.rect_width
-                if top + self.rect_height > self.screen_height:
-                    top = self.screen_height - self.rect_height
-                
-                # Store the selected region
-                self.selected_coords = (left, top, self.rect_width, self.rect_height)
-                
-                # Close the selection window
-                self.close()
-                
-            def keyPressEvent(self, event):
-                if event.key() == Qt.Key.Key_Escape:
-                    self.selected = False
+                    # Print the coordinates to console
+                    print(f"Selected region: ({screen_left}, {screen_top}, {self.region_size}, {self.region_size})")
+                    
+                    # Close overlay
                     self.close()
-        
-        # Create and show the selection overlay
-        overlay = SelectionOverlay()
-        
-        # Connect the dialog closed event
-        def on_dialog_closed():
+                
+                def keyPressEvent(self, event):
+                    if event.key() == Qt.Key.Key_Escape:
+                        self.accept_selection = False
+                        self.close()
+            
+            # Create overlay with our custom class
+            selection_overlay = SelectionOverlay()
+            selection_overlay.setGeometry(win_left, win_top, win_width, win_height)
+            selection_overlay.setWindowOpacity(0.3)
+            selection_overlay.setStyleSheet("background-color: black;")
+            selection_overlay.show()
+            
+            # Create an event loop to wait for overlay to close
+            loop = QEventLoop()
+            selection_overlay.destroyed.connect(loop.quit)
+            loop.exec()
+            
+            # Restore our window immediately
             self.setWindowState(Qt.WindowState.WindowActive)
-            if hasattr(overlay, 'selected') and overlay.selected and hasattr(overlay, 'selected_coords'):
-                self.selected_region = overlay.selected_coords
-                self.log_to_terminal(f"Region selected: ({overlay.selected_coords[0]},{overlay.selected_coords[1]}) {overlay.selected_coords[2]}×{overlay.selected_coords[3]}")
-                self.update_region_label()
+            self.activateWindow()
+            self.raise_()  # Bring window to front
+            
+            # Check if selection was accepted
+            if hasattr(selection_overlay, 'accept_selection') and selection_overlay.accept_selection and hasattr(selection_overlay, 'selected_region'):
+                self.selected_region = selection_overlay.selected_region
+                x, y, w, h = self.selected_region
+                coordinates_msg = f"Region selected: {w}×{h} at ({x}, {y})"
+                print(coordinates_msg)  # Print to console
+                self.log_to_terminal(coordinates_msg)  # Log to app terminal
+                self.status_label.setText(coordinates_msg)
+                
+                # Enable monitoring button
                 self.monitor_button.setEnabled(True)
+                
                 # Take a preview screenshot
-                QTimer.singleShot(200, self.take_preview_screenshot)
+                self.take_preview_screenshot()
             else:
-                self.log_to_terminal("Region selection cancelled")
-        
-        overlay.destroyed.connect(on_dialog_closed)
+                self.log_to_terminal("Selection canceled")
+            
+        except Exception as e:
+            print(f"Error in region selection: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            self.status_label.setText(f"Error: {str(e)}")
+            self.setWindowState(Qt.WindowState.WindowActive)
     
     def update_region_label(self):
         """Update UI to show the selected region"""
@@ -811,8 +952,19 @@ class RegionSelectorQt(QMainWindow):
         
         try:
             with mss.mss() as sct:
+                # Convert tuple format to dictionary format if needed
+                if isinstance(self.selected_region, tuple):
+                    x, y, width, height = self.selected_region
+                    region = {
+                        "left": x,
+                        "top": y,
+                        "width": width,
+                        "height": height
+                    }
+                else:
+                    region = self.selected_region
+                    
                 # Take screenshot of the region
-                region = self.selected_region
                 img = sct.grab(region)
                 
                 # Convert to PIL Image
@@ -823,12 +975,12 @@ class RegionSelectorQt(QMainWindow):
                 
                 # Store as current frame
                 self.previous_frame = self.current_frame if self.current_frame is not None else gray_frame
-                self.current_frame = gray_frame
+                self.current_frame = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)  # Store color version
                 
                 # Calculate difference if we have a reference
                 if self.reference_frame is not None:
                     diff_frame, change_percent = self.calculate_frame_difference(
-                        self.current_frame, self.reference_frame)
+                        cv2.cvtColor(self.current_frame, cv2.COLOR_BGR2GRAY), self.reference_frame)
                     self.diff_frame = diff_frame
                     
                     # Add to history
@@ -844,8 +996,13 @@ class RegionSelectorQt(QMainWindow):
                 # Process and display the image
                 self.process_and_display_image(img_pil)
                 
+                # Start live preview
+                self.start_live_preview()
+                
         except Exception as e:
             print(f"Error taking preview screenshot: {str(e)}")
+            import traceback
+            traceback.print_exc()
             self.status_label.setText(f"Error: {str(e)}")
     
     def toggle_monitoring(self):
@@ -859,7 +1016,10 @@ class RegionSelectorQt(QMainWindow):
             if self.reference_frame is None:
                 self.log_to_terminal("Error: No reference frame captured")
                 return
-                
+            
+            # Stop live preview if it's running
+            self.stop_live_preview()
+            
             # Update button text
             self.monitor_button.setText("Start")
             self.monitor_button.setEnabled(False)
@@ -892,18 +1052,21 @@ class RegionSelectorQt(QMainWindow):
                     continue
                     
                 if self.target_window and self.selected_region:
-                    # Capture the selected region
-                    x, y, w, h = self.selected_region
-                    monitor = {
-                        "left": x,
-                        "top": y,
-                        "width": w,
-                        "height": h
-                    }
+                    # Convert tuple format to dictionary format if needed
+                    if isinstance(self.selected_region, tuple):
+                        x, y, width, height = self.selected_region
+                        region = {
+                            "left": x,
+                            "top": y,
+                            "width": width,
+                            "height": height
+                        }
+                    else:
+                        region = self.selected_region
                     
                     try:
                         # Capture the screen region
-                        screenshot = sct.grab(monitor)
+                        screenshot = sct.grab(region)
                         
                         # Convert to numpy array
                         img = np.array(screenshot)
@@ -1005,20 +1168,35 @@ class RegionSelectorQt(QMainWindow):
             
         try:
             with mss.mss() as sct:
+                # Convert tuple format to dictionary format if needed
+                if isinstance(self.selected_region, tuple):
+                    x, y, width, height = self.selected_region
+                    region = {
+                        "left": x,
+                        "top": y,
+                        "width": width,
+                        "height": height
+                    }
+                else:
+                    region = self.selected_region
+                
                 # Capture the region
-                screenshot = sct.grab(self.selected_region)
+                screenshot = sct.grab(region)
                 # Convert to numpy array
-                img = np.array(Image.frombytes("RGB", screenshot.size, screenshot.rgb))
+                img = np.array(Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX"))
                 
                 # Store as reference frame
                 self.reference_frame = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
                 self.status_label.setText("Reference frame captured")
+                self.log_to_terminal("Reference frame captured")
                 
                 # Also update preview
                 self.take_preview_screenshot()
                 
         except Exception as e:
             print(f"Error capturing reference frame: {str(e)}")
+            import traceback
+            traceback.print_exc()
             self.status_label.setText(f"Error: {str(e)}")
             
     def add_action_item(self, action_type="focus", value=""):
@@ -1033,25 +1211,45 @@ class RegionSelectorQt(QMainWindow):
         action_layout.setContentsMargins(4, 4, 4, 4)
         action_layout.setSpacing(4)
         
+        # Common input field style
+        input_style = "background-color: #414C33; color: #A4AC86; font-weight: bold;"
+        
         # First column: Action type dropdown
         type_combo = QComboBox()
         type_combo.addItems(["focus", "key", "wait"])
-        type_combo.setCurrentText(action_type)
+        
+        # Make sure action_type is a string
+        action_type_str = str(action_type) if not isinstance(action_type, str) else action_type
+        type_combo.setCurrentText(action_type_str)
+        
         type_combo.setMaximumWidth(60)
         type_combo.setMaximumHeight(20)
         
-        # Second column: Value input
-        value_input = QLineEdit()
-        value_input.setText(value)
+        # Second column: Value input - use a different widget based on type
+        if action_type_str == "key":
+            # Use our special key capture input
+            value_input = KeyCaptureLineEdit()
+            if value:
+                value_input.setText(str(value))
+                value_input.captured_key = str(value)
+                value_input.setStyleSheet(input_style)
+        else:
+            # Use regular line edit for other types
+            value_input = QLineEdit()
+            value_input.setText(str(value) if value else "")
+            value_input.setStyleSheet(input_style)
+            
         value_input.setMaximumHeight(24)
-        if action_type == "focus":
+        
+        # Configure value input based on action type
+        if action_type_str == "focus":
             value_input.setEnabled(False)
         else:
             value_input.setEnabled(True)
             if not value:
-                if action_type == "key":
-                    value_input.setText("f")
-                elif action_type == "wait":
+                if action_type_str == "key":
+                    value_input.setPlaceholderText("Press any key...")
+                elif action_type_str == "wait":
                     value_input.setText("1.0")
         
         # Delete button
@@ -1067,27 +1265,76 @@ class RegionSelectorQt(QMainWindow):
         # Add widgets to layout
         action_layout.addWidget(type_combo, 1)
         action_layout.addWidget(value_input, 1)
-        action_layout.addWidget(delete_btn, 0)
+        action_layout.addWidget(delete_btn)
         
         # Connect signals to update data
         def update_type(text):
+            old_type = action_frame.action_data["type"]
             action_frame.action_data["type"] = text
+            
+            # If changing to or from key type, we need to replace the input widget
+            if (old_type == "key" and text != "key") or (old_type != "key" and text == "key"):
+                old_input = value_input
+                old_value = old_input.text() if hasattr(old_input, 'text') else ""
+                
+                # Remove the old input
+                action_layout.removeWidget(old_input)
+                old_input.setParent(None)
+                old_input.deleteLater()
+                
+                # Create and add new input
+                if text == "key":
+                    new_input = KeyCaptureLineEdit()
+                    new_input.setPlaceholderText("Press any key...")
+                else:
+                    new_input = QLineEdit()
+                    if text == "wait":
+                        new_input.setText("1.0")
+                    else:
+                        new_input.setText(old_value)
+                
+                # Apply consistent styling
+                new_input.setStyleSheet(input_style)
+                new_input.setMaximumHeight(24)
+                action_layout.insertWidget(1, new_input)
+                
+                # Update reference and connections
+                action_frame.value_input = new_input
+                
+                if text == "key":
+                    # For KeyCaptureLineEdit we need to monitor textChanged
+                    new_input.textChanged.connect(lambda t: update_key_value(t))
+                else:
+                    # Regular text input
+                    new_input.textChanged.connect(update_value)
+                    
             if text == "focus":
                 value_input.setEnabled(False)
                 value_input.clear()
             else:
                 value_input.setEnabled(True)
-                if not value_input.text():
-                    if text == "key":
-                        value_input.setText("f")
-                    elif text == "wait":
-                        value_input.setText("1.0")
         
         def update_value(text):
             action_frame.action_data["value"] = text
+            
+        def update_key_value(text):
+            if hasattr(value_input, 'captured_key'):
+                action_frame.action_data["value"] = value_input.captured_key
+            else:
+                action_frame.action_data["value"] = text
         
+        # Connect signals
         type_combo.currentTextChanged.connect(update_type)
-        value_input.textChanged.connect(update_value)
+        
+        # Connect different signal based on widget type
+        if isinstance(value_input, KeyCaptureLineEdit):
+            value_input.textChanged.connect(update_key_value)
+        else:
+            value_input.textChanged.connect(update_value)
+        
+        # Store widgets in the frame for later access
+        action_frame.type_combo = type_combo
+        action_frame.value_input = value_input
         
         # Add to layout and list
         self.action_layout.addWidget(action_frame)
@@ -1126,18 +1373,15 @@ class RegionSelectorQt(QMainWindow):
         self.action_sequence = []
         
         # Get all action frames
-        for i in range(self.action_layout.count()):
-            item = self.action_layout.itemAt(i)
-            if item and item.widget() and isinstance(item.widget(), QFrame):
-                frame = item.widget()
-                
-                # Get values from the frame
-                action_type = frame.type_combo.currentText()
-                value = frame.value_input.text()
-                comment = frame.comment_input.text()
+        for frame in self.action_frames:
+            if frame and hasattr(frame, 'action_data'):
+                # Extract action data directly from the stored dictionary
+                action_data = frame.action_data
+                action_type = action_data.get('type', 'focus')
+                value = action_data.get('value', '')
                 
                 # Create action based on type
-                action = {"type": action_type, "comment": comment}
+                action = {"type": action_type}
                 
                 if action_type == "key":
                     action["key"] = value
@@ -1154,10 +1398,10 @@ class RegionSelectorQt(QMainWindow):
                     except:
                         action["x"] = 0
                         action["y"] = 0
-                elif action_type == "esc":
-                    action["key"] = "escape"
-                elif action_type == "f":
-                    action["key"] = "f"
+                
+                # Add comment if available
+                if "comment" in action_data:
+                    action["comment"] = action_data.get("comment", "")
                 
                 self.action_sequence.append(action)
                 
@@ -1169,69 +1413,132 @@ class RegionSelectorQt(QMainWindow):
             self.log_to_terminal("No actions to execute")
             return
             
+        if not self.target_window:
+            self.log_to_terminal("No target window selected")
+            return
+            
         self.log_to_terminal("Executing action sequence...")
         
+        # Always focus the window first, regardless of the first action
+        self.log_to_terminal("Focusing window before executing actions...")
+        if not self.focus_window(self.target_window):
+            self.log_to_terminal("Failed to focus window! Trying to continue anyway...")
+        else:
+            self.log_to_terminal("Window focused successfully")
+            
+        # Give time for the window to be properly focused
+        time.sleep(0.5)
+        
         # Execute each action in sequence
-        for action in self.action_sequence:
+        for i, action in enumerate(self.action_sequence):
             action_type = action.get("type")
             
             if action_type == "focus":
-                self.log_to_terminal("Focusing window...")
+                self.log_to_terminal(f"Action {i+1}: Focusing window again...")
                 if self.target_window:
                     self.focus_window(self.target_window)
-                    time.sleep(0.1)
+                    time.sleep(0.3)
                     
             elif action_type == "key":
                 key = action.get("key")
                 if key:
-                    self.log_to_terminal(f"Pressing key: {key}")
-                    self.press_key(key)
-                    time.sleep(0.1)
+                    self.log_to_terminal(f"Action {i+1}: Pressing key: {key}")
+                    # Ensure window is focused before pressing key
+                    self.focus_window(self.target_window)
+                    time.sleep(0.2)  # Short delay to ensure focus
+                    success = self.press_key(key)
+                    if not success:
+                        self.log_to_terminal(f"Failed to press key: {key}")
+                    time.sleep(0.3)  # Wait after key press
+                else:
+                    self.log_to_terminal(f"Action {i+1}: Missing key value")
                     
             elif action_type == "wait":
                 seconds = float(action.get("seconds", 1))
-                self.log_to_terminal(f"Waiting for {seconds} seconds...")
+                self.log_to_terminal(f"Action {i+1}: Waiting for {seconds} seconds...")
                 time.sleep(seconds)
                 
             elif action_type == "click":
-                coords = action.get("coords", "0,0").split(",")
-                try:
-                    x, y = int(coords[0]), int(coords[1])
-                    self.log_to_terminal(f"Clicking at ({x}, {y})...")
-                    self.click_at(x, y)
-                    time.sleep(0.1)
-                except:
-                    self.log_to_terminal(f"Invalid click coordinates: {action.get('coords')}")
+                coords = None
+                x = action.get("x")
+                y = action.get("y")
+                
+                if x is not None and y is not None:
+                    coords = (x, y)
+                else:
+                    coord_str = action.get("coords", "")
+                    if coord_str:
+                        try:
+                            parts = coord_str.split(",")
+                            coords = (int(parts[0]), int(parts[1]))
+                        except:
+                            self.log_to_terminal(f"Action {i+1}: Invalid click coordinates: {coord_str}")
+                
+                if coords:
+                    x, y = coords
+                    self.log_to_terminal(f"Action {i+1}: Clicking at ({x}, {y})...")
+                    # Ensure window is focused before clicking
+                    self.focus_window(self.target_window)
+                    time.sleep(0.2)  # Short delay to ensure focus
+                    success = self.click_at(x, y)
+                    if not success:
+                        self.log_to_terminal(f"Failed to click at ({x}, {y})")
+                    time.sleep(0.3)  # Wait after click
                     
-            elif action_type == "esc":
-                self.log_to_terminal("Pressing ESC key...")
-                self.press_key("escape")
-                time.sleep(0.1)
-                
-            elif action_type == "f":
-                self.log_to_terminal("Pressing F key...")
-                self.press_key("f")
-                time.sleep(0.1)
-                
         self.log_to_terminal("Action sequence completed")
         
     def focus_window(self, window):
         """Focus the target window"""
         try:
             if window:
+                self.log_to_terminal(f"Focusing window: {window.title}")
+                
+                # First approach - using pygetwindow
                 if window.isMinimized:
                     window.restore()
                 window.activate()
-                time.sleep(0.2)  # Give time to activate
+                
+                # Second approach - using win32gui
+                try:
+                    hwnd = win32gui.FindWindow(None, window.title)
+                    if hwnd:
+                        self.log_to_terminal(f"Found window handle: {hwnd}")
+                        win32gui.SetForegroundWindow(hwnd)
+                        # Bring to front
+                        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                        win32gui.SetForegroundWindow(hwnd)
+                        win32gui.BringWindowToTop(hwnd)
+                        # Give time for window to activate
+                        time.sleep(0.3)
+                        return True
+                    else:
+                        self.log_to_terminal(f"Could not find window handle for: {window.title}")
+                except Exception as e:
+                    self.log_to_terminal(f"Error using win32gui to focus: {str(e)}")
+                
+                # At least we tried with pygetwindow
+                time.sleep(0.3)
+                return True
         except Exception as e:
-            print(f"Error focusing window: {e}")
+            self.log_to_terminal(f"Error focusing window: {str(e)}")
+            return False
+        return False
     
     def press_key(self, key):
         """Press a key using direct Windows API"""
         try:
+            if not key:
+                self.log_to_terminal("Error: No key specified")
+                return False
+                
+            # Convert key to lowercase string
+            key_str = str(key).lower()
+            self.log_to_terminal(f"Pressing key: '{key_str}'")
+            
             # Check if key is in our virtual key code mapping
-            if key.lower() in VK_CODES:
-                vk_code = VK_CODES[key.lower()]
+            if key_str in VK_CODES:
+                vk_code = VK_CODES[key_str]
+                self.log_to_terminal(f"Using virtual key code: 0x{vk_code:02X}")
                 
                 # Create keyboard input structure
                 extra = ctypes.c_ulong(0)
@@ -1240,7 +1547,12 @@ class RegionSelectorQt(QMainWindow):
                 x = INPUT(INPUT_KEYBOARD, ii_)
                 
                 # Send key down
-                ctypes.windll.user32.SendInput(1, ctypes.byref(x), ctypes.sizeof(x))
+                self.log_to_terminal(f"Sending keydown for VK code: 0x{vk_code:02X}")
+                result = ctypes.windll.user32.SendInput(1, ctypes.byref(x), ctypes.sizeof(x))
+                if result != 1:
+                    error = ctypes.get_last_error()
+                    self.log_to_terminal(f"SendInput failed with error code: {error}")
+                    return False
                 
                 # Wait a short time
                 time.sleep(0.05)
@@ -1248,29 +1560,55 @@ class RegionSelectorQt(QMainWindow):
                 # Send key up
                 ii_.ki.dwFlags = KEYEVENTF_KEYUP
                 x.ii = ii_
-                ctypes.windll.user32.SendInput(1, ctypes.byref(x), ctypes.sizeof(x))
+                result = ctypes.windll.user32.SendInput(1, ctypes.byref(x), ctypes.sizeof(x))
+                if result != 1:
+                    error = ctypes.get_last_error()
+                    self.log_to_terminal(f"SendInput (keyup) failed with error code: {error}")
+                    return False
+                    
+                self.log_to_terminal(f"Successfully sent key: '{key_str}'")
+                return True
             else:
-                # Use pyautogui as fallback
-                keyboard.press_and_release(key)
+                # Use keyboard module as fallback
+                self.log_to_terminal(f"Key '{key_str}' not found in VK_CODES, using keyboard module fallback")
+                try:
+                    keyboard.press_and_release(key_str)
+                    self.log_to_terminal(f"Successfully sent key using keyboard module: '{key_str}'")
+                    return True
+                except Exception as e:
+                    self.log_to_terminal(f"Keyboard module failed: {str(e)}")
+                    return False
+                
         except Exception as e:
-            print(f"Error pressing key: {e}")
-    
+            self.log_to_terminal(f"Error pressing key: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
+
     def test_action_sequence(self):
         """Test the action sequence without monitoring"""
         # Parse action sequence
         self.apply_action_sequence()
         
+        # Debug output
+        self.log_to_terminal(f"Action sequence created: {len(self.action_sequence)} actions")
+        for i, action in enumerate(self.action_sequence):
+            self.log_to_terminal(f"Action {i+1}: {action}")
+        
         # Check if we have a target window
         if not self.target_window:
             self.status_label.setText("Error: No target window selected")
+            self.log_to_terminal("Error: No target window selected")
             return
         
         # Check if we have actions
         if not self.action_sequence:
             self.status_label.setText("Error: No actions defined")
+            self.log_to_terminal("Error: No actions defined")
             return
         
         # Create a thread to run the sequence
+        self.log_to_terminal("Starting test sequence...")
         test_thread = threading.Thread(target=self.execute_action_sequence)
         test_thread.daemon = True
         test_thread.start()
@@ -1287,13 +1625,25 @@ class RegionSelectorQt(QMainWindow):
         
         # Check for changes if we have a reference frame
         if self.reference_frame is not None:
+            # Get grayscale version of current frame if it's color
+            if len(self.current_frame.shape) == 3:
+                current_gray = cv2.cvtColor(self.current_frame, cv2.COLOR_BGR2GRAY)
+            else:
+                current_gray = self.current_frame
+                
             # Calculate difference between current frame and reference frame
-            self.diff_frame = cv2.absdiff(self.current_frame, self.reference_frame)
+            if current_gray.shape != self.reference_frame.shape:
+                # Resize to match if needed
+                current_gray = cv2.resize(current_gray, (self.reference_frame.shape[1], self.reference_frame.shape[0]))
+                
+            diff_frame = cv2.absdiff(current_gray, self.reference_frame)
+            self.diff_frame = diff_frame
             
             # Calculate the percentage of changed pixels
-            total_pixels = self.diff_frame.size / 3  # Divide by 3 for BGR channels
-            changed_pixels = np.count_nonzero(cv2.cvtColor(self.diff_frame, cv2.COLOR_BGR2GRAY) > 30)
-            change_percentage = changed_pixels / total_pixels
+            _, thresh = cv2.threshold(diff_frame, 30, 255, cv2.THRESH_BINARY)
+            total_pixels = thresh.size
+            changed_pixels = np.count_nonzero(thresh)
+            change_percentage = changed_pixels / total_pixels if total_pixels > 0 else 0
             
             # Add to history (keep only the last 10 values)
             self.change_history.append(change_percentage)
@@ -1306,13 +1656,14 @@ class RegionSelectorQt(QMainWindow):
             
             # Check if change exceeds threshold and cooldown period has passed
             current_time = time.time()
-            if (change_percentage > self.detection_threshold and 
+            threshold = self.threshold_input.value() if hasattr(self, 'threshold_input') else self.detection_threshold
+            if (change_percentage > threshold and 
                 current_time - self.last_detection_time > self.detection_cooldown):
                 self.last_detection_time = current_time
                 self.log_to_terminal(f"Change detected: {change_percentage:.2%}")
                 
                 # Execute action sequence if monitoring is active
-                if self.is_monitoring:
+                if self.is_monitoring and not hasattr(self, 'is_paused') or not self.is_paused:
                     self.execute_action_sequence()
 
     def create_action_frame(self, action_data=None):
@@ -1429,6 +1780,9 @@ class RegionSelectorQt(QMainWindow):
         
     def stop_monitoring(self):
         """Stop monitoring"""
+        # Stop live preview if it's running
+        self.stop_live_preview()
+        
         if self.is_monitoring:
             self.is_monitoring = False
             if self.monitor_thread:
@@ -1455,6 +1809,79 @@ class RegionSelectorQt(QMainWindow):
             self.is_paused = True
             self.pause_button.setText("Resume")
             self.log_to_terminal("Monitoring paused")
+
+    def start_live_preview(self):
+        """Start or stop live preview of the selected region"""
+        # Stop any existing preview
+        self.stop_live_preview()
+        
+        if not self.selected_region:
+            self.status_label.setText("Error: No region selected")
+            return
+        
+        # Start preview
+        self.is_previewing = True
+        self.log_to_terminal("Starting live preview...")
+        
+        # Start preview thread
+        self.preview_thread = QThread()
+        self.preview_worker = PreviewWorker(self)
+        self.preview_worker.moveToThread(self.preview_thread)
+        self.preview_thread.started.connect(self.preview_worker.run)
+        self.preview_thread.start()
+        
+        self.status_label.setText("Live preview active")
+
+    def stop_live_preview(self):
+        """Stop the live preview"""
+        if hasattr(self, 'is_previewing') and self.is_previewing:
+            self.is_previewing = False
+            if self.preview_thread:
+                self.preview_thread.quit()
+                self.preview_thread.wait()
+            self.log_to_terminal("Live preview stopped")
+
+    def preview_thread_function(self):
+        """Thread function for continuous preview"""
+        self.log_to_terminal("Live preview started")
+        
+        with mss.mss() as sct:
+            while self.is_previewing:
+                if self.target_window and self.selected_region:
+                    # Convert tuple format to dictionary format if needed
+                    if isinstance(self.selected_region, tuple):
+                        x, y, width, height = self.selected_region
+                        region = {
+                            "left": x,
+                            "top": y,
+                            "width": width,
+                            "height": height
+                        }
+                    else:
+                        region = self.selected_region
+                    
+                    try:
+                        # Capture the screen region
+                        screenshot = sct.grab(region)
+                        
+                        # Convert to numpy array
+                        img = np.array(screenshot)
+                        
+                        # Convert to BGR (OpenCV format)
+                        self.current_frame = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+                        
+                        # Update the display
+                        QMetaObject.invokeMethod(self, "update_frames", Qt.ConnectionType.QueuedConnection)
+                        
+                    except Exception as e:
+                        self.log_to_terminal(f"Error capturing screen: {str(e)}")
+                        self.is_previewing = False
+                        break
+                        
+                # Sleep to reduce CPU usage
+                time.sleep(0.1)
+                
+        self.log_to_terminal("Live preview stopped")
 
 def main():
     """Main entry point"""
