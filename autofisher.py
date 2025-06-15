@@ -279,7 +279,7 @@ class PixelChangeDetectorGUI:
         panel_container.pack(fill=tk.BOTH, expand=True)
         
         # Left control panel (fixed width)
-        left_panel = ttk.Frame(panel_container, width=280, style='TFrame')
+        left_panel = ttk.Frame(panel_container, width=360, style='TFrame')
         left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 8))
         left_panel.pack_propagate(False)  # Fix the width
         
@@ -292,13 +292,17 @@ class PixelChangeDetectorGUI:
         settings_frame.pack(fill=tk.X, pady=(0, 8), padx=0)
         
         # --- Refined Settings UI ---
-        # Threshold control
-        threshold_row = ttk.Frame(settings_frame, style='Term.TFrame')
-        threshold_row.pack(fill=tk.X, pady=4, padx=4)
-        ttk.Label(threshold_row, text="Threshold", style='Term.TLabel').pack(side=tk.LEFT, padx=(0, 8))
+        # Use a two-column grid for better layout (labels left, widgets right)
+        settings_grid = ttk.Frame(settings_frame, style='Term.TFrame')
+        settings_grid.pack(fill=tk.X, padx=4, pady=4)
+
+        # Threshold (row 0)
+        ttk.Label(settings_grid, text="Threshold", style='Term.TLabel',font=('Segoe UI', 10)).grid(row=0, column=0, sticky='w', padx=(0, 8), pady=2)
+        threshold_frame = ttk.Frame(settings_grid, style='Term.TFrame')
+        threshold_frame.grid(row=0, column=1, sticky='ew', padx=(0, 8), pady=2)
         self.threshold_var = tk.DoubleVar(value=0.05)
         self.threshold_slider = tk.Scale(
-            threshold_row,
+            threshold_frame,
             from_=0.01, to=0.5,
             resolution=0.01,
             orient=tk.HORIZONTAL,
@@ -313,17 +317,17 @@ class PixelChangeDetectorGUI:
             length=120,
             font=('Segoe UI', 10)
         )
-        self.threshold_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
-        self.threshold_label = ttk.Label(threshold_row, text="0.05", width=5, style='Term.TLabel')
-        self.threshold_label.pack(side=tk.LEFT)
+        self.threshold_slider.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.threshold_label = ttk.Label(threshold_frame, text="0.05", width=5, style='Term.TLabel',font=('Segoe UI', 10))
+        self.threshold_label.pack(side=tk.LEFT, padx=(8, 0))
 
-        # Region size input
-        size_row = ttk.Frame(settings_frame, style='Term.TFrame')
-        size_row.pack(fill=tk.X, pady=4, padx=4)
-        ttk.Label(size_row, text="Region Size", style='Term.TLabel').pack(side=tk.LEFT, padx=(0, 8))
+        # Region Size (row 1)
+        ttk.Label(settings_grid, text="Region Size", style='Term.TLabel',font=('Segoe UI', 10)).grid(row=1, column=0, sticky='w', padx=(0, 8), pady=2)
+        region_size_frame = ttk.Frame(settings_grid, style='Term.TFrame')
+        region_size_frame.grid(row=1, column=1, sticky='ew', padx=(0, 8), pady=2)
         self.size_var = tk.StringVar(value="50")
         self.size_entry = tk.Entry(
-            size_row,
+            region_size_frame,
             textvariable=self.size_var,
             width=6,
             bg=self.colors['bg_dark'],
@@ -335,16 +339,16 @@ class PixelChangeDetectorGUI:
             relief="flat",
             font=('Segoe UI', 10)
         )
-        self.size_entry.pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Label(size_row, text="px", style='Term.TLabel').pack(side=tk.LEFT)
+        self.size_entry.pack(side=tk.LEFT)
+        ttk.Label(region_size_frame, text="px", style='Term.TLabel',font=('Segoe UI', 10)).pack(side=tk.LEFT, padx=(4, 0))
 
-        # Cooldown setting
-        cooldown_row = ttk.Frame(settings_frame, style='Term.TFrame')
-        cooldown_row.pack(fill=tk.X, pady=4, padx=4)
-        ttk.Label(cooldown_row, text="Cooldown", style='Term.TLabel').pack(side=tk.LEFT, padx=(0, 8))
+        # Cooldown (row 2)
+        ttk.Label(settings_grid, text="Cooldown", style='Term.TLabel',font=('Segoe UI', 10)).grid(row=2, column=0, sticky='w', padx=(0, 8), pady=2)
+        cooldown_frame = ttk.Frame(settings_grid, style='Term.TFrame')
+        cooldown_frame.grid(row=2, column=1, sticky='ew', padx=(0, 8), pady=2)
         self.cooldown_var = tk.DoubleVar(value=5.0)
         self.cooldown_entry = tk.Entry(
-            cooldown_row,
+            cooldown_frame,
             textvariable=self.cooldown_var,
             width=6,
             bg=self.colors['bg_dark'],
@@ -356,16 +360,16 @@ class PixelChangeDetectorGUI:
             relief="flat",
             font=('Segoe UI', 10)
         )
-        self.cooldown_entry.pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Label(cooldown_row, text="sec", style='Term.TLabel').pack(side=tk.LEFT)
+        self.cooldown_entry.pack(side=tk.LEFT)
+        ttk.Label(cooldown_frame, text="sec", style='Term.TLabel',font=('Segoe UI', 10)).pack(side=tk.LEFT, padx=(4, 0))
 
-        # Key settings
-        key_row = ttk.Frame(settings_frame, style='Term.TFrame')
-        key_row.pack(fill=tk.X, pady=4, padx=4)
-        ttk.Label(key_row, text="Fishing Key", style='Term.TLabel').pack(side=tk.LEFT, padx=(0, 8))
+        # Fishing Key (row 3)
+        ttk.Label(settings_grid, text="Fishing Key", style='Term.TLabel',font=('Segoe UI', 10)).grid(row=3, column=0, sticky='w', padx=(0, 8), pady=2)
+        fishing_key_frame = ttk.Frame(settings_grid, style='Term.TFrame')
+        fishing_key_frame.grid(row=3, column=1, sticky='ew', padx=(0, 8), pady=2)
         self.fishing_key_var = tk.StringVar(value="f")
         self.fishing_key_entry = tk.Entry(
-            key_row,
+            fishing_key_frame,
             textvariable=self.fishing_key_var,
             width=4,
             bg=self.colors['bg_dark'],
@@ -379,9 +383,9 @@ class PixelChangeDetectorGUI:
         )
         self.fishing_key_entry.pack(side=tk.LEFT)
 
-        # Apply settings button
+        # Apply Settings button (bottom right, span both columns)
         apply_button = tk.Button(
-            settings_frame,
+            fishing_key_frame,
             text="Apply Settings",
             command=self.apply_settings,
             bg=self.colors['bg_dark'],
@@ -391,47 +395,41 @@ class PixelChangeDetectorGUI:
             relief="flat",
             bd=1,
             highlightthickness=0,
-            padx=8,
+            padx=4,
             pady=4,
             font=('Segoe UI', 10)
         )
-        apply_button.pack(pady=(8, 0), padx=4, anchor='e')
+        apply_button.pack(pady=(0, 8), padx=4, anchor='e')
         # --- End refined Settings UI ---
         
         # Section 2: Region Selection (now only info, no button)
         region_frame = ttk.LabelFrame(left_panel, text="MONITORING", style='Terminal.TLabelframe')
-        region_frame.pack(fill=tk.X, pady=(0, 8), padx=0)
-
-        # Status label
-        region_info_frame = ttk.Frame(region_frame, style='Term.TFrame')
-        region_info_frame.pack(fill=tk.X, pady=4)
-        ttk.Label(region_info_frame, text="status:", style='Term.TLabel').pack(side=tk.LEFT, padx=(5, 0))
-        self.region_info_label = ttk.Label(region_info_frame, text="waiting_for_region_selection", style='Term.TLabel',font=('Segoe UI', 10))
-        self.region_info_label.pack(side=tk.LEFT, padx=5)
+        region_frame.pack(fill=tk.X, pady=(0, 0), padx=(4 , 0))
 
         # System status and detections count (moved from visualization)
-        self.status_label = ttk.Label(region_frame, text="system:monitor.idle", style='Monitor.Status.TLabel',font=('Segoe UI', 10))
+        self.status_label = ttk.Label(region_frame, text="System: monitor.idle", style='Monitor.Status.TLabel',font=('Segoe UI', 16))
         self.status_label.pack(fill=tk.X, pady=(2, 2), padx=8)
-        self.count_label = ttk.Label(region_frame, text="detections: 0", style='Monitor.Status.TLabel',font=('Segoe UI', 10))
-        self.count_label.pack(fill=tk.X, pady=(2, 2), padx=8)
 
-        # --- Add stats details here ---
+        # --- Stats details in two columns ---
         self.stats_frame = ttk.Frame(region_frame, style='Term.TFrame')
         self.stats_frame.pack(fill=tk.X, pady=(2, 2), padx=8)
         self.stats_labels = {}
         stats_keys = [
-            ("Total Detections", "total_detections"),
+            ("Detections", "total_detections"),
             ("Session Runtime", "session_runtime"),
             ("Detection Rate", "detections_per_hour"),
             ("Avg. Interval", "avg_interval"),
-            ("Current Threshold", "current_threshold"),
+            ("Threshold", "current_threshold"),
             ("Cooldown", "cooldown"),
             ("Key Mapping", "key_mapping"),
             ("Processing FPS", "processing_fps")
         ]
+        # Arrange in two columns
         for i, (label, key) in enumerate(stats_keys):
+            row = i // 2
+            col = i % 2
             l = ttk.Label(self.stats_frame, text=f"{label}: ...", style='Term.TLabel',font=('Segoe UI', 10))
-            l.grid(row=i, column=0, sticky='w', pady=1)
+            l.grid(row=row, column=col, sticky='w', pady=1, padx=8)
             self.stats_labels[key] = l
 
         # Section 3: Control Buttons (now includes select-region)
@@ -655,14 +653,14 @@ class PixelChangeDetectorGUI:
     def set_status_indicator(self, status):
         """Update the status indicator in minimal terminal style"""
         if status == "running":
-            self.status_label.config(text="system:monitor.active", style="Running.Status.TLabel")
+            self.status_label.config(text="System: monitor.active", style="Running.Status.TLabel")
         elif status == "stopped":
-            self.status_label.config(text="system:monitor.stopped", style="Stopped.Status.TLabel")
+            self.status_label.config(text="System: monitor.stopped", style="Stopped.Status.TLabel")
         elif status == "paused":
-            self.status_label.config(text="system:monitor.paused", style="Paused.Status.TLabel")
+            self.status_label.config(text="System: monitor.paused", style="Paused.Status.TLabel")
         else:
             # Default to just updating the text
-            self.status_label.config(text=f"system:monitor.{status}", style="Status.TLabel")
+            self.status_label.config(text=f"System: monitor.{status}", style="Status.TLabel")
         
     def update_threshold_label(self, value=None):
         """Update threshold label and apply to detector if it exists"""
@@ -681,7 +679,7 @@ class PixelChangeDetectorGUI:
                 self.log("Current threshold is not very sensitive - may miss subtle changes")
         
     def update_logs(self):
-        """Process any new log messages from the queue"""
+        """Process any new log messages from the queue and update stats in real time"""
         try:
             while True:
                 message = self.log_queue.get_nowait()
@@ -689,7 +687,10 @@ class PixelChangeDetectorGUI:
                 self.log_console.see(tk.END)  # Auto-scroll to end
         except queue.Empty:
             pass
-        
+
+        # Update stats in real time
+        self.show_stats()
+
         # Update visualization if running
         if self.is_running and self.detector:
             self.update_visualization()
@@ -795,7 +796,7 @@ class PixelChangeDetectorGUI:
                 self.root.after(2000, lambda: self._clean_markers())
                 
     def show_stats(self):
-        """Update stats details in the MONITORING section instead of a popup."""
+        """Update stats details in the MONITORING section in real time (called from update_logs)"""
         if not hasattr(self, 'detector') or not self.detector:
             return
         # Calculate runtime
@@ -820,7 +821,7 @@ class PixelChangeDetectorGUI:
         stats_data = {
             "total_detections": str(self.detector.stats["total_detections"]),
             "session_runtime": runtime_str,
-            "detections_per_hour": f"{detections_per_hour:.1f} per hour",
+            "detections_per_hour": f"{detections_per_hour:.1f}",
             "avg_interval": interval_str,
             "current_threshold": f"{self.detector.THRESHOLD:.3f}",
             "cooldown": f"{self.detector.detection_cooldown:.1f}s",
@@ -1902,7 +1903,7 @@ class PixelChangeDetector:
                 remaining = int(pause_end - time.time())
                 if self.gui:
                     self.gui.root.after(0, lambda r=remaining: self.gui.status_label.config(
-                        text=f"system:monitor.paused ({r}s)",
+                        text=f"System: monitor.paused ({r}s)",
                         style="Paused.Status.TLabel"
                     ))
                 time.sleep(0.1)
