@@ -404,15 +404,11 @@ class PixelChangeDetectorGUI:
         
         # Section 2: Region Selection (now only info, no button)
         region_frame = ttk.LabelFrame(left_panel, text="MONITORING", style='Terminal.TLabelframe')
-        region_frame.pack(fill=tk.X, pady=(0, 0), padx=(4 , 0))
-
-        # System status and detections count (moved from visualization)
-        self.status_label = ttk.Label(region_frame, text="System: monitor.idle", style='Monitor.Status.TLabel',font=('Segoe UI', 16))
-        self.status_label.pack(fill=tk.X, pady=(2, 2), padx=8)
+        region_frame.pack(fill=tk.X, pady=(0, 0), padx=(0 , 0))
 
         # --- Stats details in two columns ---
         self.stats_frame = ttk.Frame(region_frame, style='Term.TFrame')
-        self.stats_frame.pack(fill=tk.X, pady=(2, 2), padx=8)
+        self.stats_frame.pack(fill=tk.X, pady=(0, 0), padx=0)
         self.stats_labels = {}
         stats_keys = [
             ("Detections", "total_detections"),
@@ -490,13 +486,14 @@ class PixelChangeDetectorGUI:
         )
         self.pause_button.pack(side=tk.LEFT, padx=(0, 5))
 
- # Clear logs button
+        # Clear logs button
         self.clear_button = tk.Button(
             button_frame, 
             text="clear-logs",
             command=self.clear_logs,
             bg=self.colors['bg_dark'],
             fg=self.colors['text_dim'],
+            justify=tk.RIGHT,
             activebackground=self.colors['bg_lighter'],
             activeforeground=self.colors['text'],
             relief="flat",
@@ -524,7 +521,7 @@ class PixelChangeDetectorGUI:
             relief="flat",
             bd=1,
             highlightthickness=0,
-            padx=10,
+            padx=15,
             pady=5,  # Reduced padding
             font=('Segoe UI', 10)  # Updated to more modern font
         )
@@ -543,9 +540,18 @@ class PixelChangeDetectorGUI:
             highlightthickness=0,
             padx=10,
             pady=5,
-                        font=('Segoe UI', 10)  # Updated to more modern font
+            font=('Segoe UI', 10)  # Updated to more modern font
         )
-        self.region_button.pack(fill=tk.X,padx=(0, 5))
+        self.region_button.pack(fill=tk.X,padx=(5, 5))
+
+        # Section 4: System Status
+        status_frame = ttk.LabelFrame(left_panel, text="STATUS", style='Terminal.TLabelframe')
+        status_frame.pack(fill=tk.X, pady=(0, 8), padx=(0 , 0))
+
+        # System status and detections count (moved from visualization)
+        self.status_label = ttk.Label(status_frame, text="System: monitor.idle", style='Monitor.Status.TLabel',font=('Segoe UI', 16))
+        self.status_label.pack(fill=tk.X, pady=(2, 2), padx=0)
+
         
         # Configure visualization panel
         viz_frame = ttk.LabelFrame(right_panel, text="VISUALIZATION", style='Terminal.TLabelframe')
