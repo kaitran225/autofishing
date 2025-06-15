@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import (
     Qt, QSize, QThread, pyqtSignal, QTimer, QRect, QMargins,
-    QEvent, QObject, QMetaObject
+    QEvent, QObject, QMetaObject, QPoint
 )
 from PyQt6.QtGui import QPixmap, QImage, QColor, QFont, QPalette, QIcon, QPainter, QPen
 
@@ -104,8 +104,14 @@ class RegionSelectorQt(QMainWindow):
     
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Auto-Fisher")
-        self.setMinimumSize(600, 400)  # Reduced size for more compact layout
+        self.setWindowTitle("Auto-Fisher v1.0")
+        self.setMinimumSize(600, 400)
+        
+        # Set window icon if available
+        try:
+            self.setWindowIcon(QIcon("icon.png"))
+        except:
+            pass  # No icon available
         
         # Minimal earth-tone color palette
         self.colors = {
@@ -175,14 +181,9 @@ class RegionSelectorQt(QMainWindow):
     
     def setup_ui_style(self):
         """Set up minimal style for the application"""
-        # Apply global stylesheet
+        # Apply global stylesheet with consistent spacing and more concise styling
         stylesheet = f"""
-        QMainWindow, QDialog {{
-            background-color: {self.colors['bg_dark']};
-            color: {self.colors['text']};
-        }}
-        
-        QWidget {{
+        QMainWindow, QDialog, QWidget {{
             background-color: {self.colors['bg_dark']};
             color: {self.colors['text']};
             font-family: 'Segoe UI', sans-serif;
@@ -190,26 +191,20 @@ class RegionSelectorQt(QMainWindow):
         
         QGroupBox {{
             background-color: {self.colors['bg_medium']};
-            color: {self.colors['text']};
             border-radius: 4px;
             border: 1px solid {self.colors['border']};
-            margin-top: 8px;
-            font-weight: normal;
-            padding-top: 8px;
+            margin-top: 6px;
         }}
         
         QGroupBox::title {{
             subcontrol-position: top left;
-            margin-left: 8px;
-            color: {self.colors['text']};
+            margin-left: 6px;
         }}
         
         QPushButton {{
             background-color: {self.colors['button']};
-            color: {self.colors['text']};
             border-radius: 2px;
-            padding: 6px 12px;
-            font-weight: normal;
+            padding: 4px 8px;
             border: none;
             min-height: 20px;
         }}
@@ -227,12 +222,11 @@ class RegionSelectorQt(QMainWindow):
             color: {self.colors['text_secondary']};
         }}
         
-        QComboBox, QLineEdit, QDoubleSpinBox, QSpinBox {{
+        QComboBox, QLineEdit, QDoubleSpinBox, QSpinBox, QListWidget, QScrollArea, QScrollBar {{
             background-color: {self.colors['bg_medium']};
             border-radius: 2px;
-            padding: 4px;
+            padding: 2px;
             border: 1px solid {self.colors['border']};
-            color: {self.colors['text']};
         }}
         
         QComboBox:hover, QLineEdit:hover, QDoubleSpinBox:hover, QSpinBox:hover {{
@@ -241,34 +235,14 @@ class RegionSelectorQt(QMainWindow):
         
         QComboBox::drop-down {{
             border: none;
-            width: 20px;
-        }}
-        
-        QListWidget {{
-            background-color: {self.colors['bg_medium']};
-            border-radius: 2px;
-            border: 1px solid {self.colors['border']};
-            color: {self.colors['text']};
-            padding: 2px;
-        }}
-        
-        QScrollArea, QScrollBar {{
-            background-color: {self.colors['bg_medium']};
-            border-radius: 2px;
-            border: 1px solid {self.colors['border']};
+            width: 16px;
         }}
         
         QLabel {{
-            color: {self.colors['text']};
             background: transparent;
         }}
         
-        QFrame[frameShape="4"] {{ /* HLine */
-            color: {self.colors['border']};
-            border: 1px solid {self.colors['border']};
-        }}
-        
-        QFrame[frameShape="5"] {{ /* VLine */
+        QFrame[frameShape="4"], QFrame[frameShape="5"] {{ /* HLine and VLine */
             color: {self.colors['border']};
             border: 1px solid {self.colors['border']};
         }}
@@ -278,33 +252,24 @@ class RegionSelectorQt(QMainWindow):
     
     def setup_ui(self):
         """Set up the main UI components"""
-        # Create central widget
+        # Create central widget with consistent spacing
         central_widget = QWidget()
-        main_layout = QVBoxLayout(central_widget)  # Changed to vertical layout
-        main_layout.setContentsMargins(4, 4, 4, 4)  # Reduced margins
-        main_layout.setSpacing(4)  # Reduced spacing
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(4, 4, 4, 4)
+        main_layout.setSpacing(4)
         self.setCentralWidget(central_widget)
         
-        # Create top section with control panel
-        top_widget = QWidget()
-        top_layout = QVBoxLayout(top_widget)  # Changed to vertical layout
-        top_layout.setContentsMargins(0, 0, 0, 0)
-        top_layout.setSpacing(4)  # Reduced spacing
-        
-        # Control panel with grid layout
+        # Create control panel with grid layout
         control_panel = QWidget()
-        control_layout = QGridLayout(control_panel)  # Grid layout
-        control_layout.setContentsMargins(2, 2, 2, 2)  # Reduced margins
-        control_layout.setSpacing(4)  # Reduced spacing
+        control_layout = QGridLayout(control_panel)
+        control_layout.setContentsMargins(2, 2, 2, 2)
+        control_layout.setSpacing(4)
         
-        # Set up the control panel with grid layout
+        # Set up the control panel
         self.setup_control_panel(control_layout)
         
-        # Add control panel to top layout
-        top_layout.addWidget(control_panel)
-        
-        # Add top widget to main layout
-        main_layout.addWidget(top_widget, 1)  # Give stretch factor of 1
+        # Add control panel to main layout
+        main_layout.addWidget(control_panel, 1)
         
         # Log initial message
         self.log_to_terminal("Application started")
@@ -333,8 +298,8 @@ class RegionSelectorQt(QMainWindow):
         """Create a combined window selection and region selection section with 2 columns"""
         window_region_group = QGroupBox()
         window_region_layout = QVBoxLayout(window_region_group)
-        window_region_layout.setContentsMargins(4, 4, 4, 0)  # Reduced top margin
-        window_region_layout.setSpacing(0)  # Remove spacing
+        window_region_layout.setContentsMargins(4, 4, 4, 4)
+        window_region_layout.setSpacing(4)
         
         # Create a widget for the two columns
         columns_widget = QWidget()
@@ -345,8 +310,8 @@ class RegionSelectorQt(QMainWindow):
         # Left column: Window info
         left_column = QWidget()
         left_layout = QVBoxLayout(left_column)
-        left_layout.setContentsMargins(0, 0, 2, 0)  # Add right margin
-        left_layout.setSpacing(2)  # Reduced spacing
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(4)
         
         # Status label
         self.window_status = QLabel("Looking for PLAY TOGETHER window...")
@@ -358,12 +323,12 @@ class RegionSelectorQt(QMainWindow):
         self.window_info = QLabel("No window found")
         self.window_info.setWordWrap(True)
         self.window_info.setStyleSheet(f"color: {self.colors['text_secondary']}; background: {self.colors['bg_medium']}; padding: 2px;")
-        self.window_info.setMaximumHeight(50)  # Reduced height
+        self.window_info.setMaximumHeight(50)
         left_layout.addWidget(self.window_info)
         
         # Find game window button
         find_button = QPushButton("Find Game Window")
-        find_button.setMaximumHeight(20)  # Reduced height
+        find_button.setMaximumHeight(20)
         find_button.clicked.connect(self.find_game_window)
         left_layout.addWidget(find_button)
         
@@ -373,14 +338,14 @@ class RegionSelectorQt(QMainWindow):
         # Right column: Region settings
         right_column = QWidget()
         right_layout = QVBoxLayout(right_column)
-        right_layout.setContentsMargins(2, 0, 0, 0)  # Add left margin
-        right_layout.setSpacing(2)  # Reduced spacing
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(4)
         
         # Region settings
         settings_widget = QWidget()
         settings_layout = QGridLayout(settings_widget)
-        settings_layout.setContentsMargins(0, 0, 0, 0)  # No margins
-        settings_layout.setSpacing(2)  # Minimal spacing
+        settings_layout.setContentsMargins(0, 0, 0, 0)
+        settings_layout.setSpacing(4)
         
         # Size row
         size_label = QLabel("Size:")
@@ -392,10 +357,10 @@ class RegionSelectorQt(QMainWindow):
         self.size_input.setMaximum(500)
         self.size_input.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.size_input.setValue(100)
-        self.size_input.setMaximumHeight(20)  # Reduced height
-        self.size_input.setFixedWidth(60)  # Fixed width
-        self.size_input.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)  # Hide buttons
-        self.size_input.setStyleSheet("padding-left: 4px;")  # Add some padding
+        self.size_input.setMaximumHeight(20)
+        self.size_input.setFixedWidth(60)
+        self.size_input.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
+        self.size_input.setStyleSheet("padding-left: 4px;")
         settings_layout.addWidget(self.size_input, 0, 1)
         
         unit_label = QLabel("px")
@@ -414,10 +379,10 @@ class RegionSelectorQt(QMainWindow):
         self.threshold_input.setValue(self.detection_threshold)
         self.threshold_input.setSingleStep(0.01)
         self.threshold_input.setDecimals(2)
-        self.threshold_input.setMaximumHeight(20)  # Reduced height
-        self.threshold_input.setFixedWidth(60)  # Fixed width
-        self.threshold_input.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)  # Hide buttons
-        self.threshold_input.setStyleSheet("padding-left: 4px;")  # Add some padding
+        self.threshold_input.setMaximumHeight(20)
+        self.threshold_input.setFixedWidth(60)
+        self.threshold_input.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
+        self.threshold_input.setStyleSheet("padding-left: 4px;")
         settings_layout.addWidget(self.threshold_input, 1, 1)
         
         # Add settings widget to right column
@@ -426,18 +391,18 @@ class RegionSelectorQt(QMainWindow):
         # Region buttons
         buttons_widget = QWidget()
         buttons_layout = QVBoxLayout(buttons_widget)
-        buttons_layout.setContentsMargins(0, 0, 0, 0)  # No margins
-        buttons_layout.setSpacing(2)  # Reduced spacing
+        buttons_layout.setContentsMargins(0, 0, 0, 0)
+        buttons_layout.setSpacing(4)
         
         # Select region button
         select_region_button = QPushButton("Select Region")
-        select_region_button.setMaximumHeight(20)  # Reduced height
+        select_region_button.setMaximumHeight(20)
         select_region_button.clicked.connect(self.select_region)
         buttons_layout.addWidget(select_region_button)
         
         # Capture reference button
         reference_button = QPushButton("Capture Reference")
-        reference_button.setMaximumHeight(20)  # Reduced height
+        reference_button.setMaximumHeight(20)
         reference_button.clicked.connect(self.capture_reference_frame)
         buttons_layout.addWidget(reference_button)
         
@@ -453,33 +418,33 @@ class RegionSelectorQt(QMainWindow):
         # Control buttons in a grid layout below the columns
         control_widget = QWidget()
         control_layout = QGridLayout(control_widget)
-        control_layout.setContentsMargins(0, 0, 0, 0)  # No margins
-        control_layout.setSpacing(2)  # Reduced spacing
+        control_layout.setContentsMargins(0, 0, 0, 0)
+        control_layout.setSpacing(4)
         
         # Start button
         self.monitor_button = QPushButton("Start")
-        self.monitor_button.setMaximumHeight(20)  # Reduced height
+        self.monitor_button.setMaximumHeight(20)
         self.monitor_button.setEnabled(False)
         self.monitor_button.clicked.connect(self.toggle_monitoring)
         control_layout.addWidget(self.monitor_button, 0, 0)
         
         # Stop button
         self.stop_button = QPushButton("Stop")
-        self.stop_button.setMaximumHeight(20)  # Reduced height
+        self.stop_button.setMaximumHeight(20)
         self.stop_button.setEnabled(False)
         self.stop_button.clicked.connect(self.stop_monitoring)
         control_layout.addWidget(self.stop_button, 0, 1)
         
         # Pause button
         self.pause_button = QPushButton("Pause")
-        self.pause_button.setMaximumHeight(20)  # Reduced height
+        self.pause_button.setMaximumHeight(20)
         self.pause_button.setEnabled(False)
         self.pause_button.clicked.connect(self.toggle_pause)
         control_layout.addWidget(self.pause_button, 0, 2)
         
         # Clear log button
         clear_log_button = QPushButton("Clear Log")
-        clear_log_button.setMaximumHeight(20)  # Reduced height
+        clear_log_button.setMaximumHeight(20)
         clear_log_button.clicked.connect(self.clear_log)
         control_layout.addWidget(clear_log_button, 0, 3)
         
@@ -533,47 +498,47 @@ class RegionSelectorQt(QMainWindow):
         action_group.setMaximumWidth(300)
         action_layout = QVBoxLayout(action_group)
         action_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        action_layout.setContentsMargins(0, 0, 0, 0)  # Reduced margins
-        action_layout.setSpacing(0)  # Reduced spacing
+        action_layout.setContentsMargins(4, 4, 4, 4)
+        action_layout.setSpacing(4)
         
         # Create a scroll area for actions
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setMinimumHeight(120)  # Reduced height
+        scroll.setMinimumHeight(120)
         
         # Container widget for action items
         self.action_container = QWidget()
         self.action_layout = QVBoxLayout(self.action_container)
-        self.action_layout.setContentsMargins(2, 2, 2, 2)  # Reduced margins
-        self.action_layout.setSpacing(2)  # Reduced spacing
-        self.action_layout.addStretch(0)  # Add stretch to push items to the top
+        self.action_layout.setContentsMargins(4, 4, 4, 4)
+        self.action_layout.setSpacing(4)
+        self.action_layout.addStretch(0)
         
         scroll.setWidget(self.action_container)
-        action_layout.addWidget(scroll, 1)  # Give scroll area stretch factor
+        action_layout.addWidget(scroll, 1)
         
         # Action buttons
         buttons_widget = QWidget()
         buttons_layout = QHBoxLayout(buttons_widget)
-        buttons_layout.setContentsMargins(0, 0, 0, 0)  # No margins
-        buttons_layout.setSpacing(2)  # Reduced spacing
+        buttons_layout.setContentsMargins(0, 0, 0, 0)
+        buttons_layout.setSpacing(4)
         
         add_button = QPushButton("+ Add")
-        add_button.setMaximumHeight(20)  # Further reduced height
+        add_button.setMaximumHeight(20)
         add_button.clicked.connect(self.add_action_item)
         
         clear_button = QPushButton("Clear")
-        clear_button.setMaximumHeight(20)  # Further reduced height
+        clear_button.setMaximumHeight(20)
         clear_button.setStyleSheet(
             f"background-color: {self.colors['warning']}; color: {self.colors['text']};"
         )
         clear_button.clicked.connect(self.clear_action_sequence)
         
         default_button = QPushButton("Default")
-        default_button.setMaximumHeight(20)  # Further reduced height
+        default_button.setMaximumHeight(20)
         default_button.clicked.connect(self.load_default_action_sequence)
         
         test_button = QPushButton("Test")
-        test_button.setMaximumHeight(20)  # Further reduced height
+        test_button.setMaximumHeight(20)
         test_button.clicked.connect(self.test_action_sequence)
         
         buttons_layout.addWidget(add_button)
@@ -581,17 +546,17 @@ class RegionSelectorQt(QMainWindow):
         buttons_layout.addWidget(default_button)
         buttons_layout.addWidget(test_button)
         
-        action_layout.addWidget(buttons_widget, 0)  # No stretch factor
+        action_layout.addWidget(buttons_widget, 0)
         
         return action_group
     
     def create_monitoring_section(self):
         """Create the monitoring section with integrated monitor view and terminal"""
         monitor_group = QGroupBox()
-        monitor_layout = QVBoxLayout(monitor_group)  # Vertical layout
+        monitor_layout = QVBoxLayout(monitor_group)
         monitor_group.setMaximumHeight(220)
-        monitor_layout.setContentsMargins(0, 0, 0, 0)  # Reduced margins
-        monitor_layout.setSpacing(0)  # Reduced spacing
+        monitor_layout.setContentsMargins(4, 4, 4, 4)
+        monitor_layout.setSpacing(4)
         
         # Top section with monitor view and terminal side by side
         content_widget = QWidget()
@@ -603,13 +568,13 @@ class RegionSelectorQt(QMainWindow):
         view_widget = QWidget()
         view_layout = QVBoxLayout(view_widget)
         view_layout.setContentsMargins(0, 0, 0, 0)
-        view_layout.setSpacing(2)
+        view_layout.setSpacing(4)
         
         # Canvas for the monitor view
         canvas = QLabel()
         canvas.setAlignment(Qt.AlignmentFlag.AlignBottom)
         canvas.setMinimumSize(200, 200)
-        canvas.setMaximumSize(200, 200)  # Enforce 200x200 size
+        canvas.setMaximumSize(200, 200)
         canvas.setStyleSheet("background-color: black;")
         view_layout.addWidget(canvas)
         
@@ -620,32 +585,26 @@ class RegionSelectorQt(QMainWindow):
         terminal_widget = QWidget()
         terminal_layout = QVBoxLayout(terminal_widget)
         terminal_layout.setContentsMargins(0, 0, 0, 0)
-        terminal_layout.setSpacing(2)
+        terminal_layout.setSpacing(4)
         
         # Terminal text area
         self.terminal_output = QTextEdit()
         self.terminal_output.setReadOnly(True)
-        self.terminal_output.setStyleSheet(
-            f"background-color: {self.colors['bg_dark']}; "
-            f"color: {self.colors['text']}; "
-            f"font-family: 'Consolas', monospace; "
-            f"font-size: 9pt;"  # Reduced font size
-        )
-        self.terminal_output.setMinimumHeight(60)  # Reduced height
-        self.terminal_output.setMaximumHeight(200)  # Limit maximum height
-        terminal_layout.addWidget(self.terminal_output, 1)  # Give stretch factor
+        self.terminal_output.setMinimumHeight(60)
+        self.terminal_output.setMaximumHeight(200)
+        terminal_layout.addWidget(self.terminal_output, 1)
         
         # Status label directly under the terminal
         self.status_label = QLabel("Ready to select window")
         self.status_label.setStyleSheet(f"color: {self.colors['text_secondary']}; padding: 2px;")
-        terminal_layout.addWidget(self.status_label)  # Add to terminal layout
+        terminal_layout.addWidget(self.status_label)
         
         # Add view and terminal to content layout
         content_layout.addWidget(view_widget)
-        content_layout.addWidget(terminal_widget, 1)  # Give terminal more space
+        content_layout.addWidget(terminal_widget, 1)
         
         # Add content widget to main layout
-        monitor_layout.addWidget(content_widget, 1)  # Give stretch factor
+        monitor_layout.addWidget(content_widget, 1)
         
         return monitor_group
     
@@ -656,7 +615,6 @@ class RegionSelectorQt(QMainWindow):
             
         # Convert to QImage and resize to fit the canvas (200x200)
         h, w = self.current_frame.shape[:2]
-        bytes_per_line = 3 * w
         
         # Create a copy for display (RGB format)
         display_frame = cv2.cvtColor(self.current_frame, cv2.COLOR_BGR2RGB)
@@ -667,11 +625,11 @@ class RegionSelectorQt(QMainWindow):
         new_w = int(w * scale)
         new_h = int(h * scale)
         
-        # Resize the image
-        display_frame = cv2.resize(display_frame, (new_w, new_h))
+        # Use better interpolation for smoother resizing
+        display_frame = cv2.resize(display_frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
         
-        # Create a black background of 200x200
-        background = np.zeros((max_size, max_size, 3), dtype=np.uint8)
+        # Create a dark gray background of 200x200
+        background = np.ones((max_size, max_size, 3), dtype=np.uint8) * 40  # Dark gray
         
         # Calculate position to center the image
         y_offset = (max_size - new_h) // 2
@@ -679,6 +637,12 @@ class RegionSelectorQt(QMainWindow):
         
         # Place the resized image on the background
         background[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = display_frame
+        
+        # Add a subtle border around the image
+        cv2.rectangle(background, 
+                     (x_offset-1, y_offset-1), 
+                     (x_offset+new_w+1, y_offset+new_h+1), 
+                     (80, 80, 80), 1)  # Light gray border
         
         # Convert to QImage
         q_img = QImage(background.data, max_size, max_size, max_size * 3, QImage.Format.Format_RGB888)
@@ -700,136 +664,140 @@ class RegionSelectorQt(QMainWindow):
         self.setWindowState(Qt.WindowState.WindowMinimized)
         time.sleep(0.5)  # Give time for window to minimize
         
-        # Create a fullscreen transparent window for selection
-        selection_window = QWidget(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
-        selection_window.setWindowOpacity(0.3)
-        selection_window.setStyleSheet("background-color: black;")
-        selection_window.showFullScreen()
-        
-        # Variables to track selection rectangle
-        preview_rect = None
-        rect_x, rect_y = 0, 0
-        
-        # Create a QPainter for drawing
+        # Create a selection overlay widget
         class SelectionOverlay(QWidget):
             def __init__(self, parent=None):
-                super().__init__(parent)
-                self.setGeometry(0, 0, selection_window.width(), selection_window.height())
+                super().__init__(parent, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+                self.setWindowOpacity(0.3)
+                self.setStyleSheet("background-color: black;")
+                self.showFullScreen()
                 self.setCursor(Qt.CursorShape.CrossCursor)
-                self.mouse_pos = QPoint(0, 0)
+                
+                # Variables to track selection rectangle
+                self.rect_x = 0
+                self.rect_y = 0
+                self.rect_width = width
+                self.rect_height = height
+                self.selected = False
+                self.screen_width = self.width()
+                self.screen_height = self.height()
                 
             def paintEvent(self, event):
                 painter = QPainter(self)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
                 
                 # Draw crosshairs
-                painter.setPen(QPen(QColor(self.parent().parent().colors['accent']), 1, Qt.PenStyle.DashLine))
-                painter.drawLine(self.mouse_pos.x(), 0, self.mouse_pos.x(), self.height())
-                painter.drawLine(0, self.mouse_pos.y(), self.width(), self.mouse_pos.y())
+                painter.setPen(QPen(QColor('#A68A64'), 1, Qt.PenStyle.DashLine))
+                painter.drawLine(self.rect_x, 0, self.rect_x, self.screen_height)
+                painter.drawLine(0, self.rect_y, self.screen_width, self.rect_y)
                 
                 # Draw selection rectangle
-                if rect_x != 0 and rect_y != 0:
-                    # Draw border
-                    painter.setPen(QPen(QColor(self.parent().parent().colors['accent']), 2))
-                    painter.drawRect(rect_x - width // 2, rect_y - height // 2, width, height)
+                if self.rect_x != 0 and self.rect_y != 0:
+                    # Calculate actual coordinates
+                    left = max(0, self.rect_x - self.rect_width // 2)
+                    top = max(0, self.rect_y - self.rect_height // 2)
+                    
+                    # Ensure region stays within screen bounds
+                    if left + self.rect_width > self.screen_width:
+                        left = self.screen_width - self.rect_width
+                    if top + self.rect_height > self.screen_height:
+                        top = self.screen_height - self.rect_height
+                    
+                    # Draw semi-transparent fill
+                    painter.setBrush(QColor(255, 255, 255, 30))
+                    painter.setPen(QPen(QColor('#A68A64'), 2))
+                    painter.drawRect(left, top, self.rect_width, self.rect_height)
                     
                     # Draw grid lines
-                    painter.setPen(QPen(QColor(self.parent().parent().colors['green']), 1, Qt.PenStyle.DashLine))
-                    cell_width = width // 3
-                    cell_height = height // 3
+                    painter.setPen(QPen(QColor(255, 255, 255, 120), 1, Qt.PenStyle.DotLine))
+                    cell_width = self.rect_width // 3
+                    cell_height = self.rect_height // 3
                     
                     # Vertical grid lines
                     for i in range(1, 3):
                         painter.drawLine(
-                            rect_x - width // 2 + i * cell_width, rect_y - height // 2,
-                            rect_x - width // 2 + i * cell_width, rect_y + height // 2
+                            left + i * cell_width, top,
+                            left + i * cell_width, top + self.rect_height
                         )
                     
                     # Horizontal grid lines
                     for i in range(1, 3):
                         painter.drawLine(
-                            rect_x - width // 2, rect_y - height // 2 + i * cell_height,
-                            rect_x + width // 2, rect_y - height // 2 + i * cell_height
+                            left, top + i * cell_height,
+                            left + self.rect_width, top + i * cell_height
                         )
                     
-                    # Draw coordinates
-                    painter.setPen(QPen(QColor(self.parent().parent().colors['text']), 1))
-                    painter.setFont(QFont("Consolas", 9))
+                    # Draw coordinates with better visibility
+                    painter.setPen(QPen(QColor(255, 255, 255), 1))
+                    painter.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
                     
-                    # Calculate actual coordinates
-                    left = max(0, rect_x - width // 2)
-                    top = max(0, rect_y - height // 2)
+                    # Draw text with background for better visibility
+                    coord_text = f"Position: ({left},{top}) • Size: {self.rect_width}×{self.rect_height}"
+                    text_rect = QRect(self.screen_width // 2 - 150, self.screen_height - 40, 300, 30)
                     
-                    # Ensure region stays within screen bounds
-                    if left + width > self.width():
-                        left = self.width() - width
-                    if top + height > self.height():
-                        top = self.height() - height
-                    
-                    coord_text = f"pos: ({left},{top}) • size: {width}×{height}"
-                    painter.drawText(self.width() // 2 - 100, self.height() - 20, 200, 20, 
-                                    Qt.AlignmentFlag.AlignCenter, coord_text)
+                    # Draw text background
+                    painter.fillRect(text_rect, QColor(0, 0, 0, 180))
+                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, coord_text)
                 
-                # Draw instructions
-                painter.setPen(QPen(QColor(self.parent().parent().colors['green']), 1))
-                painter.setFont(QFont("Consolas", 10))
-                painter.drawText(self.width() // 2 - 200, 30, 400, 20, 
-                                Qt.AlignmentFlag.AlignCenter, 
-                                "SELECT REGION • CLICK TO PLACE • ESC TO CANCEL")
-            
+                # Draw instructions with better visibility
+                painter.setPen(QPen(QColor(255, 255, 255), 1))
+                painter.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+                
+                # Draw text with background for better visibility
+                instr_rect = QRect(self.screen_width // 2 - 200, 20, 400, 30)
+                painter.fillRect(instr_rect, QColor(0, 0, 0, 180))
+                painter.drawText(instr_rect, Qt.AlignmentFlag.AlignCenter, 
+                               "CLICK TO SELECT REGION • ESC TO CANCEL")
+                
             def mouseMoveEvent(self, event):
-                self.mouse_pos = event.pos()
-                nonlocal rect_x, rect_y
-                rect_x = event.pos().x()
-                rect_y = event.pos().y()
-                self.update()
-            
+                self.rect_x = event.pos().x()
+                self.rect_y = event.pos().y()
+                self.update()  # Trigger repaint
+                
             def mousePressEvent(self, event):
-                nonlocal rect_x, rect_y
-                rect_x = event.pos().x()
-                rect_y = event.pos().y()
+                self.rect_x = event.pos().x()
+                self.rect_y = event.pos().y()
+                self.selected = True
                 
                 # Calculate actual coordinates
-                left = max(0, rect_x - width // 2)
-                top = max(0, rect_y - height // 2)
+                left = max(0, self.rect_x - self.rect_width // 2)
+                top = max(0, self.rect_y - self.rect_height // 2)
                 
                 # Ensure region stays within screen bounds
-                if left + width > self.width():
-                    left = self.width() - width
-                if top + height > self.height():
-                    top = self.height() - height
+                if left + self.rect_width > self.screen_width:
+                    left = self.screen_width - self.rect_width
+                if top + self.rect_height > self.screen_height:
+                    top = self.screen_height - self.rect_height
                 
-                # Close selection window
-                selection_window.close()
+                # Store the selected region
+                self.selected_coords = (left, top, self.rect_width, self.rect_height)
                 
-                # Set region in parent
-                self.parent().parent().selected_region = (left, top, width, height)
-                self.parent().parent().log_to_terminal(f"Region selected: ({left},{top}) {width}×{height}")
+                # Close the selection window
+                self.close()
                 
-                # Update UI to show selected region
-                self.parent().parent().update_region_label()
-                
-                # Enable monitoring button
-                self.parent().parent().monitor_button.setEnabled(True)
+            def keyPressEvent(self, event):
+                if event.key() == Qt.Key.Key_Escape:
+                    self.selected = False
+                    self.close()
         
-        # Create overlay widget
-        overlay = SelectionOverlay(selection_window)
-        overlay.setParent(selection_window)
+        # Create and show the selection overlay
+        overlay = SelectionOverlay()
         
-        # Handle ESC key to cancel
-        def on_escape(event):
-            if event.key() == Qt.Key.Key_Escape:
-                selection_window.close()
-                self.setWindowState(Qt.WindowState.WindowActive)
+        # Connect the dialog closed event
+        def on_dialog_closed():
+            self.setWindowState(Qt.WindowState.WindowActive)
+            if hasattr(overlay, 'selected') and overlay.selected and hasattr(overlay, 'selected_coords'):
+                self.selected_region = overlay.selected_coords
+                self.log_to_terminal(f"Region selected: ({overlay.selected_coords[0]},{overlay.selected_coords[1]}) {overlay.selected_coords[2]}×{overlay.selected_coords[3]}")
+                self.update_region_label()
+                self.monitor_button.setEnabled(True)
+                # Take a preview screenshot
+                QTimer.singleShot(200, self.take_preview_screenshot)
+            else:
                 self.log_to_terminal("Region selection cancelled")
         
-        selection_window.keyPressEvent = on_escape
-        
-        # Show selection window
-        selection_window.show()
-        
-        # Wait for selection window to close
-        selection_window.destroyed.connect(lambda: self.setWindowState(Qt.WindowState.WindowActive))
-        
+        overlay.destroyed.connect(on_dialog_closed)
+    
     def update_region_label(self):
         """Update UI to show the selected region"""
         if hasattr(self, 'status_label') and self.selected_region:
@@ -979,11 +947,11 @@ class RegionSelectorQt(QMainWindow):
         new_w = int(w * scale)
         new_h = int(h * scale)
         
-        # Resize the image
-        img_resized = cv2.resize(img_rgb, (new_w, new_h))
+        # Use better interpolation for smoother resizing
+        img_resized = cv2.resize(img_rgb, (new_w, new_h), interpolation=cv2.INTER_AREA)
         
-        # Create a black background of 200x200
-        background = np.zeros((max_size, max_size, 3), dtype=np.uint8)
+        # Create a dark gray background of 200x200
+        background = np.ones((max_size, max_size, 3), dtype=np.uint8) * 40  # Dark gray
         
         # Calculate position to center the image
         y_offset = (max_size - new_h) // 2
@@ -991,6 +959,12 @@ class RegionSelectorQt(QMainWindow):
         
         # Place the resized image on the background
         background[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = img_resized
+        
+        # Add a subtle border around the image
+        cv2.rectangle(background, 
+                     (x_offset-1, y_offset-1), 
+                     (x_offset+new_w+1, y_offset+new_h+1), 
+                     (80, 80, 80), 1)  # Light gray border
         
         # Convert to QImage and display
         h, w, c = background.shape
@@ -1056,15 +1030,15 @@ class RegionSelectorQt(QMainWindow):
         
         # Create horizontal layout
         action_layout = QHBoxLayout(action_frame)
-        action_layout.setContentsMargins(4, 2, 4, 2)
+        action_layout.setContentsMargins(4, 4, 4, 4)
         action_layout.setSpacing(4)
         
         # First column: Action type dropdown
         type_combo = QComboBox()
         type_combo.addItems(["focus", "key", "wait"])
         type_combo.setCurrentText(action_type)
-        type_combo.setMaximumWidth(60)  # Reduced width
-        type_combo.setMaximumHeight(20)  # Reduced height
+        type_combo.setMaximumWidth(60)
+        type_combo.setMaximumHeight(20)
         
         # Second column: Value input
         value_input = QLineEdit()
@@ -1356,15 +1330,15 @@ class RegionSelectorQt(QMainWindow):
         
         # Create layout
         layout = QHBoxLayout(frame)
-        layout.setContentsMargins(2, 2, 2, 2)  # Reduced margins
-        layout.setSpacing(2)  # Reduced spacing
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4)
         
         # Type combobox
         type_combo = QComboBox()
         type_combo.addItems(["key", "focus", "wait", "click", "esc", "f"])
         type_combo.setCurrentText(action_data.get("type", "key"))
-        type_combo.setMaximumWidth(60)  # Reduced width
-        type_combo.setMaximumHeight(20)  # Reduced height
+        type_combo.setMaximumWidth(60)
+        type_combo.setMaximumHeight(20)
         
         # Value input (key, seconds, etc.)
         value_input = QLineEdit()
@@ -1379,18 +1353,18 @@ class RegionSelectorQt(QMainWindow):
             value_input.setPlaceholderText("x,y")
         elif action_data["type"] in ["esc", "f"]:
             value_input.setPlaceholderText("No value needed")
-        value_input.setMaximumHeight(20)  # Reduced height
+        value_input.setMaximumHeight(20)
         
         # Comment input
         comment_input = QLineEdit()
         comment_input.setText(action_data.get("comment", ""))
         comment_input.setPlaceholderText("Comment")
-        comment_input.setMaximumHeight(20)  # Reduced height
+        comment_input.setMaximumHeight(20)
         
         # Delete button
         delete_button = QPushButton("×")
-        delete_button.setMaximumWidth(20)  # Reduced width
-        delete_button.setMaximumHeight(20)  # Reduced height
+        delete_button.setMaximumWidth(20)
+        delete_button.setMaximumHeight(20)
         delete_button.setStyleSheet(
             f"background-color: {self.colors['warning']}; color: {self.colors['text']};"
         )
@@ -1415,8 +1389,8 @@ class RegionSelectorQt(QMainWindow):
         
         # Add widgets to layout
         layout.addWidget(type_combo)
-        layout.addWidget(value_input, 1)  # Give more space to value
-        layout.addWidget(comment_input, 1)  # Give more space to comment
+        layout.addWidget(value_input, 1)
+        layout.addWidget(comment_input, 1)
         layout.addWidget(delete_button)
         
         # Store references

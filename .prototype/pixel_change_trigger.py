@@ -1710,9 +1710,9 @@ class PixelChangeDetector:
                         self.log("Failed to focus window, skipping key press")
                     
                     # Pause detection for 5 seconds after detection
-                    pause_start = time.time()
                     self.log("Pausing detection for 5 seconds...")
                     time.sleep(2)
+                    pause_start = time.time()
                     
                     # Wait additional time, checking for stop requests
                     pause_end = pause_start + 5
@@ -1744,7 +1744,7 @@ class PixelChangeDetector:
                         if self.focus_play_together_window():
                             self.send_f_key()
                             # Capture new reference frame after F key press
-                            time.sleep(0.2)  # Wait for screen to update
+                            time.sleep(2)  # Wait for screen to update
                         else:
                             self.log("Failed to focus window, skipping F key press")
                     
@@ -1757,7 +1757,7 @@ class PixelChangeDetector:
                         break
                         
                     # Complete remaining pause time
-                    time.sleep(0.5)
+                    time.sleep(2)
                     continue
                 
                 # Store current frame as previous for next comparison if not using reference
