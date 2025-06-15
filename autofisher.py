@@ -310,7 +310,8 @@ class PixelChangeDetectorGUI:
             troughcolor=self.colors['bg_lighter'],
             activebackground=self.colors['accent'],
             sliderrelief="flat",
-            length=120
+            length=120,
+            font=('Segoe UI', 10)
         )
         self.threshold_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
         self.threshold_label = ttk.Label(threshold_row, text="0.05", width=5, style='Term.TLabel')
@@ -331,7 +332,8 @@ class PixelChangeDetectorGUI:
             highlightthickness=1,
             highlightbackground=self.colors['border'],
             highlightcolor=self.colors['accent'],
-            relief="flat"
+            relief="flat",
+            font=('Segoe UI', 10)
         )
         self.size_entry.pack(side=tk.LEFT, padx=(0, 8))
         ttk.Label(size_row, text="px", style='Term.TLabel').pack(side=tk.LEFT)
@@ -351,7 +353,8 @@ class PixelChangeDetectorGUI:
             highlightthickness=1,
             highlightbackground=self.colors['border'],
             highlightcolor=self.colors['accent'],
-            relief="flat"
+            relief="flat",
+            font=('Segoe UI', 10)
         )
         self.cooldown_entry.pack(side=tk.LEFT, padx=(0, 8))
         ttk.Label(cooldown_row, text="sec", style='Term.TLabel').pack(side=tk.LEFT)
@@ -371,7 +374,8 @@ class PixelChangeDetectorGUI:
             highlightthickness=1,
             highlightbackground=self.colors['border'],
             highlightcolor=self.colors['accent'],
-            relief="flat"
+            relief="flat",
+            font=('Segoe UI', 10)
         )
         self.fishing_key_entry.pack(side=tk.LEFT)
 
@@ -388,7 +392,8 @@ class PixelChangeDetectorGUI:
             bd=1,
             highlightthickness=0,
             padx=8,
-            pady=4
+            pady=4,
+            font=('Segoe UI', 10)
         )
         apply_button.pack(pady=(8, 0), padx=4, anchor='e')
         # --- End refined Settings UI ---
@@ -401,14 +406,14 @@ class PixelChangeDetectorGUI:
         region_info_frame = ttk.Frame(region_frame, style='Term.TFrame')
         region_info_frame.pack(fill=tk.X, pady=4)
         ttk.Label(region_info_frame, text="status:", style='Term.TLabel').pack(side=tk.LEFT, padx=(5, 0))
-        self.region_info_label = ttk.Label(region_info_frame, text="waiting_for_region_selection", style='Term.TLabel')
+        self.region_info_label = ttk.Label(region_info_frame, text="waiting_for_region_selection", style='Term.TLabel',font=('Segoe UI', 10))
         self.region_info_label.pack(side=tk.LEFT, padx=5)
 
         # System status and detections count (moved from visualization)
-        self.status_label = ttk.Label(region_frame, text="system:monitor.idle", style='Monitor.Status.TLabel')
-        self.status_label.pack(fill=tk.X, pady=(2, 0), padx=8)
-        self.count_label = ttk.Label(region_frame, text="detections: 0", style='Monitor.Status.TLabel')
-        self.count_label.pack(fill=tk.X, pady=(0, 2), padx=8)
+        self.status_label = ttk.Label(region_frame, text="system:monitor.idle", style='Monitor.Status.TLabel',font=('Segoe UI', 10))
+        self.status_label.pack(fill=tk.X, pady=(2, 2), padx=8)
+        self.count_label = ttk.Label(region_frame, text="detections: 0", style='Monitor.Status.TLabel',font=('Segoe UI', 10))
+        self.count_label.pack(fill=tk.X, pady=(2, 2), padx=8)
 
         # --- Add stats details here ---
         self.stats_frame = ttk.Frame(region_frame, style='Term.TFrame')
@@ -425,7 +430,7 @@ class PixelChangeDetectorGUI:
             ("Processing FPS", "processing_fps")
         ]
         for i, (label, key) in enumerate(stats_keys):
-            l = ttk.Label(self.stats_frame, text=f"{label}: ...", style='Term.TLabel')
+            l = ttk.Label(self.stats_frame, text=f"{label}: ...", style='Term.TLabel',font=('Segoe UI', 10))
             l.grid(row=i, column=0, sticky='w', pady=1)
             self.stats_labels[key] = l
 
@@ -446,7 +451,8 @@ class PixelChangeDetectorGUI:
             bd=1,
             highlightthickness=0,
             padx=10,
-            pady=5
+            pady=5,
+                        font=('Segoe UI', 10)  # Updated to more modern font
         )
         self.start_button.pack(side=tk.LEFT, padx=(5, 5))
         self.stop_button = tk.Button(
@@ -463,7 +469,8 @@ class PixelChangeDetectorGUI:
             highlightthickness=0,
             padx=10,
             pady=5,
-            disabledforeground='grey'
+            disabledforeground='grey',
+                        font=('Segoe UI', 10)  # Updated to more modern font
         )
         self.stop_button.pack(side=tk.LEFT, padx=(0, 5))
         self.pause_button = tk.Button(
@@ -480,27 +487,28 @@ class PixelChangeDetectorGUI:
             highlightthickness=0,
             padx=10,
             pady=5,
-            disabledforeground='grey'
+            disabledforeground='grey',
+                        font=('Segoe UI', 10)  # Updated to more modern font
         )
         self.pause_button.pack(side=tk.LEFT, padx=(0, 5))
-        # Move select-region button to a new row below
-        select_region_frame = ttk.Frame(control_frame, style='Term.TFrame')
-        select_region_frame.pack(fill=tk.X, pady=(4, 0))
-        self.region_button = tk.Button(
-            select_region_frame, 
-            text="select-region",
-            command=self.select_region,
+
+ # Clear logs button
+        self.clear_button = tk.Button(
+            button_frame, 
+            text="clear-logs",
+            command=self.clear_logs,
             bg=self.colors['bg_dark'],
-            fg=self.colors['green'],
+            fg=self.colors['text_dim'],
             activebackground=self.colors['bg_lighter'],
-            activeforeground=self.colors['green_alt'],
+            activeforeground=self.colors['text'],
             relief="flat",
             bd=1,
             highlightthickness=0,
             padx=10,
-            pady=5
+            pady=5,  # Reduced padding
+            font=('Segoe UI', 10)  # Updated to more modern font
         )
-        self.region_button.pack(fill=tk.X, padx=8)
+        self.clear_button.pack(side=tk.LEFT)
         
         # Second row of buttons
         button_frame2 = ttk.Frame(control_frame, style='Term.TFrame')
@@ -523,25 +531,23 @@ class PixelChangeDetectorGUI:
             font=('Segoe UI', 10)  # Updated to more modern font
         )
         self.ref_button.pack(side=tk.LEFT, padx=(5, 5))
-        
-        # Clear logs button
-        self.clear_button = tk.Button(
+
+        self.region_button = tk.Button(
             button_frame2, 
-            text="clear-logs",
-            command=self.clear_logs,
+            text="select-region",
+            command=self.select_region,
             bg=self.colors['bg_dark'],
-            fg=self.colors['text_dim'],
+            fg=self.colors['green'],
             activebackground=self.colors['bg_lighter'],
-            activeforeground=self.colors['text'],
+            activeforeground=self.colors['green_alt'],
             relief="flat",
             bd=1,
             highlightthickness=0,
             padx=10,
-            pady=5,  # Reduced padding
-            font=('Segoe UI', 10)  # Updated to more modern font
+            pady=5,
+                        font=('Segoe UI', 10)  # Updated to more modern font
         )
-        self.clear_button.pack(side=tk.LEFT)
-        
+        self.region_button.pack(fill=tk.X,padx=(0, 5))
         
         # Configure visualization panel
         viz_frame = ttk.LabelFrame(right_panel, text="VISUALIZATION", style='Terminal.TLabelframe')
