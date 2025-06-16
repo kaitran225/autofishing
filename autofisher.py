@@ -163,7 +163,7 @@ def direct_key_press(key_char):
 class PixelChangeDetectorGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Pixel Change Detector")
+        self.root.title("AutoFisher - Direct Control")
         self.root.geometry("900x700")
         self.root.minsize(800, 600)
         self.root.resizable(True, True)
@@ -393,42 +393,39 @@ class PixelChangeDetectorGUI:
         # Create a label to display information about enabled modes
         info_text = ttk.Label(
             info_frame,
-            text="Advanced features:",
+            text="Advanced Features (Always On):",
             style='Term.TLabel',
             font=('Segoe UI', 10, 'bold'),
             foreground=self.colors['accent_bright']
         )
         info_text.pack(side=tk.LEFT, padx=0)
         
-        # Add information about other advanced features
-        features_frame2 = ttk.Frame(settings_grid, style='Term.TFrame')
-        features_frame2.grid(row=5, column=0, columnspan=2, sticky='ew', padx=(0, 8), pady=(4, 0))
+        # Add information about advanced features in a cleaner format
+        features_frame = ttk.Frame(settings_grid, style='Term.TFrame')
+        features_frame.grid(row=5, column=0, columnspan=2, sticky='ew', padx=(0, 8), pady=(4, 0))
         
-        features_text2 = ttk.Label(
-            features_frame2,
-            text="• High Performance: Always enabled (uses more resources for better reliability)",
+        # Create a cleaner box for the features
+        feature_box = ttk.Frame(features_frame, style='Border.TFrame', padding=10)
+        feature_box.pack(fill=tk.X, expand=True)
+        
+        # Add the features as a bulleted list
+        features_text = ttk.Label(
+            feature_box,
+            text="• Direct Control: Always focuses game window for maximum reliability\n• High Performance: Uses advanced techniques for robust detection\n• Fullscreen Respect: Won't interrupt other fullscreen applications",
             style='Term.TLabel',
             font=('Segoe UI', 9),
-            foreground=self.colors['text_dim']
+            foreground=self.colors['text'],
+            justify=tk.LEFT,
+            wraplength=400
         )
-        features_text2.pack(side=tk.LEFT, padx=(20, 0), anchor='w')
+        features_text.pack(side=tk.LEFT, padx=5, anchor='w')
         
-        # Third feature
-        features_frame3 = ttk.Frame(settings_grid, style='Term.TFrame')
-        features_frame3.grid(row=6, column=0, columnspan=2, sticky='ew', padx=(0, 8), pady=(0, 4))
+        # Apply Settings button below the feature box
+        apply_button_frame = ttk.Frame(settings_grid, style='Term.TFrame')
+        apply_button_frame.grid(row=6, column=0, columnspan=2, sticky='e', padx=(0, 8), pady=(8, 0))
         
-        features_text3 = ttk.Label(
-            features_frame3,
-            text="• Fullscreen Respect: Always enabled (prevents interrupting fullscreen apps)",
-            style='Term.TLabel',
-            font=('Segoe UI', 9),
-            foreground=self.colors['text_dim']
-        )
-        features_text3.pack(side=tk.LEFT, padx=(20, 0), anchor='w')
-        
-        # Apply Settings button (bottom right, span both columns)
         apply_button = tk.Button(
-            fishing_key_frame,
+            apply_button_frame, 
             text="Apply Settings",
             command=self.apply_settings,
             bg=self.colors['bg_dark'],
@@ -438,11 +435,11 @@ class PixelChangeDetectorGUI:
             relief="flat",
             bd=1,
             highlightthickness=0,
-            padx=4,
-            pady=4,
-            font=('Segoe UI', 10)
+            padx=10,
+            pady=6,
+            font=('Segoe UI', 10, 'bold')
         )
-        apply_button.pack(pady=(0, 8), padx=4, anchor='e')
+        apply_button.pack(side=tk.RIGHT, padx=4)
         # --- End refined Settings UI ---
         
         # Section 2: Region Selection (now only info, no button)
@@ -1687,67 +1684,7 @@ class PixelChangeDetector:
             self.log(f"Error with key simulation: {e}")
             return False
             
-    # Background mode methods removed
-            
-    def _send_key_high_performance(self, key, vk_code, scan_code):
-        """High-performance multi-approach key sending"""
-        try:
-            # Save current focus
-            current_focus = user32.GetForegroundWindow()
-            
-            # Thread-level approach
-            try:
-                # Get window thread
-                target_thread = win32process.GetWindowThreadProcessId(self.play_together_window)[0]
-                current_thread = kernel32.GetCurrentThreadId()
-                
-                # Multiple messages in rapid sequence
-                # First try with PostMessage (non-blocking)
-                l_param = (scan_code << 16) | 1
-                win32gui.PostMessage(self.play_together_window, win32con.WM_KEYDOWN, vk_code, l_param)
-                
-                # Then try with thread-attached SendMessage (more direct)
-                try:
-                    user32.AttachThreadInput(current_thread, target_thread, True)
-                    l_param = (scan_code << 16) | 1
-                    win32gui.SendMessage(self.play_together_window, win32con.WM_KEYDOWN, vk_code, l_param)
-                    time.sleep(0.02)  # Brief delay
-                    l_param = (scan_code << 16) | 0xC0000001
-                    win32gui.SendMessage(self.play_together_window, win32con.WM_KEYUP, vk_code, l_param)
-                    user32.AttachThreadInput(current_thread, target_thread, False)
-                except:
-                    pass  # Continue if this fails
-                
-                # Finally, try with PostMessage key up
-                l_param = (scan_code << 16) | 0xC0000001
-                win32gui.PostMessage(self.play_together_window, win32con.WM_KEYUP, vk_code, l_param)
-            except:
-                pass  # Try next approach if this fails
-                
-            # Process-level approach (more aggressive)
-            try:
-                pid = win32process.GetWindowThreadProcessId(self.play_together_window)[1]
-                if pid:
-                    # Attempt to send key directly through hook-based input
-                    keyboard.press(key)
-                    time.sleep(0.05)
-                    keyboard.release(key)
-            except:
-                pass  # Continue to next approach
-                
-            # Character message approach
-            try:
-                # Try sending WM_CHAR which is sometimes more reliable
-                if len(key) == 1:
-                    char_code = ord(key.lower())
-                    win32gui.PostMessage(self.play_together_window, win32con.WM_CHAR, char_code, 0)
-            except:
-                pass
-                
-            return True
-        except Exception as e:
-            self.log(f"High-performance key sending failed: {e}")
-            return False
+    # All background mode methods removed
             
     def send_f_key(self):
         """Legacy method for compatibility - redirects to send_fishing_key"""
@@ -1805,57 +1742,7 @@ class PixelChangeDetector:
             self.log(f"Error with ESC key simulation: {e}")
             return False
             
-    def _send_esc_high_performance(self, vk_code, scan_code):
-        """High-performance multi-approach ESC key sending"""
-        try:
-            # This is similar to _send_key_high_performance but optimized for ESC
-            # Save current focus
-            current_focus = user32.GetForegroundWindow()
-            
-            # Try multiple approaches in parallel to ensure delivery
-            
-            # 1. System messages approach
-            try:
-                # First try PostMessage sequence (non-blocking)
-                l_param = (scan_code << 16) | 1
-                win32gui.PostMessage(self.play_together_window, win32con.WM_KEYDOWN, vk_code, l_param)
-                
-                # Try with WM_SYSCOMMAND which is sometimes more reliable for ESC
-                win32gui.PostMessage(self.play_together_window, win32con.WM_SYSCOMMAND, win32con.SC_CLOSE, 0)
-                
-                # Send key up
-                l_param = (scan_code << 16) | 0xC0000001
-                win32gui.PostMessage(self.play_together_window, win32con.WM_KEYUP, vk_code, l_param)
-            except:
-                pass
-            
-            # 2. Thread-level approach
-            try:
-                target_thread = win32process.GetWindowThreadProcessId(self.play_together_window)[0]
-                current_thread = kernel32.GetCurrentThreadId()
-                
-                # Try thread-attached SendMessage
-                user32.AttachThreadInput(current_thread, target_thread, True)
-                win32gui.SendMessage(self.play_together_window, win32con.WM_KEYDOWN, vk_code, 0)
-                time.sleep(0.02)
-                win32gui.SendMessage(self.play_together_window, win32con.WM_KEYUP, vk_code, 0)
-                user32.AttachThreadInput(current_thread, target_thread, False)
-            except:
-                pass
-            
-            # 3. Direct keyboard simulation
-            try:
-                # More aggressive - direct keyboard input
-                keyboard.press('esc')
-                time.sleep(0.05)
-                keyboard.release('esc')
-            except:
-                pass
-            
-            return True
-        except Exception as e:
-            self.log(f"High-performance ESC sending failed: {e}")
-            return False
+    # ESC key high performance method removed
 
     def capture_screen(self):
         """Capture the screen or region of interest using MSS for better multi-monitor support"""
@@ -2165,21 +2052,15 @@ class PixelChangeDetector:
         self.is_running = False
         
     def _handle_detection(self):
-        """Handle detection event with optimized sequence and background mode support"""
+        """Handle detection event with optimized sequence"""
         try:
-            # Handle key press based on mode
-            if self.background_mode:
-                self.log(f"Pressing {self.fishing_key.upper()} key to catch fish (background mode)...")
-                self.send_fishing_key()  # Will use background mode logic
+            # Handle key press with focus
+            if self.focus_play_together_window():
+                self.log(f"Pressing {self.fishing_key.upper()} key to catch fish...")
+                self.send_fishing_key()
                 time.sleep(0.2)
             else:
-                # Regular mode with focus
-                if self.focus_play_together_window():
-                    self.log(f"Pressing {self.fishing_key.upper()} key to catch fish...")
-                    self.send_fishing_key()
-                    time.sleep(0.2)
-                else:
-                    self.log("Failed to focus window, skipping key press")
+                self.log("Failed to focus window, skipping key press")
             
             # Pause detection based on the configured cooldown
             cooldown = self.detection_cooldown
@@ -2204,13 +2085,10 @@ class PixelChangeDetector:
             # Press ESC after pause
             if self.is_running and not self.thread_control.get("stop_requested", False):
                 self.log("Pressing ESC key to exit fishing menu...")
-                if self.background_mode:
-                    self.send_esc_key()  # Will use background mode logic
+                if self.focus_play_together_window():
+                    self.send_esc_key()
                 else:
-                    if self.focus_play_together_window():
-                        self.send_esc_key()
-                    else:
-                        self.log("Failed to focus window, skipping ESC key press")
+                    self.log("Failed to focus window, skipping ESC key press")
             
             # Wait before casting again
             esc_end = time.time() + 2
@@ -2220,15 +2098,11 @@ class PixelChangeDetector:
             # Cast fishing line again
             if self.is_running and not self.thread_control.get("stop_requested", False):
                 self.log(f"Pressing {self.fishing_key.upper()} key to cast fishing line...")
-                if self.background_mode:
-                    self.send_fishing_key()  # Will use background mode logic
+                if self.focus_play_together_window():
+                    self.send_fishing_key()
                     time.sleep(2)  # Wait for screen to update
                 else:
-                    if self.focus_play_together_window():
-                        self.send_fishing_key()
-                        time.sleep(2)  # Wait for screen to update
-                    else:
-                        self.log("Failed to focus window, skipping fishing cast")
+                    self.log("Failed to focus window, skipping fishing cast")
                 
                 # Get a new reference frame
                 self.capture_reference()
@@ -2248,12 +2122,12 @@ class PixelChangeDetector:
             if self.gui:
                 self.gui.root.after(0, lambda: self.gui.set_status_indicator("running"))
 
-VERSION = "1.7.0"
-VERSION_NAME = "Focus Mode Edition"
+VERSION = "1.8.0"
+VERSION_NAME = "Direct Control Edition"
 
 def main():
     root = tk.Tk()
-    root.title(f"AutoFisher v{VERSION}")
+    root.title(f"AutoFisher v{VERSION} - {VERSION_NAME}")
     
     # Set app icon (if available)
     try:
@@ -2290,8 +2164,8 @@ def main():
     app.log(f"{VERSION_NAME}")
     app.log("System ready - Please select a region to begin")
     app.log("To get started: (1) Select region size (2) Click select-region (3) Click start")
-    app.log("Focus Mode is enabled by default for maximum reliability")
-    app.log("High Performance and Fullscreen Respect modes are always enabled")
+    app.log("Direct window focus is used for maximum reliability")
+    app.log("High Performance and Fullscreen Respect features always enabled")
     
     # Start the main loop
     root.mainloop()
