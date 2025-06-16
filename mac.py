@@ -754,7 +754,7 @@ class RegionSelectionOverlay(QDialog):
             border-radius: 10px;
             font-family: Helvetica, Arial, sans-serif;
             font-weight: 500;
-            font-size: 13px;
+            font-size: 10px;
         """)
         self.instructions.setGeometry(
             (self.screen_width - 500) // 2,  # Center horizontally
@@ -774,7 +774,7 @@ class RegionSelectionOverlay(QDialog):
             border-radius: 10px;
             font-family: Helvetica, Arial, sans-serif;
             font-weight: 500;
-            font-size: 13px;
+            font-size: 10px;
         """)
         self.play_together_button.setGeometry(self.screen_width - 250, 70, 220, 40)
         self.play_together_button.clicked.connect(self.position_on_play_together)
@@ -1013,7 +1013,7 @@ class RegionSelectionOverlay(QDialog):
         
         # Draw text
         painter.setPen(self.colors['text'])
-        painter.setFont(QFont("Helvetica", 11, QFont.Weight.Medium))
+        painter.setFont(QFont("Helvetica", 10, QFont.Weight.Medium))
         painter.drawText(
             coord_rect, 
             Qt.AlignmentFlag.AlignCenter, 
@@ -1155,7 +1155,7 @@ class TimelinePlot(FigureCanvas):
         self.ax.grid(True, alpha=0.15, color=self.colors['grid'])
         
         # Set text styling - using standard fonts that matplotlib supports
-        self.ax.set_title("Activity Timeline", color=self.colors['matcha_light'], fontsize=11, 
+        self.ax.set_title("Activity Timeline", color=self.colors['matcha_light'], fontsize=10, 
                          fontweight='medium')
         
         # Set text color for axis labels and ticks
@@ -1190,7 +1190,7 @@ class TimelinePlot(FigureCanvas):
         
         # Update title with threshold value in minimal format - using standard fonts
         self.ax.set_title(f"Activity Timeline [threshold: {threshold:.2f}]", 
-                        color=self.colors['matcha_light'], fontsize=11, 
+                        color=self.colors['matcha_light'], fontsize=10, 
                         fontweight='medium')
         
         # Redraw the canvas
@@ -1247,11 +1247,11 @@ class MonitoringDisplay(QWidget):
         status_layout.setSpacing(6)
         
         self.status_label = QLabel("Status: Idle")
-        self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
+        self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 10px;")
         status_layout.addWidget(self.status_label)
         
         self.change_label = QLabel("Change: 0.00%")
-        self.change_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
+        self.change_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 10px;")
         status_layout.addWidget(self.change_label, alignment=Qt.AlignmentFlag.AlignRight)
         
         layout.addWidget(status_frame)
@@ -1345,19 +1345,19 @@ class MonitoringDisplay(QWidget):
         """Update the status display with Matcha Wood theme colors"""
         if status == "running":
             self.status_label.setText("Status: Running")
-            self.status_label.setStyleSheet(f"color: {self.colors['matcha']}; font-weight: 500; font-size: 12px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['matcha']}; font-weight: 500; font-size: 10px;")
         elif status == "stopped":
             self.status_label.setText("Status: Stopped")
-            self.status_label.setStyleSheet(f"color: {self.colors['alert']}; font-weight: 500; font-size: 12px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['alert']}; font-weight: 500; font-size: 10px;")
         elif status == "paused":
             self.status_label.setText("Status: Paused")
-            self.status_label.setStyleSheet(f"color: {self.colors['warning']}; font-weight: 500; font-size: 12px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['warning']}; font-weight: 500; font-size: 10px;")
         elif status == "action_sequence":
             self.status_label.setText("Status: Action Sequence")
-            self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 10px;")
         else:
             self.status_label.setText(f"Status: {status}")
-            self.status_label.setStyleSheet(f"color: {self.colors['text']}; font-weight: 500; font-size: 12px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['text']}; font-weight: 500; font-size: 10px;")
             
     def set_bright_mode(self, enabled):
         """Set whether bright detection mode is enabled"""
@@ -1430,6 +1430,7 @@ class PixelChangeApp(QMainWindow):
                 background-color: {self.colors['bg_dark']}; 
                 color: {self.colors['text']}; 
                 font-family: Helvetica, Arial, sans-serif;
+                font-size: 10px;
             }}
             
             QGroupBox {{ 
@@ -1439,7 +1440,7 @@ class PixelChangeApp(QMainWindow):
                 border-radius: 10px; 
                 margin-top: 1.2em;
                 font-weight: 500;
-                font-size: 13px;
+                font-size: 10px;
             }}
             QGroupBox::title {{ 
                 subcontrol-origin: margin; 
@@ -1450,7 +1451,7 @@ class PixelChangeApp(QMainWindow):
             
             QLabel {{ 
                 color: {self.colors['text']}; 
-                font-size: 13px;
+                font-size: 10px;
                 background: transparent;
             }}
             
@@ -1460,7 +1461,7 @@ class PixelChangeApp(QMainWindow):
                 border: none; 
                 padding: 8px 16px; 
                 border-radius: 8px;
-                font-size: 13px;
+                font-size: 10px;
                 font-weight: 500;
                 min-height: 28px;
                 margin: 2px;
@@ -1484,7 +1485,7 @@ class PixelChangeApp(QMainWindow):
                 border: none; 
                 border-radius: 8px;
                 font-family: 'Menlo', 'Monaco', monospace;
-                font-size: 12px;
+                font-size: 10px;
                 padding: 6px;
                 selection-background-color: {self.colors['matcha']};
             }}
@@ -1510,7 +1511,7 @@ class PixelChangeApp(QMainWindow):
             
             QCheckBox {{
                 color: {self.colors['text']};
-                font-size: 13px;
+                font-size: 10px;
                 spacing: 8px;
             }}
             QCheckBox::indicator {{
@@ -1786,11 +1787,11 @@ class PixelChangeApp(QMainWindow):
         status_layout.setSpacing(8)
         
         self.status_label = QLabel("Status: Waiting")
-        self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
+        self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 10px;")
         status_layout.addWidget(self.status_label)
         
         self.count_label = QLabel("Detections: 0")
-        self.count_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
+        self.count_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 10px;")
         status_layout.addWidget(self.count_label, alignment=Qt.AlignmentFlag.AlignRight)
         
         right_layout.addWidget(status_frame)
@@ -1926,7 +1927,7 @@ class PixelChangeApp(QMainWindow):
         self.pause_button.setEnabled(True)
         self.monitor_display.set_status("running")
         self.status_label.setText("Status: Running")
-        self.status_label.setStyleSheet(f"color: {self.colors['matcha']}; font-weight: 500; font-size: 12px;")
+        self.status_label.setStyleSheet(f"color: {self.colors['matcha']}; font-weight: 500; font-size: 10px;")
     
     def stop_detection(self):
         """Stop the detection process"""
@@ -1938,7 +1939,7 @@ class PixelChangeApp(QMainWindow):
         self.pause_button.setEnabled(False)
         self.monitor_display.set_status("stopped")
         self.status_label.setText("Status: Stopped")
-        self.status_label.setStyleSheet(f"color: {self.colors['alert']}; font-weight: 500; font-size: 12px;")
+        self.status_label.setStyleSheet(f"color: {self.colors['alert']}; font-weight: 500; font-size: 10px;")
     
     def toggle_pause(self):
         """Pause or resume detection"""
@@ -1948,12 +1949,12 @@ class PixelChangeApp(QMainWindow):
             self.pause_button.setText("Resume")
             self.monitor_display.set_status("paused")
             self.status_label.setText("Status: Paused")
-            self.status_label.setStyleSheet(f"color: {self.colors['warning']}; font-weight: 500; font-size: 12px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['warning']}; font-weight: 500; font-size: 10px;")
         else:
             self.pause_button.setText("Pause")
             self.monitor_display.set_status("running")
             self.status_label.setText("Status: Running")
-            self.status_label.setStyleSheet(f"color: {self.colors['matcha']}; font-weight: 500; font-size: 12px;")
+            self.status_label.setStyleSheet(f"color: {self.colors['matcha']}; font-weight: 500; font-size: 10px;")
     
     def capture_reference(self):
         """Capture a reference frame"""
@@ -1984,7 +1985,7 @@ class PixelChangeApp(QMainWindow):
         # Update status to show action sequence
         self.monitor_display.set_status("action_sequence")
         self.status_label.setText("Status: Action Sequence")
-        self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
+        self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 10px;")
         
         # Add a log message
         self.add_log(f"Detection #{self.detection_count} - executing action sequence")
@@ -2013,7 +2014,7 @@ class PixelChangeApp(QMainWindow):
                 step = self.detector.action_sequence_step
                 total_steps = len(self.detector.action_sequence)
                 self.status_label.setText(f"Status: Action Sequence ({step}/{total_steps})")
-                self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 12px;")
+                self.status_label.setStyleSheet(f"color: {self.colors['matcha_light']}; font-weight: 500; font-size: 10px;")
         except Exception as e:
             print(f"Error updating visualization: {e}")
             # Don't stop the application on visualization errors

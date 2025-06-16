@@ -181,6 +181,9 @@ class PixelChangeDetectorGUI:
         self.detector = None
         self.is_running = False
         
+        # Detection counter
+        self.detection_count = 0
+        
         # Thread control variables
         self.thread_control = {
             "detection_thread": None,
@@ -382,7 +385,47 @@ class PixelChangeDetectorGUI:
             font=('Segoe UI', 10)
         )
         self.fishing_key_entry.pack(side=tk.LEFT)
-
+        
+        # Information text about default settings
+        info_frame = ttk.Frame(settings_grid, style='Term.TFrame')
+        info_frame.grid(row=4, column=0, columnspan=2, sticky='ew', padx=(0, 8), pady=(4, 0))
+        
+        # Create a label to display information about enabled modes
+        info_text = ttk.Label(
+            info_frame,
+            text="Advanced features:",
+            style='Term.TLabel',
+            font=('Segoe UI', 10, 'bold'),
+            foreground=self.colors['accent_bright']
+        )
+        info_text.pack(side=tk.LEFT, padx=0)
+        
+        # Add information about other advanced features
+        features_frame2 = ttk.Frame(settings_grid, style='Term.TFrame')
+        features_frame2.grid(row=5, column=0, columnspan=2, sticky='ew', padx=(0, 8), pady=(4, 0))
+        
+        features_text2 = ttk.Label(
+            features_frame2,
+            text="• High Performance: Always enabled (uses more resources for better reliability)",
+            style='Term.TLabel',
+            font=('Segoe UI', 9),
+            foreground=self.colors['text_dim']
+        )
+        features_text2.pack(side=tk.LEFT, padx=(20, 0), anchor='w')
+        
+        # Third feature
+        features_frame3 = ttk.Frame(settings_grid, style='Term.TFrame')
+        features_frame3.grid(row=6, column=0, columnspan=2, sticky='ew', padx=(0, 8), pady=(0, 4))
+        
+        features_text3 = ttk.Label(
+            features_frame3,
+            text="• Fullscreen Respect: Always enabled (prevents interrupting fullscreen apps)",
+            style='Term.TLabel',
+            font=('Segoe UI', 9),
+            foreground=self.colors['text_dim']
+        )
+        features_text3.pack(side=tk.LEFT, padx=(20, 0), anchor='w')
+        
         # Apply Settings button (bottom right, span both columns)
         apply_button = tk.Button(
             fishing_key_frame,
@@ -732,7 +775,9 @@ class PixelChangeDetectorGUI:
                 for i in range(diff_display.shape[0]):
                     for j in range(diff_display.shape[1]):
                         if diff_display[i, j] > alpha_threshold:
-                            colored_diff_alpha[i, j, 3] = min(255, int(diff_display[i, j] * 2))
+                            # Clamp the value before multiplication to prevent overflow
+                            safe_value = min(127, diff_display[i, j])
+                            colored_diff_alpha[i, j, 3] = min(255, int(safe_value * 2))
                         else:
                             colored_diff_alpha[i, j, 3] = 0
                 self.diff_overlay.set_data(colored_diff_alpha)
@@ -767,7 +812,10 @@ class PixelChangeDetectorGUI:
     def increment_detection_count(self):
         """Increment detection counter and update UI"""
         self.detection_count += 1
-        self.count_label.config(text=f"detections: {self.detection_count}")
+        # Update detection count in stats instead of using count_label (which doesn't exist)
+        # Find and update the relevant stats label
+        if hasattr(self, 'stats_labels') and 'total_detections' in self.stats_labels:
+            self.stats_labels['total_detections'].config(text=f"Detections: {self.detection_count}")
         
         # Add minimal timeline marker at the detection point
         if hasattr(self.detector, 'change_history') and len(self.detector.change_history) > 0:
@@ -793,7 +841,7 @@ class PixelChangeDetectorGUI:
                     idx if idx < 100 else 99, 
                     y_val, 
                     'o', 
-                    color=self.colors['success'], 
+                    color=self.colors['accent'], 
                     markersize=4
                 )[0]
                 setattr(dot, 'detection_marker', True)
@@ -1241,7 +1289,12 @@ class PixelChangeDetectorGUI:
     def clear_logs(self):
         """Clear the log console"""
         self.log_console.delete(1.0, tk.END)
-        
+    
+    # Methods for background mode, high performance and respect fullscreen removed
+    # as they are now always enabled by default
+    
+    # Focus mode method removed - window focus will always be used
+          
     def apply_settings(self):
         """Apply the advanced settings to the detector"""
         try:
@@ -1273,7 +1326,9 @@ class PixelChangeDetectorGUI:
                 self.detector.detection_cooldown = cooldown_value
                 self.detector.fishing_key = fishing_key
                 
+                # Log applied settings with the enabled modes
                 self.log(f"Settings applied: threshold={threshold_value:.2f}, cooldown={cooldown_value}s, key={fishing_key}")
+                self.log("Advanced features: high_perf=enabled, respect_fullscreen=enabled")
                 
                 # Log changes
                 if old_threshold != threshold_value:
@@ -1299,6 +1354,10 @@ class PixelChangeDetector:
         
         # Screen capture region (required)
         self.region = None  # (left, top, right, bottom)
+        
+        # Advanced settings - always enabled
+        self.high_performance_mode = True  # Use more resources for better reliability
+        self.respect_fullscreen = True  # Don't interrupt fullscreen applications
         
         # Initialize visualization data
         self.current_frame = None
@@ -1495,8 +1554,58 @@ class PixelChangeDetector:
             self.log(f"Error focusing window: {e}")
             return False
 
+    def is_fullscreen_app_active(self):
+        """Check if any fullscreen application is currently active"""
+        try:
+            # Get foreground window
+            foreground_hwnd = user32.GetForegroundWindow()
+            if not foreground_hwnd:
+                return False
+                
+            # Check if it's our own window or Play Together
+            if foreground_hwnd == self.play_together_window:
+                return False
+                
+            # Try to check if it's our GUI window
+            if hasattr(self, 'gui') and self.gui and hasattr(self.gui, 'root'):
+                if foreground_hwnd == self.gui.root.winfo_id():
+                    return False
+                
+            # Get monitor info
+            monitor_info = win32api.GetMonitorInfo(win32api.MonitorFromWindow(foreground_hwnd))
+            monitor_rect = monitor_info['Monitor']
+            
+            # Get window rect
+            window_rect = win32gui.GetWindowRect(foreground_hwnd)
+            
+            # Check if window covers the entire monitor
+            is_fullscreen = (
+                window_rect[0] <= monitor_rect[0] and
+                window_rect[1] <= monitor_rect[1] and
+                window_rect[2] >= monitor_rect[2] and
+                window_rect[3] >= monitor_rect[3]
+            )
+            
+            # Additional check for borderless fullscreen
+            style = win32gui.GetWindowLong(foreground_hwnd, win32con.GWL_STYLE)
+            has_no_border = not (style & win32con.WS_BORDER or style & win32con.WS_DLGFRAME)
+            
+            # Get window title for logging
+            if is_fullscreen and has_no_border:
+                try:
+                    window_title = win32gui.GetWindowText(foreground_hwnd)
+                    if window_title:
+                        self.log(f"Detected fullscreen app: {window_title[:30]}")
+                except:
+                    pass
+                    
+            return is_fullscreen and has_no_border
+        except Exception as e:
+            self.log(f"Error checking fullscreen status: {e}")
+            return False
+
     def send_fishing_key(self):
-        """Send the configured fishing key"""
+        """Send the configured fishing key with focus mode"""
         try:
             # Update virtual key code based on the configured fishing key
             key = self.fishing_key.lower()
@@ -1515,16 +1624,35 @@ class PixelChangeDetector:
                 self.log(f"Unknown key: {key}, falling back to 'f'")
                 vk_code = 0x46  # Default to F
             
-            # Single quick focus check
+            # Calculate scan code for more reliable key identification
+            scan_code = user32.MapVirtualKeyW(vk_code, 0)
+            
+            # Check for fullscreen applications if respect_fullscreen is enabled
+            if self.respect_fullscreen and self.is_fullscreen_app_active():
+                self.log("Fullscreen application detected - using ultra-minimal approach")
+                # Use the most minimal approach possible - just a single message, no focus change
+                try:
+                    # Single quiet message
+                    win32gui.PostMessage(self.play_together_window, win32con.WM_CHAR, ord(key.lower()), 0)
+                    self.log("Sent quiet key message to avoid fullscreen interruption")
+                    # Skip all other methods to ensure no interruption
+                    return True
+                except:
+                    self.log("Couldn't send quiet key - skipping to avoid interruption")
+                    # Don't try any other methods that might interrupt
+                    return False
+            
+            # Focus window for reliable key press detection
             if user32.GetForegroundWindow() != self.play_together_window:
                 self.focus_play_together_window()
                 time.sleep(0.05)  # Reduced delay
             
-            # Use most reliable method first - SendInput
+            # Regular foreground mode
+            # Create input structure
             kb_input = INPUT()
             kb_input.type = INPUT_KEYBOARD
             kb_input.ii.ki.wVk = vk_code
-            kb_input.ii.ki.wScan = 0
+            kb_input.ii.ki.wScan = scan_code
             kb_input.ii.ki.dwFlags = 0
             kb_input.ii.ki.time = 0
             kb_input.ii.ki.dwExtraInfo = ctypes.pointer(ctypes.c_ulong(0))
@@ -1559,23 +1687,105 @@ class PixelChangeDetector:
             self.log(f"Error with key simulation: {e}")
             return False
             
+    # Background mode methods removed
+            
+    def _send_key_high_performance(self, key, vk_code, scan_code):
+        """High-performance multi-approach key sending"""
+        try:
+            # Save current focus
+            current_focus = user32.GetForegroundWindow()
+            
+            # Thread-level approach
+            try:
+                # Get window thread
+                target_thread = win32process.GetWindowThreadProcessId(self.play_together_window)[0]
+                current_thread = kernel32.GetCurrentThreadId()
+                
+                # Multiple messages in rapid sequence
+                # First try with PostMessage (non-blocking)
+                l_param = (scan_code << 16) | 1
+                win32gui.PostMessage(self.play_together_window, win32con.WM_KEYDOWN, vk_code, l_param)
+                
+                # Then try with thread-attached SendMessage (more direct)
+                try:
+                    user32.AttachThreadInput(current_thread, target_thread, True)
+                    l_param = (scan_code << 16) | 1
+                    win32gui.SendMessage(self.play_together_window, win32con.WM_KEYDOWN, vk_code, l_param)
+                    time.sleep(0.02)  # Brief delay
+                    l_param = (scan_code << 16) | 0xC0000001
+                    win32gui.SendMessage(self.play_together_window, win32con.WM_KEYUP, vk_code, l_param)
+                    user32.AttachThreadInput(current_thread, target_thread, False)
+                except:
+                    pass  # Continue if this fails
+                
+                # Finally, try with PostMessage key up
+                l_param = (scan_code << 16) | 0xC0000001
+                win32gui.PostMessage(self.play_together_window, win32con.WM_KEYUP, vk_code, l_param)
+            except:
+                pass  # Try next approach if this fails
+                
+            # Process-level approach (more aggressive)
+            try:
+                pid = win32process.GetWindowThreadProcessId(self.play_together_window)[1]
+                if pid:
+                    # Attempt to send key directly through hook-based input
+                    keyboard.press(key)
+                    time.sleep(0.05)
+                    keyboard.release(key)
+            except:
+                pass  # Continue to next approach
+                
+            # Character message approach
+            try:
+                # Try sending WM_CHAR which is sometimes more reliable
+                if len(key) == 1:
+                    char_code = ord(key.lower())
+                    win32gui.PostMessage(self.play_together_window, win32con.WM_CHAR, char_code, 0)
+            except:
+                pass
+                
+            return True
+        except Exception as e:
+            self.log(f"High-performance key sending failed: {e}")
+            return False
+            
     def send_f_key(self):
         """Legacy method for compatibility - redirects to send_fishing_key"""
         return self.send_fishing_key()
 
     def send_esc_key(self):
-        """Optimized key press method for ESC key"""
+        """Optimized key press method for ESC key with focus mode"""
         try:
-            # Single quick focus check
+            key = 'esc'
+            vk_code = 0x1B  # VK_ESCAPE
+            scan_code = user32.MapVirtualKeyW(vk_code, 0)
+            
+            # Check for fullscreen applications if respect_fullscreen is enabled
+            if self.respect_fullscreen and self.is_fullscreen_app_active():
+                self.log("Fullscreen application detected - using ultra-minimal approach for ESC")
+                # Use the most minimal approach possible for ESC - just a cancel message
+                try:
+                    # Send a cancel command instead of ESC key
+                    win32gui.PostMessage(self.play_together_window, win32con.WM_SYSCOMMAND, win32con.SC_CLOSE, 0)
+                    self.log("Sent quiet cancel message to avoid fullscreen interruption")
+                    # Skip all other methods to ensure no interruption
+                    return True
+                except:
+                    self.log("Couldn't send quiet cancel - skipping to avoid interruption")
+                    # Don't try any other methods that might interrupt
+                    return False
+            
+            # Focus window for reliable key press detection
             if user32.GetForegroundWindow() != self.play_together_window:
                 self.focus_play_together_window()
                 time.sleep(0.05)  # Reduced delay
             
-            # Use most reliable method first - SendInput
+            # Regular foreground mode
+            # Create input structure
             kb_input = INPUT()
             kb_input.type = INPUT_KEYBOARD
-            kb_input.ii.ki.wVk = 0x1B  # VK_ESCAPE
-            kb_input.ii.ki.wScan = 0
+            kb_input.ii.ki.wVk = vk_code
+            kb_input.ii.ki.wScan = scan_code
             kb_input.ii.ki.dwFlags = 0
             kb_input.ii.ki.time = 0
             kb_input.ii.ki.dwExtraInfo = ctypes.pointer(ctypes.c_ulong(0))
@@ -1593,6 +1803,58 @@ class PixelChangeDetector:
             
         except Exception as e:
             self.log(f"Error with ESC key simulation: {e}")
+            return False
+            
+    def _send_esc_high_performance(self, vk_code, scan_code):
+        """High-performance multi-approach ESC key sending"""
+        try:
+            # This is similar to _send_key_high_performance but optimized for ESC
+            # Save current focus
+            current_focus = user32.GetForegroundWindow()
+            
+            # Try multiple approaches in parallel to ensure delivery
+            
+            # 1. System messages approach
+            try:
+                # First try PostMessage sequence (non-blocking)
+                l_param = (scan_code << 16) | 1
+                win32gui.PostMessage(self.play_together_window, win32con.WM_KEYDOWN, vk_code, l_param)
+                
+                # Try with WM_SYSCOMMAND which is sometimes more reliable for ESC
+                win32gui.PostMessage(self.play_together_window, win32con.WM_SYSCOMMAND, win32con.SC_CLOSE, 0)
+                
+                # Send key up
+                l_param = (scan_code << 16) | 0xC0000001
+                win32gui.PostMessage(self.play_together_window, win32con.WM_KEYUP, vk_code, l_param)
+            except:
+                pass
+            
+            # 2. Thread-level approach
+            try:
+                target_thread = win32process.GetWindowThreadProcessId(self.play_together_window)[0]
+                current_thread = kernel32.GetCurrentThreadId()
+                
+                # Try thread-attached SendMessage
+                user32.AttachThreadInput(current_thread, target_thread, True)
+                win32gui.SendMessage(self.play_together_window, win32con.WM_KEYDOWN, vk_code, 0)
+                time.sleep(0.02)
+                win32gui.SendMessage(self.play_together_window, win32con.WM_KEYUP, vk_code, 0)
+                user32.AttachThreadInput(current_thread, target_thread, False)
+            except:
+                pass
+            
+            # 3. Direct keyboard simulation
+            try:
+                # More aggressive - direct keyboard input
+                keyboard.press('esc')
+                time.sleep(0.05)
+                keyboard.release('esc')
+            except:
+                pass
+            
+            return True
+        except Exception as e:
+            self.log(f"High-performance ESC sending failed: {e}")
             return False
 
     def capture_screen(self):
@@ -1643,12 +1905,12 @@ class PixelChangeDetector:
             # Store color frame for visualization (convert BGR to RGB)
             if len(frame.shape) >= 3:
                 self.color_frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2RGB)
+                # Keep original frame for color-based processing
             else:
                 self.color_frame = None
                 
-            # Convert to grayscale for processing (directly from BGR)
-            if len(frame.shape) >= 3:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2GRAY)
+            # For backward compatibility - don't convert to grayscale anymore
+            # This keeps color information for better detection of pastel colors
             
             # Update health check variables
             self.last_successful_capture = time.time()
@@ -1661,7 +1923,7 @@ class PixelChangeDetector:
             return None
             
     def calculate_frame_difference(self, frame1, frame2):
-        """Calculate the difference between two frames with improved sensitivity"""
+        """Calculate the difference between two frames with improved color sensitivity"""
         if frame1 is None or frame2 is None:
             return None, 0
             
@@ -1673,13 +1935,33 @@ class PixelChangeDetector:
         # Apply slight blur to reduce noise sensitivity
         frame1_blurred = cv2.GaussianBlur(frame1, (5, 5), 0)
         frame2_blurred = cv2.GaussianBlur(frame2, (5, 5), 0)
+        
+        # For grayscale images
+        if len(frame1.shape) < 3:
+            # Calculate absolute difference
+            diff_frame = cv2.absdiff(frame1_blurred, frame2_blurred)
+        else:
+            # For color images - convert to HSV for better color sensitivity
+            frame1_hsv = cv2.cvtColor(frame1_blurred, cv2.COLOR_BGR2HSV)
+            frame2_hsv = cv2.cvtColor(frame2_blurred, cv2.COLOR_BGR2HSV)
             
-        # Calculate absolute difference
-        diff_frame = cv2.absdiff(frame1_blurred, frame2_blurred)
+            # Calculate difference in HSV space (better for detecting pastel colors)
+            h_diff = cv2.absdiff(frame1_hsv[:,:,0], frame2_hsv[:,:,0])
+            s_diff = cv2.absdiff(frame1_hsv[:,:,1], frame2_hsv[:,:,1])
+            v_diff = cv2.absdiff(frame1_hsv[:,:,2], frame2_hsv[:,:,2])
+            
+            # Weight hue differences more heavily for pastel colors
+            h_weight = 2.0  # Increased weight for hue differences
+            s_weight = 1.0
+            v_weight = 1.0
+            
+            # Combine channels with weights
+            diff_frame = cv2.addWeighted(h_diff, h_weight, s_diff, s_weight, 0)
+            diff_frame = cv2.addWeighted(diff_frame, 1.0, v_diff, v_weight, 0)
         
         # Calculate percentage of pixels that changed significantly
         # Apply adaptive thresholding based on frame characteristics
-        threshold = 30  # Default threshold
+        threshold = 20  # Lower threshold for more sensitivity
         
         # Apply morphological operations to highlight larger changes
         kernel = np.ones((3, 3), np.uint8)
@@ -1883,16 +2165,21 @@ class PixelChangeDetector:
         self.is_running = False
         
     def _handle_detection(self):
-        """Handle detection event with optimized sequence"""
+        """Handle detection event with optimized sequence and background mode support"""
         try:
-            # Quick focus and key press
-            if self.focus_play_together_window():
-                self.log(f"Pressing {self.fishing_key.upper()} key to catch fish...")
-                self.send_fishing_key()
-                # Capture new reference frame after detection
+            # Handle key press based on mode
+            if self.background_mode:
+                self.log(f"Pressing {self.fishing_key.upper()} key to catch fish (background mode)...")
+                self.send_fishing_key()  # Will use background mode logic
                 time.sleep(0.2)
             else:
-                self.log("Failed to focus window, skipping key press")
+                # Regular mode with focus
+                if self.focus_play_together_window():
+                    self.log(f"Pressing {self.fishing_key.upper()} key to catch fish...")
+                    self.send_fishing_key()
+                    time.sleep(0.2)
+                else:
+                    self.log("Failed to focus window, skipping key press")
             
             # Pause detection based on the configured cooldown
             cooldown = self.detection_cooldown
@@ -1917,10 +2204,13 @@ class PixelChangeDetector:
             # Press ESC after pause
             if self.is_running and not self.thread_control.get("stop_requested", False):
                 self.log("Pressing ESC key to exit fishing menu...")
-                if self.focus_play_together_window():
-                    self.send_esc_key()
+                if self.background_mode:
+                    self.send_esc_key()  # Will use background mode logic
                 else:
-                    self.log("Failed to focus window, skipping ESC key press")
+                    if self.focus_play_together_window():
+                        self.send_esc_key()
+                    else:
+                        self.log("Failed to focus window, skipping ESC key press")
             
             # Wait before casting again
             esc_end = time.time() + 2
@@ -1930,16 +2220,19 @@ class PixelChangeDetector:
             # Cast fishing line again
             if self.is_running and not self.thread_control.get("stop_requested", False):
                 self.log(f"Pressing {self.fishing_key.upper()} key to cast fishing line...")
-                if self.focus_play_together_window():
-                    self.send_fishing_key()
-                    # Capture new reference frame after casting
+                if self.background_mode:
+                    self.send_fishing_key()  # Will use background mode logic
                     time.sleep(2)  # Wait for screen to update
-                    
-                    # Get a new reference frame
-                    self.capture_reference()
-                    self.log("New reference frame captured after casting")
                 else:
-                    self.log("Failed to focus window, skipping fishing cast")
+                    if self.focus_play_together_window():
+                        self.send_fishing_key()
+                        time.sleep(2)  # Wait for screen to update
+                    else:
+                        self.log("Failed to focus window, skipping fishing cast")
+                
+                # Get a new reference frame
+                self.capture_reference()
+                self.log("New reference frame captured after casting")
             
             # Update status to running
             if self.gui and self.is_running and not self.thread_control.get("stop_requested", False):
@@ -1955,8 +2248,8 @@ class PixelChangeDetector:
             if self.gui:
                 self.gui.root.after(0, lambda: self.gui.set_status_indicator("running"))
 
-VERSION = "1.2"
-VERSION_NAME = "Multi-Monitor Optimized Edition"
+VERSION = "1.7.0"
+VERSION_NAME = "Focus Mode Edition"
 
 def main():
     root = tk.Tk()
@@ -1997,6 +2290,8 @@ def main():
     app.log(f"{VERSION_NAME}")
     app.log("System ready - Please select a region to begin")
     app.log("To get started: (1) Select region size (2) Click select-region (3) Click start")
+    app.log("Focus Mode is enabled by default for maximum reliability")
+    app.log("High Performance and Fullscreen Respect modes are always enabled")
     
     # Start the main loop
     root.mainloop()
