@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""
+AutoFisher Qt - Automatic Fishing Bot for Play Together
+Main application entry point
+"""
+import sys
+from PyQt6.QtWidgets import QApplication
+from ui.main_window import AutoFisherMainWindow
+from utils.constants import VERSION, VERSION_NAME
+
+def main():
+    """Main application entry point"""
+    # Create the application
+    app = QApplication(sys.argv)
+    
+    # Create and show the main window
+    main_window = AutoFisherMainWindow()
+    main_window.show()
+    
+    # Log startup information
+    print(f"Starting AutoFisher Qt v{VERSION} - {VERSION_NAME}")
+    
+    # Run the application
+    sys.exit(app.exec())
+
+if __name__ == "__main__":
+    main() 
