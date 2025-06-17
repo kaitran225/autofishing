@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
     QScrollArea, QFrame, QSizePolicy, QToolButton, QGridLayout
 )
-from PyQt6.QtCore import Qt, QSize, pyqtSignal, QPropertyAnimation, QEasingCurve, QRect
+from PyQt6.QtCore import Qt, QSize, pyqtSignal, QPropertyAnimation, QEasingCurve, QRect, QTimer
 from PyQt6.QtGui import QIcon, QFont, QColor, QPalette
 import qtawesome as qta
 from utils.constants import (
@@ -435,7 +435,7 @@ class CollapsibleSidebar(QWidget):
         self.setObjectName("collapsibleSidebar")
         self.is_collapsed = True
         self.expanded_width = 280  # Increased from 240 to 280 for more comfortable width
-        self.collapsed_width = 40
+        self.collapsed_width = 0  # Changed from 40 to 0 to completely hide when collapsed
         self.animation_duration = 200
         
         # Set up layout 
@@ -444,48 +444,27 @@ class CollapsibleSidebar(QWidget):
         self.layout.setSpacing(6)
         self.layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
         
-        # Create toggle button with icons - Now floating
-        self.toggle_button = QPushButton()
-        self.toggle_button.setIcon(qta.icon('fa5s.chevron-left', color=UI_LIGHT_TEXT))
-        self.toggle_button.setObjectName("sidebarToggle")
-        self.toggle_button.setToolTip("Collapse sidebar")
-        self.toggle_button.clicked.connect(self.toggle_collapsed)
-        self.toggle_button.setFixedSize(18, 18)
-        self.toggle_button.setStyleSheet(f"""
-            #sidebarToggle {{
-                background-color: {UI_WOOD_DARK};
-                color: {UI_LIGHT_TEXT};
-                border: none;
-                border-radius: 3px;
-                padding: 0px;
-                position: absolute;
-            }}
-            #sidebarToggle:hover {{
-                background-color: {UI_WOOD_MEDIUM};
-            }}
-        """)
-        
         # Create sections container inside scroll area
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scroll_area.setStyleSheet(f"""
             QScrollArea {{
-                background-color: transparent;
                 border: none;
+                background-color: {UI_PANEL_BG};
+                padding: 0px;
             }}
             QScrollBar:vertical {{
-                background-color: {UI_PANEL_BG};
-                width: 8px;
-                margin: 0px;
+                width: 0px;
+                background: transparent;
             }}
             QScrollBar::handle:vertical {{
-                background-color: {UI_WOOD_MEDIUM};
-                min-height: 30px;
-                border-radius: 4px;
+                background: transparent;
             }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
                 height: 0px;
+                background: transparent;
             }}
         """)
         
@@ -497,7 +476,7 @@ class CollapsibleSidebar(QWidget):
         
         self.scroll_area.setWidget(self.sections_widget)
         
-        # Add scroll area to layout (toggle button is now floating)
+        # Add scroll area to layout
         self.layout.addWidget(self.scroll_area, 1)
         
         # Set style for the sidebar
@@ -515,9 +494,6 @@ class CollapsibleSidebar(QWidget):
         if self.is_collapsed:
             self.setMinimumWidth(self.collapsed_width)
             self.setMaximumWidth(self.collapsed_width)
-            self.toggle_button.setIcon(qta.icon('fa5s.chevron-right', color=UI_LIGHT_TEXT))
-            self.toggle_button.setToolTip("Expand sidebar")
-            self.toggle_button.setMaximumWidth(20)
             # Initialize in icon-only mode
             for section in self.sections:
                 if hasattr(section, 'content_widget'):
@@ -530,28 +506,21 @@ class CollapsibleSidebar(QWidget):
                     section.toggle_button.hide()
                 if hasattr(section, 'header_widget'):
                     section.header_widget.hide()
+                if hasattr(section, 'icon_label'):
+                    section.icon_label.hide()  # Hide icons too when fully collapsed
         else:
             self.setMinimumWidth(self.expanded_width)
             self.setMaximumWidth(self.expanded_width)
-            
-        # Position the toggle button to float at the top right corner
-        self.toggle_button.setParent(self)  # Ensure button is direct child of sidebar
-        self.toggle_button.show()  # Make sure it's visible
-        
-    def resizeEvent(self, event):
-        """Handle resize events - used to position the floating toggle button"""
-        super().resizeEvent(event)
-        # Position button at the top right
-        self.toggle_button.move(self.width() - self.toggle_button.width() - 3, 8)
     
     def add_section(self, section):
         """Add a collapsible section to the sidebar"""
         self.sections_layout.addWidget(section)
         self.sections.append(section)
         
-        # If sidebar is collapsed, set up for icon-only display
-        if self.is_collapsed and hasattr(section, 'icon_label'):
-            section.icon_label.show()
+        # If sidebar is collapsed, hide everything
+        if self.is_collapsed:
+            if hasattr(section, 'icon_label'):
+                section.icon_label.hide()  # Hide icon too
             if hasattr(section, 'header_widget'):
                 section.header_widget.hide()
             if hasattr(section, 'title_label'):
@@ -581,15 +550,9 @@ class CollapsibleSidebar(QWidget):
         self.animation.start()
         self.animation_max.start()
         
-        # Connect animation finished signal to update button position
-        self.animation.finished.connect(lambda: self.toggle_button.move(self.width() - self.toggle_button.width() - 3, 8))
-        
         # Update toggle button
         if self.is_collapsed:
-            self.toggle_button.setIcon(qta.icon('fa5s.chevron-right', color=UI_LIGHT_TEXT))
-            self.toggle_button.setToolTip("Expand sidebar")
-            self.toggle_button.setMaximumWidth(20)
-            # Hide all sections content and switch to icon mode
+            # Hide all sections content
             for section in self.sections:
                 if hasattr(section, 'content_widget'):
                     section.content_widget.hide()
@@ -600,14 +563,11 @@ class CollapsibleSidebar(QWidget):
                 if hasattr(section, 'toggle_button'):
                     section.toggle_button.hide()
                 if hasattr(section, 'icon_label'):
-                    section.icon_label.show()
-                # Hide the header in icon-only mode
+                    section.icon_label.hide()  # Hide icons too when fully collapsed
+                # Hide the header in collapsed mode
                 if hasattr(section, 'header_widget'):
                     section.header_widget.hide()
         else:
-            self.toggle_button.setIcon(qta.icon('fa5s.chevron-left', color=UI_LIGHT_TEXT))
-            self.toggle_button.setToolTip("Collapse sidebar")
-            self.toggle_button.setMaximumWidth(16777215)
             # Show all sections content (if expanded)
             for section in self.sections:
                 # Show the header widget first
@@ -622,7 +582,28 @@ class CollapsibleSidebar(QWidget):
                 if hasattr(section, 'content_widget') and section.is_expanded:
                     section.content_widget.show()
                 if hasattr(section, 'icon_label'):
-                    section.icon_label.hide()
+                    section.icon_label.show()
         
         # Emit signal
-        self.collapsed_changed.emit(self.is_collapsed) 
+        self.collapsed_changed.emit(self.is_collapsed)
+        
+    def toggle_section(self, section_title):
+        """Toggle a section in the sidebar by title"""
+        found_section = None
+        
+        # Find the section by title
+        for section in self.sections:
+            if hasattr(section, 'title') and section.title == section_title:
+                found_section = section
+                break
+                
+        # Toggle the section if found
+        if found_section:
+            # If sidebar is collapsed, expand it first
+            if self.is_collapsed:
+                self.toggle_collapsed()
+                # Schedule the section toggle after sidebar animation completes
+                QTimer.singleShot(self.animation_duration + 50, lambda: found_section.toggle_content())
+            else:
+                # Toggle immediately if sidebar is already expanded
+                found_section.toggle_content() 

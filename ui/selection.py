@@ -38,6 +38,7 @@ class RegionSelectionOverlay(QWidget):
         # For preview
         self.preview_image = QImage()
         self.preview_rect = QRectF(0, 0, 200, 150)  # Default size
+        self.preview_padding = 10  # Padding around the preview
         
         # Setup cursor tracking
         self.setMouseTracking(True)
@@ -244,6 +245,80 @@ class RegionSelectionOverlay(QWidget):
             border_pen.setStyle(Qt.PenStyle.DashLine)
             painter.setPen(border_pen)
             painter.drawRect(selection_rect)
+            
+            # Calculate the preview dimensions - use a larger portion of the screen
+            preview_size = min(self.width(), self.height()) // 2  # Use up to half of the smaller dimension
+            
+            # Calculate the preview container with padding
+            preview_container_width = preview_size
+            preview_container_height = preview_size
+            
+            # Position in top-right corner with padding
+            preview_container_x = self.width() - preview_container_width - self.preview_padding
+            preview_container_y = self.preview_padding
+            
+            # Draw preview container background and border
+            preview_container = QRect(
+                preview_container_x,
+                preview_container_y,
+                preview_container_width,
+                preview_container_height
+            )
+            
+            # Draw a semi-transparent background for the preview
+            bg_color = QColor(0, 0, 0, 180)
+            painter.fillRect(preview_container, bg_color)
+            
+            # Draw preview border
+            painter.setPen(QPen(QColor("#77DDFF"), 2))
+            painter.drawRect(preview_container)
+            
+            # Draw preview title
+            title_rect = QRect(
+                preview_container_x,
+                preview_container_y - 25,  # Position above the preview
+                preview_container_width,
+                20
+            )
+            
+            # Draw title background
+            title_bg = QColor(0, 0, 0, 180)
+            painter.fillRect(title_rect, title_bg)
+            
+            # Draw title text
+            painter.setPen(QColor("#FFFFFF"))
+            painter.drawText(title_rect, Qt.AlignmentFlag.AlignCenter, "PREVIEW")
+            
+            # If we have a valid preview image, draw it
+            if not self.preview_image.isNull():
+                # Calculate inner content area for the preview (accounting for borders)
+                inner_padding = 10
+                content_rect = QRect(
+                    preview_container_x + inner_padding,
+                    preview_container_y + inner_padding,
+                    preview_container_width - (inner_padding * 2),
+                    preview_container_height - (inner_padding * 2)
+                )
+                
+                # Scale the image to fit the content rect while maintaining aspect ratio
+                pixmap = QPixmap.fromImage(self.preview_image)
+                scaled_pixmap = pixmap.scaled(
+                    content_rect.width(),
+                    content_rect.height(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                
+                # Center the preview in the content area
+                x_offset = (content_rect.width() - scaled_pixmap.width()) // 2
+                y_offset = (content_rect.height() - scaled_pixmap.height()) // 2
+                
+                # Draw the preview image
+                painter.drawPixmap(
+                    content_rect.left() + x_offset,
+                    content_rect.top() + y_offset,
+                    scaled_pixmap
+                )
         else:
             # Draw cursor highlight with pulse effect
             cursor_pos = self.current_cursor_pos

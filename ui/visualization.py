@@ -115,6 +115,9 @@ class MatplotlibCanvas(FigureCanvas):
         # Create figure with correct aspect ratio (1.5:1 width to height)
         self.fig = Figure(figsize=(width, height), dpi=dpi, facecolor=bg_color)
         
+        # Maximize the plot area by removing margins
+        self.fig.subplots_adjust(left=0, right=1, top=1, bottom=0, wspace=0, hspace=0)
+        
         # Main image display
         self.current_ax = self.fig.add_subplot(111)
         self.current_ax.set_facecolor(bg_color)
@@ -122,11 +125,11 @@ class MatplotlibCanvas(FigureCanvas):
         
         # Initialize empty image with correct aspect ratio (1.5:1)
         empty_img = np.zeros((100, 150, 3), dtype=np.uint8)  # 150x100 = 1.5:1 ratio
-        self.current_image = self.current_ax.imshow(empty_img, aspect='equal', interpolation='none')
+        self.current_image = self.current_ax.imshow(empty_img, aspect='auto', interpolation='none')
         self.diff_overlay = self.current_ax.imshow(np.zeros((100, 150, 4), dtype=np.uint8), 
                                                   alpha=0.5, interpolation='none')
         
-        # Add rectangle border around image
+        # Add rectangle border around image - for the full frame
         rect = plt.Rectangle((0, 0), 1, 1, fill=False, ec='#666', linewidth=1.5, 
                             transform=self.current_ax.transAxes, clip_on=False)
         self.current_ax.add_patch(rect)
@@ -145,8 +148,7 @@ class MatplotlibCanvas(FigureCanvas):
     def resizeEvent(self, event):
         """Handle resize events to maintain proper aspect ratio"""
         super().resizeEvent(event)
-        # Update aspect ratio by adjusting the axes
-        self.current_ax.set_aspect('equal')
+        # Don't constrain to equal aspect ratio to allow filling available space
         self.current_ax.figure.canvas.draw_idle()
 
     def update_image(self, frame=None, diff_frame=None):
@@ -156,24 +158,7 @@ class MatplotlibCanvas(FigureCanvas):
             self.placeholder_text = None
             
         if frame is not None:
-            # If frame doesn't have the correct aspect ratio, resize it
-            h, w = frame.shape[:2]
-            target_ratio = 1.5
-            actual_ratio = w / h
-            
-            if abs(actual_ratio - target_ratio) > 0.01:  # If ratio is off by more than 1%
-                # Resize the image to match the target ratio
-                new_w = w
-                new_h = int(w / target_ratio)
-                if new_h > h:
-                    new_h = h
-                    new_w = int(h * target_ratio)
-                
-                # Center crop to the new size
-                y_start = (h - new_h) // 2
-                x_start = (w - new_w) // 2
-                frame = frame[y_start:y_start+new_h, x_start:x_start+new_w]
-                
+            # Keep the original frame dimensions to fill the space
             self.current_image.set_data(frame)
             
         if diff_frame is not None:
@@ -198,6 +183,6 @@ class MatplotlibCanvas(FigureCanvas):
             
             self.diff_overlay.set_data(colored_diff_alpha)
         
-        # Ensure display maintains correct aspect ratio
-        self.current_ax.set_aspect('equal')
+        # Use 'auto' aspect ratio to fill the available space
+        self.current_ax.set_aspect('auto')
         self.current_ax.figure.canvas.draw_idle() 
