@@ -8,7 +8,7 @@ import threading
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QPushButton, QGridLayout, QLineEdit, QCheckBox, QTextEdit, 
-    QFrame, QSplitter, QGroupBox, QSlider
+    QFrame, QSplitter, QGroupBox, QSlider, QSpinBox, QDoubleSpinBox
 )
 from PyQt6.QtCore import Qt, QTimer, QRect, QPoint
 from PyQt6.QtGui import QColor
@@ -16,11 +16,15 @@ from PyQt6.QtGui import QColor
 from core import PixelChangeDetector, FishingActionSequence
 from ui.visualization import MatplotlibCanvas
 from ui.selection import RegionSelectionOverlay
+from ui.components import CollapsibleSidebar, PopupSection, CollapsibleSection
 from utils.constants import (
     VERSION, VERSION_NAME, 
     DEFAULT_THRESHOLD, DEFAULT_DETECTION_COOLDOWN, DEFAULT_FISHING_KEY,
     DEFAULT_HIGH_PERFORMANCE, DEFAULT_RESPECT_FULLSCREEN, DEFAULT_DIRECT_CONTROL,
-    UI_DARK_BG, UI_LIGHT_TEXT, UI_ACCENT_COLOR, UI_WARNING_COLOR
+    UI_DARK_BG, UI_PANEL_BG, UI_LIGHT_TEXT, UI_SECONDARY_TEXT,
+    UI_ACCENT_COLOR, UI_ACCENT_DARK, UI_ACCENT_LIGHT,
+    UI_WOOD_DARK, UI_WOOD_MEDIUM, UI_WOOD_LIGHT,
+    UI_WARNING_COLOR, UI_ALERT_COLOR, UI_SUCCESS_COLOR
 )
 
 class AutoFisherMainWindow(QMainWindow):
@@ -29,7 +33,83 @@ class AutoFisherMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"AutoFisher Qt v{VERSION} - {VERSION_NAME}")
-        self.setMinimumSize(700, 500)
+        self.setMinimumSize(800, 600)
+        
+        # Set application-wide theme
+        self.setStyleSheet(f"""
+            QMainWindow, QWidget {{
+                background-color: {UI_DARK_BG};
+                color: {UI_LIGHT_TEXT};
+            }}
+            QGroupBox {{
+                border: 1px solid {UI_WOOD_DARK};
+                border-radius: 4px;
+                margin-top: 8px;
+                padding-top: 8px;
+                font-weight: bold;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top center;
+                padding: 0 5px;
+                color: {UI_ACCENT_COLOR};
+            }}
+            QPushButton {{
+                background-color: {UI_WOOD_DARK};
+                color: {UI_LIGHT_TEXT};
+                border: none;
+                border-radius: 4px;
+                padding: 6px;
+                margin: 2px;
+            }}
+            QPushButton:hover {{
+                background-color: {UI_WOOD_MEDIUM};
+            }}
+            QPushButton:pressed {{
+                background-color: {UI_ACCENT_DARK};
+            }}
+            QLineEdit, QSpinBox, QDoubleSpinBox {{
+                background-color: {UI_PANEL_BG};
+                color: {UI_LIGHT_TEXT};
+                border: 1px solid {UI_WOOD_DARK};
+                border-radius: 3px;
+                padding: 2px 4px;
+            }}
+            QCheckBox {{
+                color: {UI_LIGHT_TEXT};
+                spacing: 5px;
+            }}
+            QCheckBox::indicator {{
+                width: 16px;
+                height: 16px;
+            }}
+            QCheckBox::indicator:unchecked {{
+                border: 1px solid {UI_WOOD_MEDIUM};
+                background-color: {UI_PANEL_BG};
+            }}
+            QCheckBox::indicator:checked {{
+                border: 1px solid {UI_ACCENT_COLOR};
+                background-color: {UI_ACCENT_DARK};
+                image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iMTIiIHZpZXdCb3g9IjAgMCAxMiAxMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEwLjE5OTggMi42OTMzNEwzLjk5OTgxIDguODkzMzRMMSA1Ljg5MzM0IiBzdHJva2U9IiNFOEU4RTAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+Cjwvc3ZnPgo=);
+            }}
+            QSlider::groove:horizontal {{
+                height: 6px;
+                background-color: {UI_PANEL_BG};
+                border-radius: 3px;
+            }}
+            QSlider::handle:horizontal {{
+                background-color: {UI_ACCENT_COLOR};
+                border: none;
+                width: 14px;
+                height: 14px;
+                margin: -4px 0;
+                border-radius: 7px;
+            }}
+            QSlider::sub-page:horizontal {{
+                background-color: {UI_ACCENT_DARK};
+                border-radius: 3px;
+            }}
+        """)
         
         # Create message queue for logging
         self.log_queue = queue.Queue()
@@ -80,8 +160,10 @@ class AutoFisherMainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
-        # Main layout using splitter for adjustable sections
+        # Main layout using splitter for top and bottom sections
         main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         
         # Create splitter for top and bottom sections
         self.main_splitter = QSplitter(Qt.Orientation.Vertical)
@@ -90,192 +172,46 @@ class AutoFisherMainWindow(QMainWindow):
         # Top container
         top_container = QWidget()
         top_layout = QHBoxLayout(top_container)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(0)
         
-        # Left panel for settings and controls
+        # Left panel for visualization
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
-        left_panel.setMaximumWidth(350)  # Limit width of left panel
+        left_layout.setContentsMargins(10, 10, 5, 5)
         
-        # Right panel for status and visualization
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
+        # Right panel for collapsible sidebar
+        self.sidebar = CollapsibleSidebar()
         
         # Add panels to top container
-        top_layout.addWidget(left_panel, 1)
-        top_layout.addWidget(right_panel, 2)  # Give more space to right panel
+        top_layout.addWidget(left_panel, 1)  # Main content stretches
+        top_layout.addWidget(self.sidebar, 0)  # Sidebar doesn't stretch
         
         # Bottom container for logs
         bottom_container = QWidget()
         bottom_layout = QVBoxLayout(bottom_container)
+        bottom_layout.setContentsMargins(10, 5, 10, 5)
         
         # Add containers to splitter
         self.main_splitter.addWidget(top_container)
         self.main_splitter.addWidget(bottom_container)
-        self.main_splitter.setSizes([350, 150])  # Initial size distribution
+        self.main_splitter.setSizes([4, 1])  # 80% top, 20% bottom
         
-        # Create settings group in left panel
-        settings_group = QGroupBox("Settings")
-        settings_layout = QGridLayout(settings_group)
+        # Add visualization panel to left panel
+        visualization_section = QFrame()
+        visualization_layout = QVBoxLayout(visualization_section)
+        visualization_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Threshold
-        settings_layout.addWidget(QLabel("Threshold:"), 0, 0)
-        threshold_layout = QHBoxLayout()
-        self.threshold_slider = QSlider(Qt.Orientation.Horizontal)
-        self.threshold_slider.setMinimum(1)
-        self.threshold_slider.setMaximum(50)
-        self.threshold_slider.setValue(int(DEFAULT_THRESHOLD * 100))  # Default value
-        self.threshold_slider.valueChanged.connect(self.update_threshold_label)
-        threshold_layout.addWidget(self.threshold_slider)
-        
-        self.threshold_label = QLabel(f"{DEFAULT_THRESHOLD:.2f}")
-        threshold_layout.addWidget(self.threshold_label)
-        settings_layout.addLayout(threshold_layout, 0, 1)
-        
-        # Region Size
-        settings_layout.addWidget(QLabel("Region Size:"), 1, 0)
-        region_size_layout = QHBoxLayout()
-        self.size_entry = QLineEdit("50")
-        self.size_entry.setMaximumWidth(60)
-        region_size_layout.addWidget(self.size_entry)
-        region_size_layout.addWidget(QLabel("px"))
-        region_size_layout.addStretch()
-        settings_layout.addLayout(region_size_layout, 1, 1)
-        
-        # Cooldown
-        settings_layout.addWidget(QLabel("Cooldown:"), 2, 0)
-        cooldown_layout = QHBoxLayout()
-        self.cooldown_entry = QLineEdit(str(DEFAULT_DETECTION_COOLDOWN))
-        self.cooldown_entry.setMaximumWidth(60)
-        cooldown_layout.addWidget(self.cooldown_entry)
-        cooldown_layout.addWidget(QLabel("sec"))
-        cooldown_layout.addStretch()
-        settings_layout.addLayout(cooldown_layout, 2, 1)
-        
-        # Fishing Key
-        settings_layout.addWidget(QLabel("Fishing Key:"), 3, 0)
-        fishing_key_layout = QHBoxLayout()
-        self.fishing_key_entry = QLineEdit(DEFAULT_FISHING_KEY)
-        self.fishing_key_entry.setMaximumWidth(40)
-        fishing_key_layout.addWidget(self.fishing_key_entry)
-        
-        self.apply_button = QPushButton("Apply Settings")
-        self.apply_button.clicked.connect(self.apply_settings)
-        fishing_key_layout.addWidget(self.apply_button)
-        settings_layout.addLayout(fishing_key_layout, 3, 1)
-        
-        # Advanced Options
-        options_frame = QFrame()
-        options_layout = QVBoxLayout(options_frame)
-        options_layout.setContentsMargins(0, 10, 0, 0)
-        
-        # High Performance Mode
-        self.high_performance_checkbox = QCheckBox("High Performance Mode (uses more CPU)")
-        self.high_performance_checkbox.setChecked(DEFAULT_HIGH_PERFORMANCE)
-        self.high_performance_checkbox.stateChanged.connect(self.update_high_performance)
-        options_layout.addWidget(self.high_performance_checkbox)
-        
-        # Add description
-        hp_desc = QLabel("Increases reliability using more system resources")
-        hp_desc.setStyleSheet("color: gray; font-size: 10px;")
-        options_layout.addWidget(hp_desc)
-        
-        # Respect Fullscreen Apps
-        self.respect_fullscreen_checkbox = QCheckBox("Respect Fullscreen Apps (prevents interruptions)")
-        self.respect_fullscreen_checkbox.setChecked(DEFAULT_RESPECT_FULLSCREEN)
-        self.respect_fullscreen_checkbox.stateChanged.connect(self.update_respect_fullscreen)
-        options_layout.addWidget(self.respect_fullscreen_checkbox)
-        
-        # Add description
-        fs_desc = QLabel("Prevents interruption when other fullscreen applications are active")
-        fs_desc.setStyleSheet("color: gray; font-size: 10px;")
-        options_layout.addWidget(fs_desc)
-        
-        # Direct Control Mode
-        self.direct_control_checkbox = QCheckBox("Direct Control Mode (recommended)")
-        self.direct_control_checkbox.setChecked(DEFAULT_DIRECT_CONTROL)
-        self.direct_control_checkbox.stateChanged.connect(self.update_direct_control)
-        options_layout.addWidget(self.direct_control_checkbox)
-        
-        # Add description
-        dc_desc = QLabel("Uses direct input methods for maximum reliability")
-        dc_desc.setStyleSheet("color: gray; font-size: 10px;")
-        options_layout.addWidget(dc_desc)
-        
-        settings_layout.addWidget(options_frame, 4, 0, 1, 2)
-        
-        left_layout.addWidget(settings_group)
-        
-        # Control buttons
-        control_group = QGroupBox("Control")
-        control_layout = QGridLayout(control_group)
-        
-        # Region selection button
-        self.region_button = QPushButton("Select Region")
-        self.region_button.clicked.connect(self.select_region)
-        control_layout.addWidget(self.region_button, 0, 0)
-        
-        # Start button
-        self.start_button = QPushButton("Start")
-        self.start_button.clicked.connect(self.start_detection)
-        control_layout.addWidget(self.start_button, 1, 0)
-        
-        self.stop_button = QPushButton("Stop")
-        self.stop_button.clicked.connect(self.stop_detection)
-        control_layout.addWidget(self.stop_button, 1, 1)
-        
-        self.pause_button = QPushButton("Pause")
-        self.pause_button.clicked.connect(self.toggle_pause)
-        control_layout.addWidget(self.pause_button, 2, 0)
-        
-        self.capture_ref_button = QPushButton("Capture Reference")
-        self.capture_ref_button.clicked.connect(self.capture_reference)
-        control_layout.addWidget(self.capture_ref_button, 2, 1)
-        
-        left_layout.addWidget(control_group)
-        
-        # Stats
-        stats_group = QGroupBox("Statistics")
-        stats_layout = QGridLayout(stats_group)
-        
-        stats_layout.addWidget(QLabel("Detections:"), 0, 0)
-        self.detections_label = QLabel("0")
-        stats_layout.addWidget(self.detections_label, 0, 1)
-        
-        stats_layout.addWidget(QLabel("Runtime:"), 1, 0)
-        self.runtime_label = QLabel("00:00:00")
-        stats_layout.addWidget(self.runtime_label, 1, 1)
-        
-        stats_layout.addWidget(QLabel("Detection Rate:"), 2, 0)
-        self.rate_label = QLabel("0.0/min")
-        stats_layout.addWidget(self.rate_label, 2, 1)
-        
-        stats_layout.addWidget(QLabel("Status:"), 3, 0)
-        self.status_label = QLabel("Idle")
-        stats_layout.addWidget(self.status_label, 3, 1)
-        
-        left_layout.addWidget(stats_group)
-        
-        # Region info
-        region_group = QGroupBox("Region Information")
-        region_layout = QVBoxLayout(region_group)
-        
-        self.region_info_label = QLabel("No region selected")
-        region_layout.addWidget(self.region_info_label)
-        
-        left_layout.addWidget(region_group)
-        
-        # Add spacer to left panel
-        left_layout.addStretch()
-        
-        # Add visualization panel to right panel
-        viz_group = QGroupBox("Monitoring")
-        viz_layout = QVBoxLayout(viz_group)
+        # Add title for visualization area
+        viz_header = QLabel("Bobber Monitoring")
+        viz_header.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {UI_ACCENT_COLOR};")
+        visualization_layout.addWidget(viz_header)
         
         # Create a frame to contain the canvas with fixed aspect ratio
         viz_frame = QFrame()
         viz_frame.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Sunken)
         viz_frame.setLineWidth(1)
-        viz_frame.setStyleSheet(f"background-color: {UI_DARK_BG}; border: 1px solid #444;")
+        viz_frame.setStyleSheet(f"background-color: {UI_DARK_BG}; border: 1px solid {UI_WOOD_DARK}; border-radius: 4px;")
         
         # Use a layout that maintains the aspect ratio
         viz_frame_layout = QVBoxLayout(viz_frame)
@@ -288,7 +224,7 @@ class AutoFisherMainWindow(QMainWindow):
         viz_frame_layout.addWidget(self.viz_canvas)
         
         # Add the frame to the main viz layout
-        viz_layout.addWidget(viz_frame)
+        visualization_layout.addWidget(viz_frame)
         
         # Add monitoring status indicators
         status_panel = QFrame()
@@ -297,7 +233,7 @@ class AutoFisherMainWindow(QMainWindow):
         
         # Add threshold indicator
         threshold_label = QLabel("Threshold:")
-        threshold_label.setStyleSheet("color: #AAA; font-size: 9pt;")
+        threshold_label.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt;")
         status_layout.addWidget(threshold_label)
         
         self.monitor_threshold = QLabel("0.05")
@@ -308,7 +244,7 @@ class AutoFisherMainWindow(QMainWindow):
         
         # Add FPS indicator
         fps_label = QLabel("FPS:")
-        fps_label.setStyleSheet("color: #AAA; font-size: 9pt;")
+        fps_label.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt;")
         status_layout.addWidget(fps_label)
         
         self.monitor_fps = QLabel("0")
@@ -316,9 +252,278 @@ class AutoFisherMainWindow(QMainWindow):
         status_layout.addWidget(self.monitor_fps)
         
         # Add the status panel to the viz layout
-        viz_layout.addWidget(status_panel)
+        visualization_layout.addWidget(status_panel)
         
-        right_layout.addWidget(viz_group)
+        # Status bar with current state
+        status_bar = QFrame()
+        status_bar.setStyleSheet(f"background-color: {UI_WOOD_DARK}; border-radius: 4px;")
+        status_bar_layout = QHBoxLayout(status_bar)
+        status_bar_layout.setContentsMargins(8, 3, 8, 3)
+        
+        status_label = QLabel("Status:")
+        status_label.setStyleSheet("color: #CCC; font-weight: bold;")
+        status_bar_layout.addWidget(status_label)
+        
+        self.status_label = QLabel("Idle")
+        self.status_label.setStyleSheet("color: white; font-weight: bold;")
+        status_bar_layout.addWidget(self.status_label)
+        
+        status_bar_layout.addStretch()
+        
+        # Add quick control buttons to status bar
+        self.region_button = QPushButton("Select Region")
+        self.region_button.clicked.connect(self.select_region)
+        self.region_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {UI_ACCENT_DARK};
+                font-weight: bold;
+                padding: 4px 12px;
+            }}
+            QPushButton:hover {{
+                background-color: {UI_ACCENT_COLOR};
+            }}
+        """)
+        status_bar_layout.addWidget(self.region_button)
+        
+        self.start_button = QPushButton("Start")
+        self.start_button.clicked.connect(self.start_detection)
+        self.start_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {UI_ACCENT_DARK};
+                font-weight: bold;
+                padding: 4px 12px;
+            }}
+            QPushButton:hover {{
+                background-color: {UI_ACCENT_COLOR};
+            }}
+        """)
+        status_bar_layout.addWidget(self.start_button)
+        
+        self.pause_button = QPushButton("Pause")
+        self.pause_button.clicked.connect(self.toggle_pause)
+        status_bar_layout.addWidget(self.pause_button)
+        
+        self.stop_button = QPushButton("Stop")
+        self.stop_button.clicked.connect(self.stop_detection)
+        self.stop_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {UI_WARNING_COLOR};
+                font-weight: bold;
+                padding: 4px 12px;
+            }}
+            QPushButton:hover {{
+                background-color: #C06A5A;
+            }}
+        """)
+        status_bar_layout.addWidget(self.stop_button)
+        
+        visualization_layout.addWidget(status_bar)
+        
+        # Add to main left panel
+        left_layout.addWidget(visualization_section)
+        
+        # Create collapsible sections for the sidebar
+        # 1. Settings section
+        settings_section = PopupSection("Settings")
+        settings_content = QWidget()
+        settings_layout = QVBoxLayout(settings_content)
+        settings_layout.setContentsMargins(5, 5, 5, 5)
+        settings_layout.setSpacing(8)
+        
+        # Threshold
+        threshold_widget = QWidget()
+        threshold_layout = QGridLayout(threshold_widget)
+        threshold_layout.setContentsMargins(0, 0, 0, 0)
+        threshold_layout.setSpacing(5)
+        
+        threshold_layout.addWidget(QLabel("Detection Threshold:"), 0, 0)
+        threshold_slider_widget = QWidget()
+        threshold_slider_layout = QHBoxLayout(threshold_slider_widget)
+        threshold_slider_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.threshold_slider = QSlider(Qt.Orientation.Horizontal)
+        self.threshold_slider.setMinimum(1)
+        self.threshold_slider.setMaximum(50)
+        self.threshold_slider.setValue(int(DEFAULT_THRESHOLD * 100))
+        self.threshold_slider.valueChanged.connect(self.update_threshold_label)
+        threshold_slider_layout.addWidget(self.threshold_slider)
+        
+        self.threshold_label = QLabel(f"{DEFAULT_THRESHOLD:.2f}")
+        threshold_slider_layout.addWidget(self.threshold_label)
+        
+        threshold_layout.addWidget(threshold_slider_widget, 0, 1)
+        
+        # Add description
+        threshold_desc = QLabel("Lower values = more sensitive detection")
+        threshold_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt; font-style: italic;")
+        threshold_layout.addWidget(threshold_desc, 1, 0, 1, 2)
+        
+        settings_layout.addWidget(threshold_widget)
+        
+        # Cooldown
+        cooldown_widget = QWidget()
+        cooldown_layout = QGridLayout(cooldown_widget)
+        cooldown_layout.setContentsMargins(0, 0, 0, 0)
+        
+        cooldown_layout.addWidget(QLabel("Cooldown:"), 0, 0)
+        self.cooldown_entry = QDoubleSpinBox()
+        self.cooldown_entry.setRange(0.5, 30.0)
+        self.cooldown_entry.setSingleStep(0.5)
+        self.cooldown_entry.setValue(DEFAULT_DETECTION_COOLDOWN)
+        self.cooldown_entry.setSuffix(" seconds")
+        cooldown_layout.addWidget(self.cooldown_entry, 0, 1)
+        
+        # Add description
+        cooldown_desc = QLabel("Time between fishing attempts")
+        cooldown_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt; font-style: italic;")
+        cooldown_layout.addWidget(cooldown_desc, 1, 0, 1, 2)
+        
+        settings_layout.addWidget(cooldown_widget)
+        
+        # Fishing Key
+        key_widget = QWidget()
+        key_layout = QGridLayout(key_widget)
+        key_layout.setContentsMargins(0, 0, 0, 0)
+        
+        key_layout.addWidget(QLabel("Fishing Key:"), 0, 0)
+        self.fishing_key_entry = QLineEdit(DEFAULT_FISHING_KEY)
+        self.fishing_key_entry.setMaximumWidth(40)
+        key_layout.addWidget(self.fishing_key_entry, 0, 1)
+        
+        # Add description
+        key_desc = QLabel("Key used for fishing in game (usually F)")
+        key_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt; font-style: italic;")
+        key_layout.addWidget(key_desc, 1, 0, 1, 2)
+        
+        settings_layout.addWidget(key_widget)
+        
+        # Region Size
+        region_widget = QWidget()
+        region_layout = QGridLayout(region_widget)
+        region_layout.setContentsMargins(0, 0, 0, 0)
+        
+        region_layout.addWidget(QLabel("Selection Size:"), 0, 0)
+        self.size_entry = QSpinBox()
+        self.size_entry.setRange(10, 500)
+        self.size_entry.setValue(50)
+        self.size_entry.setSuffix(" px")
+        region_layout.addWidget(self.size_entry, 0, 1)
+        
+        # Add description
+        region_desc = QLabel("Default size when making a new selection")
+        region_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt; font-style: italic;")
+        region_layout.addWidget(region_desc, 1, 0, 1, 2)
+        
+        settings_layout.addWidget(region_widget)
+        
+        # Apply button
+        self.apply_button = QPushButton("Apply Settings")
+        self.apply_button.clicked.connect(self.apply_settings)
+        self.apply_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {UI_ACCENT_DARK};
+                font-weight: bold;
+                padding: 6px;
+            }}
+            QPushButton:hover {{
+                background-color: {UI_ACCENT_COLOR};
+            }}
+        """)
+        settings_layout.addWidget(self.apply_button)
+        
+        # Add content to section
+        settings_section.add_widget(settings_content)
+        
+        # 2. Advanced options section
+        advanced_section = PopupSection("Advanced Options")
+        advanced_content = QWidget()
+        advanced_layout = QVBoxLayout(advanced_content)
+        advanced_layout.setContentsMargins(5, 5, 5, 5)
+        
+        # High Performance Mode
+        self.high_performance_checkbox = QCheckBox("High Performance Mode")
+        self.high_performance_checkbox.setChecked(DEFAULT_HIGH_PERFORMANCE)
+        self.high_performance_checkbox.stateChanged.connect(self.update_high_performance)
+        advanced_layout.addWidget(self.high_performance_checkbox)
+        
+        # Add description
+        hp_desc = QLabel("Increases reliability using more system resources")
+        hp_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt; margin-left: 20px; margin-bottom: 10px;")
+        advanced_layout.addWidget(hp_desc)
+        
+        # Respect Fullscreen Apps
+        self.respect_fullscreen_checkbox = QCheckBox("Respect Fullscreen Apps")
+        self.respect_fullscreen_checkbox.setChecked(DEFAULT_RESPECT_FULLSCREEN)
+        self.respect_fullscreen_checkbox.stateChanged.connect(self.update_respect_fullscreen)
+        advanced_layout.addWidget(self.respect_fullscreen_checkbox)
+        
+        # Add description
+        fs_desc = QLabel("Prevents interruption when other fullscreen applications are active")
+        fs_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt; margin-left: 20px; margin-bottom: 10px;")
+        advanced_layout.addWidget(fs_desc)
+        
+        # Direct Control Mode
+        self.direct_control_checkbox = QCheckBox("Direct Control Mode")
+        self.direct_control_checkbox.setChecked(DEFAULT_DIRECT_CONTROL)
+        self.direct_control_checkbox.stateChanged.connect(self.update_direct_control)
+        advanced_layout.addWidget(self.direct_control_checkbox)
+        
+        # Add description
+        dc_desc = QLabel("Uses direct input methods for maximum reliability")
+        dc_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt; margin-left: 20px; margin-bottom: 10px;")
+        advanced_layout.addWidget(dc_desc)
+        
+        # Add content to section
+        advanced_section.add_widget(advanced_content)
+        
+        # 3. Region info section
+        region_section = CollapsibleSection("Region Info")
+        region_content = QWidget()
+        region_layout = QVBoxLayout(region_content)
+        
+        self.region_info_label = QLabel("No region selected")
+        self.region_info_label.setWordWrap(True)
+        self.region_info_label.setStyleSheet(f"color: {UI_LIGHT_TEXT}; padding: 5px;")
+        region_layout.addWidget(self.region_info_label)
+        
+        self.capture_ref_button = QPushButton("Capture Reference Frame")
+        self.capture_ref_button.clicked.connect(self.capture_reference)
+        region_layout.addWidget(self.capture_ref_button)
+        
+        # Add content to section
+        region_section.add_widget(region_content)
+        
+        # 4. Statistics section
+        stats_section = PopupSection("Statistics")
+        stats_content = QWidget()
+        stats_layout = QGridLayout(stats_content)
+        stats_layout.setContentsMargins(5, 5, 5, 5)
+        
+        # Stats rows
+        stats_layout.addWidget(QLabel("Total Detections:"), 0, 0)
+        self.detections_label = QLabel("0")
+        stats_layout.addWidget(self.detections_label, 0, 1)
+        
+        stats_layout.addWidget(QLabel("Runtime:"), 1, 0)
+        self.runtime_label = QLabel("00:00:00")
+        stats_layout.addWidget(self.runtime_label, 1, 1)
+        
+        stats_layout.addWidget(QLabel("Detection Rate:"), 2, 0)
+        self.rate_label = QLabel("0.0/min")
+        stats_layout.addWidget(self.rate_label, 2, 1)
+        
+        stats_layout.addWidget(QLabel("Average Interval:"), 3, 0)
+        self.interval_label = QLabel("0.0s")
+        stats_layout.addWidget(self.interval_label, 3, 1)
+        
+        # Add content to section
+        stats_section.add_widget(stats_content)
+        
+        # Add all sections to sidebar
+        self.sidebar.add_section(settings_section)
+        self.sidebar.add_section(advanced_section)
+        self.sidebar.add_section(region_section)
+        self.sidebar.add_section(stats_section)
         
         # Log console in bottom container
         log_group = QGroupBox("Logs")
@@ -333,7 +538,7 @@ class AutoFisherMainWindow(QMainWindow):
                 color: {UI_LIGHT_TEXT};
                 font-family: Consolas, 'Courier New', monospace;
                 font-size: 10pt;
-                border: 1px solid #333333;
+                border: 1px solid {UI_WOOD_DARK};
                 border-radius: 3px;
                 padding: 5px;
             }}
