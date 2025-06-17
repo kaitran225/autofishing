@@ -54,55 +54,45 @@ class CollapsibleSection(QWidget):
         self.icon_label = QPushButton()
         icon = qta.icon(self.get_icon_name(), color=UI_LIGHT_TEXT)
         self.icon_label.setIcon(icon)
-        self.icon_label.setIconSize(QSize(18, 18))
-        self.icon_label.setFixedSize(26, 26)
+        self.icon_label.setIconSize(QSize(20, 20))
+        self.icon_label.setFixedSize(28, 28)
         self.icon_label.setStyleSheet(f"""
             QPushButton {{
                 background-color: {UI_WOOD_DARK};
-                color: {UI_LIGHT_TEXT};
-                border: 1px solid {UI_WOOD_MEDIUM};
+                border: none;
                 border-radius: 4px;
-                padding: 2px;
-                margin: 2px 4px;
+                padding: 4px;
             }}
             QPushButton:hover {{
                 background-color: {UI_WOOD_MEDIUM};
             }}
         """)
-        self.icon_label.setToolTip(title)
-        self.icon_label.setCursor(Qt.CursorShape.PointingHandCursor)
         self.icon_label.clicked.connect(self.toggle_content)
-        self.icon_label.hide()
+        self.header_layout.addWidget(self.icon_label)
         
         # Title
         self.title_label = QLabel(title)
-        self.title_label.setStyleSheet(f"""
-            color: {UI_LIGHT_TEXT};
-            font-weight: bold;
-            font-size: 11pt;
-        """)
+        self.title_label.setStyleSheet(f"color: {UI_LIGHT_TEXT}; font-size: 13px; font-weight: bold;")
+        self.header_layout.addWidget(self.title_label)
         
-        # Toggle button with Font Awesome icon
-        self.toggle_button = QToolButton()
-        self.toggle_button.setIcon(qta.icon('fa5s.chevron-right', color=UI_LIGHT_TEXT))
-        self.toggle_button.setFixedSize(16, 16)
+        # Add spacer
+        self.header_layout.addStretch()
+        
+        # Add toggle button
+        self.toggle_button = QPushButton()
+        self.toggle_button.setIcon(qta.icon('fa5s.chevron-down', color=UI_LIGHT_TEXT))
+        self.toggle_button.setFixedSize(20, 20)
         self.toggle_button.setStyleSheet(f"""
-            QToolButton {{
+            QPushButton {{
                 background-color: transparent;
                 border: none;
-                color: {UI_LIGHT_TEXT};
             }}
-            QToolButton:hover {{
-                background-color: {UI_WOOD_LIGHT}33;  /* 20% opacity */
+            QPushButton:hover {{
+                background-color: {UI_WOOD_MEDIUM};
+                border-radius: 3px;
             }}
         """)
-        self.toggle_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.toggle_button.clicked.connect(self.toggle_content)
-        
-        # Add buttons to header layout
-        self.header_layout.addWidget(self.icon_label)
-        self.header_layout.addWidget(self.title_label)
-        self.header_layout.addStretch()
         self.header_layout.addWidget(self.toggle_button)
         
         # Content widget (container for actual content)
@@ -126,127 +116,141 @@ class CollapsibleSection(QWidget):
     def header_clicked(self, event):
         """Handle header click to toggle section"""
         self.toggle_content()
+    
+    def get_icon_name(self):
+        """Get icon name based on section title"""
+        # Default mapping for common sections
+        icon_map = {
+            "Settings": "fa5s.sliders-h",
+            "Statistics": "fa5s.chart-bar",
+            "Controls": "fa5s.gamepad",
+            "Activity Graph": "fa5s.chart-line",
+            "Logs": "fa5s.clipboard-list",
+            "Setup": "fa5s.tools",
+            "Configuration": "fa5s.cog"
+        }
         
+        # Try to match title to an icon, fallback to generic icon
+        return icon_map.get(self.title, "fa5s.window-maximize")
+    
     def toggle_content(self):
-        """Toggle expanded/collapsed state"""
-        self.is_expanded = not self.is_expanded
-        
-        # Update toggle button arrow
+        """Toggle section expansion with animation"""
         if self.is_expanded:
-            self.toggle_button.setIcon(qta.icon('fa5s.chevron-down', color=UI_LIGHT_TEXT))
-            self.header_widget.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {UI_ACCENT_DARK};
-                    border-radius: 3px 3px 0 0;
-                }}
-            """)
-            self.content_widget.setVisible(True)
+            self.collapse()
         else:
-            self.toggle_button.setIcon(qta.icon('fa5s.chevron-right', color=UI_LIGHT_TEXT))
-            self.header_widget.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {UI_WOOD_DARK};
-                    border-radius: 3px;
-                }}
-            """)
-        
-        # Calculate content height
-        content_height = self.content_layout.sizeHint().height() if self.is_expanded else 0
+            self.expand()
+    
+    def expand(self):
+        """Expand the section with animation"""
+        if self.is_expanded:
+            return
+            
+        # Get proper height
+        self.content_widget.setMaximumHeight(1000)  # Temporarily allow full height
+        proper_height = self.content_widget.sizeHint().height()
+        self.content_widget.setMaximumHeight(0)  # Reset to 0 for animation
         
         # Create animation
         self.animation = QPropertyAnimation(self.content_widget, b"maximumHeight")
         self.animation.setDuration(self.animation_duration)
-        self.animation.setStartValue(0 if self.is_expanded else self.content_layout.sizeHint().height())
-        self.animation.setEndValue(content_height)
-        self.animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        self.animation.setStartValue(0)
+        self.animation.setEndValue(proper_height)
+        self.animation.setEasingCurve(QEasingCurve.Type.OutQuad)
         
-        # Hide content widget after animation if we're collapsing
-        if not self.is_expanded:
-            self.animation.finished.connect(lambda: self.content_widget.setVisible(False))
-            
+        # Show the widget and start animation
+        self.content_widget.setVisible(True)
         self.animation.start()
         
-        # Emit signal
-        self.toggled.emit(self.is_expanded)
-    
-    def add_widget(self, widget):
-        """Add a widget to the content layout"""
-        self.content_layout.addWidget(widget)
-        
-    def expand(self):
-        """Force expand the section"""
-        if not self.is_expanded:
-            self.toggle_content()
+        # Update button state
+        self.toggle_button.setIcon(qta.icon('fa5s.chevron-up', color=UI_LIGHT_TEXT))
+        self.is_expanded = True
+        self.toggled.emit(True)
     
     def collapse(self):
-        """Force collapse the section"""
-        if self.is_expanded:
-            self.toggle_content()
-    
-    def get_icon_name(self):
-        """Generate a Font Awesome icon name based on the section title"""
-        if not self.title:
-            return "fa5s.cube"
+        """Collapse the section with animation"""
+        if not self.is_expanded:
+            return
             
-        # Use Font Awesome icons based on common titles
-        icon_map = {
-            "Settings": "fa5s.cog",
-            "Configuration": "fa5s.cog",
-            "Config": "fa5s.cog",
-            "Options": "fa5s.sliders-h",
-            "Detection": "fa5s.eye",
-            "Monitor": "fa5s.chart-line",
-            "Statistics": "fa5s.chart-bar",
-            "Stats": "fa5s.chart-pie",
-            "Fishing": "fa5s.fish",
-            "Actions": "fa5s.play",
-            "Tools": "fa5s.tools",
-            "Help": "fa5s.question-circle",
-            "Info": "fa5s.info-circle",
-            "Log": "fa5s.list",
-            "Logs": "fa5s.scroll",
-            "Game": "fa5s.gamepad",
-            "Region": "fa5s.vector-square",
-            "Stream": "fa5s.video",
-            "Camera": "fa5s.camera",
-            "Control": "fa5s.keyboard"
-        }
+        # Create animation
+        self.animation = QPropertyAnimation(self.content_widget, b"maximumHeight")
+        self.animation.setDuration(self.animation_duration)
+        self.animation.setStartValue(self.content_widget.height())
+        self.animation.setEndValue(0)
+        self.animation.setEasingCurve(QEasingCurve.Type.OutQuad)
         
-        # Check if title contains any of the keywords
-        for keyword, icon in icon_map.items():
-            if keyword.lower() in self.title.lower():
-                return icon
-                
-        # Extract the first letter for default case
-        first_char = self.title[0].upper()
+        # Connect animation finished to hide the widget
+        self.animation.finished.connect(lambda: self.content_widget.setVisible(False))
+        self.animation.start()
         
-        # If we don't have a specific icon, use a generic one
-        return "fa5s.square"
+        # Update button state
+        self.toggle_button.setIcon(qta.icon('fa5s.chevron-down', color=UI_LIGHT_TEXT))
+        self.is_expanded = False
+        self.toggled.emit(False)
+
+class ActivityGraphSection(CollapsibleSection):
+    """A collapsible section specifically for the activity graph"""
+    
+    def __init__(self, parent=None):
+        super().__init__("Activity Graph", parent)
+        
+        # Set up the graph canvas with better dimensions for the sidebar
+        from .visualization import ActivityGraphCanvas
+        
+        # Create a frame with consistent styling
+        frame = QFrame()
+        frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {UI_DARK_BG}; 
+                border-radius: 4px;
+                border: 1px solid {UI_WOOD_DARK};
+            }}
+        """)
+        frame_layout = QVBoxLayout(frame)
+        frame_layout.setContentsMargins(1, 1, 1, 1)  # Minimal margins for maximum graph space
+        
+        # Create graph with adjusted dimensions to use full width
+        self.graph_canvas = ActivityGraphCanvas(self, width=6, height=1.0, dpi=90, bg_color=UI_DARK_BG)
+        self.graph_canvas.setMinimumHeight(80)  # Set a minimum height for better visibility
+        frame_layout.addWidget(self.graph_canvas)
+        
+        # Add canvas to the content layout with proper stretching
+        self.content_layout.addWidget(frame)
+        
+        # Expand this section by default
+        self.expand()
+        
+    def get_icon_name(self):
+        """Override to provide specific icon for activity graph"""
+        return "fa5s.chart-line"
+    
+    def update_graph(self, history=None, threshold=0.05):
+        """Update the activity graph with new data"""
+        if history:
+            self.graph_canvas.update(history, threshold)
 
 class PopupSection(CollapsibleSection):
-    """A section that can slide out from the sidebar"""
+    """A section that can pop out into a floating panel"""
     
-    # Signal for when popup state changes
-    popup_state_changed = pyqtSignal(bool)
+    # Add signal for popup state changes
+    popup_toggled = pyqtSignal(bool)
     
     def __init__(self, title, parent=None):
         super().__init__(title, parent)
         
-        # Add popup button to header
-        self.popup_button = QToolButton()
+        # Add popup button next to toggle
+        self.popup_button = QPushButton()
         self.popup_button.setIcon(qta.icon('fa5s.external-link-alt', color=UI_LIGHT_TEXT))
-        self.popup_button.setToolTip("Expand section")
-        self.popup_button.setFixedSize(16, 16)
+        self.popup_button.setFixedSize(20, 20)
         self.popup_button.setStyleSheet(f"""
-            QToolButton {{
+            QPushButton {{
                 background-color: transparent;
                 border: none;
             }}
-            QToolButton:hover {{
-                background-color: {UI_WOOD_LIGHT}33;  /* 20% opacity */
+            QPushButton:hover {{
+                background-color: {UI_WOOD_MEDIUM};
+                border-radius: 3px;
             }}
         """)
-        self.popup_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.popup_button.clicked.connect(self.toggle_popup)
         
         # Insert popup button before toggle button
@@ -255,23 +259,61 @@ class PopupSection(CollapsibleSection):
         # Flag to track popped out state
         self.is_popped_out = False
         
-        # Create slide-out container
-        self.slide_container = QWidget(self)
-        self.slide_container.setVisible(False)
-        self.slide_container.setObjectName("slideContainer")
+        # Create slide container
+        self.slide_container = QWidget(self.parent())
+        self.slide_container.setObjectName("popupPanel")
         self.slide_container.setStyleSheet(f"""
-            #slideContainer {{
+            #popupPanel {{
                 background-color: {UI_PANEL_BG};
                 border: 1px solid {UI_WOOD_DARK};
-                border-radius: 4px;
-                padding: 4px;
+                border-radius: 6px;
             }}
         """)
+        self.slide_container.setVisible(False)
         
-        # Layout for slide container
-        self.slide_layout = QVBoxLayout(self.slide_container)
-        self.slide_layout.setContentsMargins(10, 10, 10, 10)
-        self.slide_layout.setSpacing(8)
+        # Create slide layout
+        slide_top_layout = QVBoxLayout(self.slide_container)
+        slide_top_layout.setContentsMargins(8, 8, 8, 8)
+        
+        # Add header to popup
+        slide_header = QWidget()
+        slide_header_layout = QHBoxLayout(slide_header)
+        slide_header_layout.setContentsMargins(0, 0, 0, 4)
+        
+        # Add title to popup
+        popup_title = QLabel(title)
+        popup_title.setStyleSheet(f"color: {UI_LIGHT_TEXT}; font-weight: bold;")
+        slide_header_layout.addWidget(popup_title)
+        
+        # Add spacer and close button
+        slide_header_layout.addStretch()
+        
+        popup_close = QPushButton()
+        popup_close.setIcon(qta.icon('fa5s.compress-arrows-alt', color=UI_LIGHT_TEXT))
+        popup_close.setToolTip("Collapse panel")
+        popup_close.setFixedSize(24, 24)
+        popup_close.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {UI_WOOD_DARK};
+                border: none;
+                border-radius: 3px;
+            }}
+            QPushButton:hover {{
+                background-color: {UI_WOOD_MEDIUM};
+            }}
+        """)
+        popup_close.clicked.connect(self.toggle_popup)
+        slide_header_layout.addWidget(popup_close)
+        
+        # Add header to slide layout
+        slide_top_layout.addWidget(slide_header)
+        
+        # Add container for content
+        slide_content = QWidget()
+        self.slide_layout = QVBoxLayout(slide_content)
+        self.slide_layout.setContentsMargins(4, 0, 4, 4)
+        
+        slide_top_layout.addWidget(slide_content)
         
         # Animation for slide effect
         self.slide_animation = QPropertyAnimation(self.slide_container, b"geometry")
@@ -323,51 +365,65 @@ class PopupSection(CollapsibleSection):
         
         # Update button state
         self.popup_button.setIcon(qta.icon('fa5s.compress-arrows-alt', color=UI_LIGHT_TEXT))
-        self.popup_button.setToolTip("Collapse expanded section")
-        
-        # Mark section as popped out
         self.is_popped_out = True
         
-        # Emit signal that popup state has changed
-        self.popup_state_changed.emit(True)
-        
+        # If parent sidebar is collapsed, expand it
+        if isinstance(sidebar, CollapsibleSidebar) and sidebar.is_collapsed:
+            sidebar.toggle_collapsed()
+            
+        # Emit signal to parent sidebar
+        if hasattr(sidebar, 'popup_toggled'):
+            sidebar.popup_toggled.emit(True)
+            
+        # Emit our own signal
+        self.popup_toggled.emit(True)
+    
     def pop_in(self):
-        """Slide the section back in"""
+        """Slide in the section"""
         if not self.is_popped_out:
             return
+            
+        # Get current geometry
+        current_rect = self.slide_container.geometry()
+        end_rect = QRect(current_rect.x(), current_rect.y(), 0, current_rect.height())
         
-        # Animate slide in
-        start_rect = self.slide_container.geometry()
-        end_rect = QRect(start_rect.x(), start_rect.y(), 0, start_rect.height())
-        
-        self.slide_animation.setStartValue(start_rect)
+        # Set up animation
+        self.slide_animation.setStartValue(current_rect)
         self.slide_animation.setEndValue(end_rect)
-        self.slide_animation.finished.connect(self.finish_pop_in)
+        
+        # Connect to finished signal to clean up
+        self.slide_animation.finished.connect(self.cleanup_pop_in)
         self.slide_animation.start()
         
         # Update button state
         self.popup_button.setIcon(qta.icon('fa5s.external-link-alt', color=UI_LIGHT_TEXT))
-        self.popup_button.setToolTip("Expand section")
-        
-        # Mark as not popped out
         self.is_popped_out = False
         
-        # Emit signal that popup state has changed
-        self.popup_state_changed.emit(False)
-    
-    def finish_pop_in(self):
-        """Finish the pop-in animation by moving widgets back"""
-        # Move content back to original container
+        # Get parent sidebar
+        sidebar = self.parent()
+        while sidebar and not isinstance(sidebar, CollapsibleSidebar):
+            sidebar = sidebar.parent()
+            
+        # Emit signal to parent sidebar
+        if sidebar and hasattr(sidebar, 'popup_toggled'):
+            sidebar.popup_toggled.emit(False)
+            
+        # Emit our own signal
+        self.popup_toggled.emit(False)
+            
+    def cleanup_pop_in(self):
+        """Clean up after slide in animation"""
+        # Move content back from slide container
         while self.slide_layout.count():
             item = self.slide_layout.takeAt(0)
             if item.widget():
                 self.content_layout.addWidget(item.widget())
-        
+                
         # Hide slide container
         self.slide_container.setVisible(False)
         
-        # Disconnect finished signal to avoid multiple calls
-        self.slide_animation.finished.disconnect(self.finish_pop_in)
+        # Disconnect finished signal
+        self.slide_animation.finished.disconnect(self.cleanup_pop_in)
 
 class CollapsibleSidebar(QWidget):
     """A collapsible sidebar that can be expanded and collapsed"""
@@ -378,7 +434,7 @@ class CollapsibleSidebar(QWidget):
         super().__init__(parent)
         self.setObjectName("collapsibleSidebar")
         self.is_collapsed = True
-        self.expanded_width = 200
+        self.expanded_width = 280  # Increased from 240 to 280 for more comfortable width
         self.collapsed_width = 40
         self.animation_duration = 200
         

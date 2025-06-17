@@ -8,7 +8,8 @@ import threading
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QPushButton, QGridLayout, QLineEdit, QCheckBox, QTextEdit, 
-    QFrame, QSplitter, QGroupBox, QSlider, QSpinBox, QDoubleSpinBox
+    QFrame, QSplitter, QGroupBox, QSlider, QSpinBox, QDoubleSpinBox,
+    QApplication, QScrollArea, QSizePolicy, QTextBrowser, QTabWidget
 )
 from PyQt6.QtCore import Qt, QTimer, QRect, QPoint
 from PyQt6.QtGui import QColor
@@ -16,7 +17,7 @@ from PyQt6.QtGui import QColor
 from core import PixelChangeDetector, FishingActionSequence
 from ui.visualization import MatplotlibCanvas
 from ui.selection import RegionSelectionOverlay
-from ui.components import CollapsibleSidebar, PopupSection, CollapsibleSection
+from ui.components import CollapsibleSidebar, PopupSection, CollapsibleSection, ActivityGraphSection
 from utils.constants import (
     VERSION, VERSION_NAME, 
     DEFAULT_THRESHOLD, DEFAULT_DETECTION_COOLDOWN, DEFAULT_FISHING_KEY,
@@ -306,11 +307,17 @@ class AutoFisherMainWindow(QMainWindow):
         status_bar_layout.addSpacing(20)
         status_bar_layout.addStretch()
         
-        # Add quick control buttons to status bar
+        # Add quick control buttons to status bar - Now organized in a grid
         # Import qtawesome for better looking buttons
         import qtawesome as qta
         
-        # Create button with icon
+        # Create a widget to hold the control buttons in a grid
+        control_buttons = QWidget()
+        control_grid = QGridLayout(control_buttons)
+        control_grid.setContentsMargins(0, 0, 0, 0)
+        control_grid.setSpacing(5)
+        
+        # Create button with icon - smaller size
         self.region_button = QPushButton("  Select Region  ")
         self.region_button.setIcon(qta.icon('fa5s.vector-square', color='white'))
         self.region_button.clicked.connect(self.select_region)
@@ -318,15 +325,15 @@ class AutoFisherMainWindow(QMainWindow):
             QPushButton {{
                 background-color: {UI_ACCENT_DARK};
                 font-weight: bold;
-                padding: 8px 18px;
-                border-radius: 6px;
-                font-size: 11pt;
+                padding: 4px 12px;
+                border-radius: 4px;
+                font-size: 10pt;
             }}
             QPushButton:hover {{
                 background-color: {UI_ACCENT_COLOR};
             }}
         """)
-        status_bar_layout.addWidget(self.region_button)
+        control_grid.addWidget(self.region_button, 0, 0)
         
         self.start_button = QPushButton("  Start  ")
         self.start_button.setIcon(qta.icon('fa5s.play', color='white'))
@@ -335,15 +342,16 @@ class AutoFisherMainWindow(QMainWindow):
             QPushButton {{
                 background-color: {UI_ACCENT_DARK};
                 font-weight: bold;
-                padding: 8px 18px;
-                border-radius: 6px;
-                font-size: 11pt;
+                padding: 4px 12px;
+                border-radius: 4px;
+                font-size: 10pt;
             }}
             QPushButton:hover {{
                 background-color: {UI_ACCENT_COLOR};
             }}
         """)
-        status_bar_layout.addWidget(self.start_button)
+        self.start_button.setEnabled(False)  # Initially disabled until region is selected
+        control_grid.addWidget(self.start_button, 0, 1)
         
         self.pause_button = QPushButton("  Pause  ")
         self.pause_button.setIcon(qta.icon('fa5s.pause', color='white'))
@@ -352,15 +360,15 @@ class AutoFisherMainWindow(QMainWindow):
             QPushButton {{
                 background-color: {UI_WOOD_MEDIUM};
                 font-weight: bold;
-                padding: 8px 18px;
-                border-radius: 6px;
-                font-size: 11pt;
+                padding: 4px 12px;
+                border-radius: 4px;
+                font-size: 10pt;
             }}
             QPushButton:hover {{
                 background-color: {UI_WOOD_LIGHT};
             }}
         """)
-        status_bar_layout.addWidget(self.pause_button)
+        control_grid.addWidget(self.pause_button, 0, 2)
         
         self.stop_button = QPushButton("  Stop  ")
         self.stop_button.setIcon(qta.icon('fa5s.stop', color='white'))
@@ -369,123 +377,182 @@ class AutoFisherMainWindow(QMainWindow):
             QPushButton {{
                 background-color: {UI_WARNING_COLOR};
                 font-weight: bold;
-                padding: 8px 18px;
-                border-radius: 6px;
-                font-size: 11pt;
+                padding: 4px 12px;
+                border-radius: 4px;
+                font-size: 10pt;
             }}
             QPushButton:hover {{
                 background-color: #C06A5A;
             }}
         """)
-        status_bar_layout.addWidget(self.stop_button)
+        control_grid.addWidget(self.stop_button, 0, 3)
+        
+        # Add second row of buttons
+        self.ref_button = QPushButton("  Capture Reference  ")
+        self.ref_button.setIcon(qta.icon('fa5s.camera', color='white'))
+        self.ref_button.clicked.connect(self.capture_reference)
+        self.ref_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {UI_WOOD_DARK};
+                font-weight: bold;
+                padding: 4px 12px;
+                border-radius: 4px;
+                font-size: 10pt;
+            }}
+            QPushButton:hover {{
+                background-color: {UI_WOOD_MEDIUM};
+            }}
+        """)
+        self.ref_button.setEnabled(False)  # Initially disabled until region is selected
+        control_grid.addWidget(self.ref_button, 1, 0, 1, 2)
+        
+        self.clear_logs_button = QPushButton("  Clear Logs  ")
+        self.clear_logs_button.setIcon(qta.icon('fa5s.trash-alt', color='white'))
+        self.clear_logs_button.clicked.connect(self.clear_logs)
+        self.clear_logs_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {UI_WOOD_DARK};
+                font-weight: bold;
+                padding: 4px 12px;
+                border-radius: 4px;
+                font-size: 10pt;
+            }}
+            QPushButton:hover {{
+                background-color: {UI_WOOD_MEDIUM};
+            }}
+        """)
+        control_grid.addWidget(self.clear_logs_button, 1, 2, 1, 2)
+        
+        # Add the control grid to the status bar layout
+        status_bar_layout.addWidget(control_buttons)
         
         visualization_layout.addWidget(status_bar)
         
         # Add to main left panel
         left_layout.addWidget(visualization_section)
         
+        # Add an Activity Graph section to the sidebar - position at top
+        self.activity_graph_section = ActivityGraphSection()
+        self.sidebar.add_section(self.activity_graph_section)
+        
+        # Force expand the activity graph section
+        self.activity_graph_section.expand()
+        
         # Create collapsible sections for the sidebar
         # 1. Settings section
         settings_section = PopupSection("Settings")
         settings_content = QWidget()
         settings_layout = QVBoxLayout(settings_content)
-        settings_layout.setContentsMargins(5, 5, 5, 5)
-        settings_layout.setSpacing(8)
+        settings_layout.setContentsMargins(3, 3, 3, 3)  # Reduced margins
+        settings_layout.setSpacing(6)  # Reduced spacing
         
         # Threshold
         threshold_widget = QWidget()
         threshold_layout = QGridLayout(threshold_widget)
         threshold_layout.setContentsMargins(0, 0, 0, 0)
-        threshold_layout.setSpacing(5)
+        threshold_layout.setSpacing(3)  # Reduced spacing
         
         threshold_layout.addWidget(QLabel("Detection Threshold:"), 0, 0)
+        
         threshold_slider_widget = QWidget()
         threshold_slider_layout = QHBoxLayout(threshold_slider_widget)
         threshold_slider_layout.setContentsMargins(0, 0, 0, 0)
+        threshold_slider_layout.setSpacing(3)  # Reduced spacing
         
         self.threshold_slider = QSlider(Qt.Orientation.Horizontal)
         self.threshold_slider.setMinimum(1)
-        self.threshold_slider.setMaximum(50)
+        self.threshold_slider.setMaximum(30)
         self.threshold_slider.setValue(int(DEFAULT_THRESHOLD * 100))
-        self.threshold_slider.valueChanged.connect(self.update_threshold_label)
-        threshold_slider_layout.addWidget(self.threshold_slider)
+        self.threshold_slider.setMaximumWidth(120)  # Limit width
+        self.threshold_slider.valueChanged.connect(self.update_threshold)
         
-        self.threshold_label = QLabel(f"{DEFAULT_THRESHOLD:.2f}")
-        threshold_slider_layout.addWidget(self.threshold_label)
+        # Compact layout for slider and value display
+        threshold_slider_layout.addWidget(self.threshold_slider)
+        self.threshold_value = QLabel(f"{DEFAULT_THRESHOLD:.2f}")
+        threshold_slider_layout.addWidget(self.threshold_value)
         
         threshold_layout.addWidget(threshold_slider_widget, 0, 1)
         
-        # Add description
+        # Add threshold explanation with word wrap
         threshold_desc = QLabel("Lower values = more sensitive detection")
-        threshold_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt; font-style: italic;")
+        threshold_desc.setWordWrap(True)  # Enable word wrap
+        threshold_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt;")
         threshold_layout.addWidget(threshold_desc, 1, 0, 1, 2)
         
         settings_layout.addWidget(threshold_widget)
         
-        # Cooldown
+        # Cooldown with more compact layout
         cooldown_widget = QWidget()
-        cooldown_layout = QGridLayout(cooldown_widget)
+        cooldown_layout = QHBoxLayout(cooldown_widget)
         cooldown_layout.setContentsMargins(0, 0, 0, 0)
+        cooldown_layout.setSpacing(3)  # Reduced spacing
         
-        cooldown_layout.addWidget(QLabel("Cooldown:"), 0, 0)
+        cooldown_layout.addWidget(QLabel("Cooldown:"))
         self.cooldown_entry = QDoubleSpinBox()
-        self.cooldown_entry.setRange(0.5, 30.0)
-        self.cooldown_entry.setSingleStep(0.5)
+        self.cooldown_entry.setMinimum(0.5)
+        self.cooldown_entry.setMaximum(20.0)
         self.cooldown_entry.setValue(DEFAULT_DETECTION_COOLDOWN)
-        self.cooldown_entry.setSuffix(" seconds")
-        cooldown_layout.addWidget(self.cooldown_entry, 0, 1)
-        
-        # Add description
-        cooldown_desc = QLabel("Time between fishing attempts")
-        cooldown_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt; font-style: italic;")
-        cooldown_layout.addWidget(cooldown_desc, 1, 0, 1, 2)
+        self.cooldown_entry.setSingleStep(0.5)
+        self.cooldown_entry.setMaximumWidth(60)
+        cooldown_layout.addWidget(self.cooldown_entry)
+        cooldown_layout.addWidget(QLabel("sec"))
         
         settings_layout.addWidget(cooldown_widget)
         
-        # Fishing Key
-        key_widget = QWidget()
-        key_layout = QGridLayout(key_widget)
-        key_layout.setContentsMargins(0, 0, 0, 0)
+        # Cooldown description with word wrap
+        cooldown_desc = QLabel("Time between fishing attempts")
+        cooldown_desc.setWordWrap(True)  # Enable word wrap
+        cooldown_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt;")
+        settings_layout.addWidget(cooldown_desc)
         
-        key_layout.addWidget(QLabel("Fishing Key:"), 0, 0)
+        # Fishing key with more compact layout
+        fishing_key_widget = QWidget()
+        fishing_key_layout = QHBoxLayout(fishing_key_widget)
+        fishing_key_layout.setContentsMargins(0, 0, 0, 0)
+        fishing_key_layout.setSpacing(3)  # Reduced spacing
+        
+        fishing_key_layout.addWidget(QLabel("Fishing Key:"))
         self.fishing_key_entry = QLineEdit(DEFAULT_FISHING_KEY)
         self.fishing_key_entry.setMaximumWidth(40)
-        key_layout.addWidget(self.fishing_key_entry, 0, 1)
+        fishing_key_layout.addWidget(self.fishing_key_entry)
         
-        # Add description
-        key_desc = QLabel("Key used for fishing in game (usually F)")
-        key_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt; font-style: italic;")
-        key_layout.addWidget(key_desc, 1, 0, 1, 2)
+        settings_layout.addWidget(fishing_key_widget)
         
-        settings_layout.addWidget(key_widget)
+        # Key description with word wrap
+        key_desc = QLabel("Key used for fishing in game")
+        key_desc.setWordWrap(True)  # Enable word wrap
+        key_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt;")
+        settings_layout.addWidget(key_desc)
         
-        # Region Size
-        region_widget = QWidget()
-        region_layout = QGridLayout(region_widget)
-        region_layout.setContentsMargins(0, 0, 0, 0)
+        # Selection Size with more compact layout
+        size_widget = QWidget()
+        size_layout = QHBoxLayout(size_widget)
+        size_layout.setContentsMargins(0, 0, 0, 0)
+        size_layout.setSpacing(3)  # Reduced spacing
         
-        region_layout.addWidget(QLabel("Selection Size:"), 0, 0)
-        self.size_entry = QSpinBox()
-        self.size_entry.setRange(10, 500)
-        self.size_entry.setValue(50)
-        self.size_entry.setSuffix(" px")
-        region_layout.addWidget(self.size_entry, 0, 1)
+        size_layout.addWidget(QLabel("Selection Size:"))
+        self.size_entry = QLineEdit("50")
+        self.size_entry.setMaximumWidth(40)
+        size_layout.addWidget(self.size_entry)
+        size_layout.addWidget(QLabel("px"))
         
-        # Add description
-        region_desc = QLabel("Default size when making a new selection")
-        region_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt; font-style: italic;")
-        region_layout.addWidget(region_desc, 1, 0, 1, 2)
+        settings_layout.addWidget(size_widget)
         
-        settings_layout.addWidget(region_widget)
+        # Size description with word wrap
+        size_desc = QLabel("Default size when making a new selection")
+        size_desc.setWordWrap(True)  # Enable word wrap
+        size_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt;")
+        settings_layout.addWidget(size_desc)
         
-        # Apply button
+        # Apply button - more compact
         self.apply_button = QPushButton("Apply Settings")
         self.apply_button.clicked.connect(self.apply_settings)
         self.apply_button.setStyleSheet(f"""
             QPushButton {{
                 background-color: {UI_ACCENT_DARK};
                 font-weight: bold;
-                padding: 6px;
+                padding: 4px;
+                font-size: 10pt;
             }}
             QPushButton:hover {{
                 background-color: {UI_ACCENT_COLOR};
@@ -494,13 +561,14 @@ class AutoFisherMainWindow(QMainWindow):
         settings_layout.addWidget(self.apply_button)
         
         # Add content to section
-        settings_section.add_widget(settings_content)
+        settings_section.content_layout.addWidget(settings_content)
         
         # 2. Advanced options section
         advanced_section = PopupSection("Advanced Options")
         advanced_content = QWidget()
         advanced_layout = QVBoxLayout(advanced_content)
-        advanced_layout.setContentsMargins(5, 5, 5, 5)
+        advanced_layout.setContentsMargins(3, 3, 3, 3)  # Reduced margins
+        advanced_layout.setSpacing(4)  # Reduced spacing
         
         # High Performance Mode
         self.high_performance_checkbox = QCheckBox("High Performance Mode")
@@ -510,7 +578,8 @@ class AutoFisherMainWindow(QMainWindow):
         
         # Add description
         hp_desc = QLabel("Increases reliability using more system resources")
-        hp_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt; margin-left: 20px; margin-bottom: 10px;")
+        hp_desc.setWordWrap(True)  # Enable word wrap
+        hp_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt; margin-left: 20px; margin-bottom: 4px;")
         advanced_layout.addWidget(hp_desc)
         
         # Respect Fullscreen Apps
@@ -520,8 +589,9 @@ class AutoFisherMainWindow(QMainWindow):
         advanced_layout.addWidget(self.respect_fullscreen_checkbox)
         
         # Add description
-        fs_desc = QLabel("Prevents interruption when other fullscreen applications are active")
-        fs_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt; margin-left: 20px; margin-bottom: 10px;")
+        fs_desc = QLabel("Prevents interruption when other apps are fullscreen")
+        fs_desc.setWordWrap(True)  # Enable word wrap
+        fs_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt; margin-left: 20px; margin-bottom: 4px;")
         advanced_layout.addWidget(fs_desc)
         
         # Direct Control Mode
@@ -532,54 +602,131 @@ class AutoFisherMainWindow(QMainWindow):
         
         # Add description
         dc_desc = QLabel("Uses direct input methods for maximum reliability")
-        dc_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt; margin-left: 20px; margin-bottom: 10px;")
+        dc_desc.setWordWrap(True)  # Enable word wrap
+        dc_desc.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt; margin-left: 20px; margin-bottom: 4px;")
         advanced_layout.addWidget(dc_desc)
         
         # Add content to section
-        advanced_section.add_widget(advanced_content)
+        advanced_section.content_layout.addWidget(advanced_content)
         
         # 3. Region info section
         region_section = CollapsibleSection("Region Info")
         region_content = QWidget()
         region_layout = QVBoxLayout(region_content)
+        region_layout.setContentsMargins(3, 3, 3, 3)  # Reduced margins
+        region_layout.setSpacing(4)  # Reduced spacing
         
         self.region_info_label = QLabel("No region selected")
         self.region_info_label.setWordWrap(True)
-        self.region_info_label.setStyleSheet(f"color: {UI_LIGHT_TEXT}; padding: 5px;")
+        self.region_info_label.setStyleSheet(f"color: {UI_LIGHT_TEXT}; padding: 2px;")
         region_layout.addWidget(self.region_info_label)
         
-        self.capture_ref_button = QPushButton("Capture Reference Frame")
-        self.capture_ref_button.clicked.connect(self.capture_reference)
-        region_layout.addWidget(self.capture_ref_button)
-        
         # Add content to section
-        region_section.add_widget(region_content)
+        region_section.content_layout.addWidget(region_content)
         
         # 4. Statistics section
         stats_section = PopupSection("Statistics")
         stats_content = QWidget()
-        stats_layout = QGridLayout(stats_content)
-        stats_layout.setContentsMargins(5, 5, 5, 5)
+        stats_layout = QVBoxLayout(stats_content)
+        stats_layout.setContentsMargins(3, 3, 3, 3)
+        stats_layout.setSpacing(3)
         
-        # Stats rows
-        stats_layout.addWidget(QLabel("Total Detections:"), 0, 0)
+        # Add descriptive header
+        header_text = "Real-time monitoring statistics:"
+        header_label = QLabel(header_text)
+        header_label.setStyleSheet(f"color: {UI_LIGHT_TEXT}; font-size: 9pt;")
+        header_label.setWordWrap(True)
+        stats_layout.addWidget(header_label)
+        
+        # Main statistics grid
+        stats_grid = QWidget()
+        grid_layout = QGridLayout(stats_grid)
+        grid_layout.setContentsMargins(3, 3, 3, 3)
+        grid_layout.setSpacing(3)
+        stats_layout.addWidget(stats_grid)
+        
+        # Activity Statistics
+        activity_label = QLabel("Activity:")
+        activity_label.setStyleSheet(f"font-weight: bold; color: {UI_ACCENT_COLOR};")
+        grid_layout.addWidget(activity_label, 0, 0, 1, 2)
+        
+        grid_layout.addWidget(QLabel("Detections:"), 1, 0)
         self.detections_label = QLabel("0")
-        stats_layout.addWidget(self.detections_label, 0, 1)
+        grid_layout.addWidget(self.detections_label, 1, 1)
         
-        stats_layout.addWidget(QLabel("Runtime:"), 1, 0)
+        grid_layout.addWidget(QLabel("Runtime:"), 2, 0)
         self.runtime_label = QLabel("00:00:00")
-        stats_layout.addWidget(self.runtime_label, 1, 1)
+        grid_layout.addWidget(self.runtime_label, 2, 1)
         
-        stats_layout.addWidget(QLabel("Detection Rate:"), 2, 0)
+        grid_layout.addWidget(QLabel("Rate:"), 3, 0)
         self.rate_label = QLabel("0.0/min")
-        stats_layout.addWidget(self.rate_label, 2, 1)
+        grid_layout.addWidget(self.rate_label, 3, 1)
         
-        stats_layout.addWidget(QLabel("Average Interval:"), 3, 0)
+        grid_layout.addWidget(QLabel("Avg Interval:"), 4, 0)
         self.interval_label = QLabel("0.0s")
-        stats_layout.addWidget(self.interval_label, 3, 1)
+        grid_layout.addWidget(self.interval_label, 4, 1)
+        
+        grid_layout.addWidget(QLabel("Last Detection:"), 5, 0)
+        self.last_detection_label = QLabel("None")
+        grid_layout.addWidget(self.last_detection_label, 5, 1)
+        
+        grid_layout.addWidget(QLabel("Success Rate:"), 6, 0)
+        self.success_rate_label = QLabel("0%")
+        grid_layout.addWidget(self.success_rate_label, 6, 1)
+        
+        # Performance Metrics
+        performance_label = QLabel("Performance:")
+        performance_label.setStyleSheet(f"font-weight: bold; color: {UI_ACCENT_COLOR};")
+        grid_layout.addWidget(performance_label, 7, 0, 1, 2)
+        
+        grid_layout.addWidget(QLabel("FPS:"), 8, 0)
+        self.fps_label = QLabel("0")
+        grid_layout.addWidget(self.fps_label, 8, 1)
+        
+        grid_layout.addWidget(QLabel("CPU Usage:"), 9, 0)
+        self.cpu_usage_label = QLabel("0%")
+        grid_layout.addWidget(self.cpu_usage_label, 9, 1)
+        
+        grid_layout.addWidget(QLabel("Latency:"), 10, 0)
+        self.latency_label = QLabel("0ms")
+        grid_layout.addWidget(self.latency_label, 10, 1)
+        
+        # Current Settings
+        settings_label = QLabel("Current Settings:")
+        settings_label.setStyleSheet(f"font-weight: bold; color: {UI_ACCENT_COLOR};")
+        grid_layout.addWidget(settings_label, 11, 0, 1, 2)
+        
+        grid_layout.addWidget(QLabel("Threshold:"), 12, 0)
+        self.monitor_threshold = QLabel(f"{DEFAULT_THRESHOLD:.2f}")
+        grid_layout.addWidget(self.monitor_threshold, 12, 1)
+        
+        grid_layout.addWidget(QLabel("Cooldown:"), 13, 0)
+        self.monitor_cooldown = QLabel(f"{DEFAULT_DETECTION_COOLDOWN}s")
+        grid_layout.addWidget(self.monitor_cooldown, 13, 1)
+        
+        grid_layout.addWidget(QLabel("Key:"), 14, 0)
+        self.monitor_key = QLabel(DEFAULT_FISHING_KEY)
+        grid_layout.addWidget(self.monitor_key, 14, 1)
+        
+        grid_layout.addWidget(QLabel("Mode:"), 15, 0)
+        self.monitor_mode = QLabel("High Perf" if DEFAULT_HIGH_PERFORMANCE else "Standard")
+        grid_layout.addWidget(self.monitor_mode, 15, 1)
+        
+        # System Info
+        system_label = QLabel("System:")
+        system_label.setStyleSheet(f"font-weight: bold; color: {UI_ACCENT_COLOR};")
+        grid_layout.addWidget(system_label, 16, 0, 1, 2)
+        
+        grid_layout.addWidget(QLabel("Region:"), 17, 0)
+        self.region_size_label = QLabel("None")
+        grid_layout.addWidget(self.region_size_label, 17, 1)
+        
+        grid_layout.addWidget(QLabel("Status:"), 18, 0)
+        self.monitor_status = QLabel("Idle")
+        grid_layout.addWidget(self.monitor_status, 18, 1)
         
         # Add content to section
-        stats_section.add_widget(stats_content)
+        stats_section.content_layout.addWidget(stats_content)
         
         # Add all sections to sidebar
         self.sidebar.add_section(settings_section)
@@ -587,10 +734,11 @@ class AutoFisherMainWindow(QMainWindow):
         self.sidebar.add_section(region_section)
         self.sidebar.add_section(stats_section)
         
-        # Connect popup sections to window resize handler
-        settings_section.popup_state_changed.connect(self.adjust_window_for_popup)
-        advanced_section.popup_state_changed.connect(self.adjust_window_for_popup)
-        stats_section.popup_state_changed.connect(self.adjust_window_for_popup)
+        # Connect popup sections to window resize handler (if popup_toggled signal exists)
+        if hasattr(settings_section, 'popup_toggled'):
+            settings_section.popup_toggled.connect(self.adjust_window_for_popup)
+            advanced_section.popup_toggled.connect(self.adjust_window_for_popup)
+            stats_section.popup_toggled.connect(self.adjust_window_for_popup)
         
         # Log console in bottom container with cleaner styling
         log_group = QGroupBox("Activity Logs")
@@ -623,28 +771,24 @@ class AutoFisherMainWindow(QMainWindow):
             QTextEdit {{
                 background-color: {UI_DARK_BG};
                 color: {UI_LIGHT_TEXT};
-                font-family: Consolas, 'Courier New', monospace;
+                font-family: 'Segoe UI', 'Arial', sans-serif;
                 font-size: 10pt;
-                border: 1px solid {UI_WOOD_DARK};
-                border-radius: 5px;
-                padding: 8px;
+                border: none;
+                border-radius: 4px;
+                padding: 10px;
+                selection-background-color: {UI_ACCENT_COLOR};
+                selection-color: {UI_DARK_BG};
             }}
         """)
+        # Set document margins to reduce padding
+        document = self.log_console.document()
+        document.setDocumentMargin(6)
         log_layout.addWidget(self.log_console)
         
         # Add log control panel with improved styling
         log_control_panel = QFrame()
         log_control_layout = QHBoxLayout(log_control_panel)
         log_control_layout.setContentsMargins(0, 5, 0, 0)
-        
-        # Add timestamp indicator
-        timestamp_label = QLabel("Last updated: ")
-        timestamp_label.setStyleSheet(f"color: {UI_SECONDARY_TEXT};")
-        log_control_layout.addWidget(timestamp_label)
-        
-        self.timestamp = QLabel(datetime.datetime.now().strftime("%H:%M:%S"))
-        self.timestamp.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-weight: bold;")
-        log_control_layout.addWidget(self.timestamp)
         
         # Add spacer to push button to the right
         log_control_layout.addStretch()
@@ -674,9 +818,8 @@ class AutoFisherMainWindow(QMainWindow):
         bottom_layout.addWidget(log_group)
         
     def log(self, message):
-        """Add timestamped message to log queue"""
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-        self.log_queue.put(f"[{timestamp}] {message}")
+        """Add message to log queue without timestamp"""
+        self.log_queue.put(message)
         
     def update_logs(self):
         """Process any new log messages from the queue"""
@@ -698,10 +841,6 @@ class AutoFisherMainWindow(QMainWindow):
                 for message in messages:
                     self.log_console.append(message)
                 
-                # Update timestamp
-                current_time = datetime.datetime.now().strftime("%H:%M:%S")
-                self.timestamp.setText(current_time)
-                
                 # Autoscroll only if we were already at the bottom
                 if autoscroll:
                     self.log_console.verticalScrollBar().setValue(
@@ -714,12 +853,11 @@ class AutoFisherMainWindow(QMainWindow):
     def clear_logs(self):
         """Clear the log console"""
         self.log_console.clear()
-        self.log("Logs cleared")
             
-    def update_threshold_label(self, value):
+    def update_threshold(self, value):
         """Update threshold label when slider is moved"""
         threshold_value = value / 100.0
-        self.threshold_label.setText(f"{threshold_value:.2f}")
+        self.threshold_value.setText(f"{threshold_value:.2f}")
             
     def update_high_performance(self):
         """Update high performance mode setting"""
@@ -766,7 +904,6 @@ class AutoFisherMainWindow(QMainWindow):
             # Apply settings to detector
             if self.detector:
                 old_threshold = self.detector.THRESHOLD
-                old_cooldown = self.detector.detection_cooldown
                 
                 self.detector.THRESHOLD = threshold_value
                 self.detector.detection_cooldown = cooldown_value
@@ -785,8 +922,8 @@ class AutoFisherMainWindow(QMainWindow):
                 if old_threshold != threshold_value:
                     self.log(f"Threshold changed: {old_threshold:.2f} -> {threshold_value:.2f}")
                     
-                if old_cooldown != cooldown_value:
-                    self.log(f"Cooldown changed: {old_cooldown}s -> {cooldown_value}s")
+                if self.detector.detection_cooldown != cooldown_value:
+                    self.log(f"Cooldown changed: {self.detector.detection_cooldown}s -> {cooldown_value}s")
                 
                 # Update monitor threshold display
                 self.monitor_threshold.setText(f"{threshold_value:.2f}")
@@ -845,7 +982,7 @@ class AutoFisherMainWindow(QMainWindow):
             selection_overlay = RegionSelectionOverlay(None)
             
             # Connect to signals
-            selection_overlay.region_selected.connect(self.on_region_selected)
+            selection_overlay.region_selected.connect(self.set_region)
             selection_overlay.selection_canceled.connect(lambda: self.log("Selection canceled"))
             
             # Show the overlay
@@ -857,54 +994,133 @@ class AutoFisherMainWindow(QMainWindow):
             self.log(f"Error starting region selection: {e}")
             return False
             
-    def on_region_selected(self, region):
-        """Handle when a region is selected"""
-        left, top, right, bottom = region
-        width = right - left
-        height = bottom - top
-        
-        # Update the detector with new region
+    def set_region(self, region):
+        """Handle region selection completion"""
+        # Store region in detector
         self.detector.region = region
         
         # Update region info display
-        self.region_info_label.setText(f"Selected: {left},{top} to {right},{bottom} ({width}×{height} px)")
+        left, top, right, bottom = region
+        width = right - left
+        height = bottom - top
+        aspect_ratio = width / height if height > 0 else 0
         
-        # Try to validate region
-        if self.detector.validate_region():
-            # Capture initial reference frame
-            self.detector.capture_reference()
-            
+        self.region_info_label.setText(
+            f"Selected Region:\n"
+            f"Position: ({left}, {top}) to ({right}, {bottom})\n"
+            f"Size: {width}×{height} pixels\n"
+            f"Aspect Ratio: {aspect_ratio:.2f}"
+        )
+        
+        # Update UI state
+        if not self.detection_running:
             # Enable start button now that we have a valid region
             self.start_button.setEnabled(True)
-            self.capture_ref_button.setEnabled(True)
+            self.ref_button.setEnabled(True)
             
             self.log(f"Region selection completed at: {left},{top} to {right},{bottom}")
-            return True
-        else:
-            self.log("Failed to validate selected region")
-            return False
             
     def update_statistics(self):
-        """Update statistics display"""
-        if self.detection_running:
-            # Update runtime
-            runtime_seconds = int(time.time() - self.start_time)
-            hours, remainder = divmod(runtime_seconds, 3600)
-            minutes, seconds = divmod(remainder, 60)
-            runtime_text = f"{hours:02}:{minutes:02}:{seconds:02}"
-            self.runtime_label.setText(runtime_text)
+        """Update statistics labels"""
+        # Only update if detector exists
+        if not self.detector:
+            return
             
-            # Calculate detections per minute
-            if runtime_seconds > 0:
-                detections_per_minute = (self.total_detections / runtime_seconds) * 60
-                self.rate_label.setText(f"{detections_per_minute:.1f}/min")
+        # Update run time
+        elapsed = time.time() - self.start_time
+        hours = int(elapsed // 3600)
+        minutes = int((elapsed % 3600) // 60)
+        seconds = int(elapsed % 60)
+        self.runtime_label.setText(f"{hours:02d}:{minutes:02d}:{seconds:02d}")
         
-        # Update detections count
-        if self.detector:
-            self.detections_label.setText(str(self.detector.stats["total_detections"]))
+        # Update detection count and rate
+        self.detections_label.setText(str(self.total_detections))
+        
+        if elapsed > 0:
+            rate_per_min = (self.total_detections / elapsed) * 60
+            self.rate_label.setText(f"{rate_per_min:.1f}/min")
             
-            # Update FPS in monitor
-            self.monitor_fps.setText(str(self.detector.performance.get("fps", 0)))
+            # Calculate average interval if we have detections
+            if self.total_detections > 1:
+                avg_interval = elapsed / self.total_detections
+                self.interval_label.setText(f"{avg_interval:.1f}s")
+        
+        # Update Last Detection time
+        if hasattr(self.detector, 'last_detection_time') and self.detector.last_detection_time > 0:
+            time_since = time.time() - self.detector.last_detection_time
+            if time_since < 60:
+                self.last_detection_label.setText(f"{time_since:.1f}s ago")
+            elif time_since < 3600:
+                self.last_detection_label.setText(f"{time_since/60:.1f}m ago")
+            else:
+                self.last_detection_label.setText(f"{time_since/3600:.1f}h ago")
+        else:
+            self.last_detection_label.setText("None")
+        
+        # Update Success Rate (if available)
+        success_attempts = getattr(self.detector, 'successful_detections', 0)
+        total_attempts = max(1, getattr(self.detector, 'total_detection_attempts', 0))
+        if total_attempts > 0:
+            success_rate = (success_attempts / total_attempts) * 100
+            self.success_rate_label.setText(f"{success_rate:.1f}%")
+        else:
+            self.success_rate_label.setText("0%")
+        
+        # Update Performance Metrics
+        if hasattr(self.detector, 'current_fps'):
+            fps_value = self.detector.current_fps
+            self.fps_label.setText(f"{fps_value:.1f}")
+            
+            # Also update the status bar FPS if it exists
+            if hasattr(self, 'monitor_fps'):
+                self.monitor_fps.setText(f"{int(fps_value)}")
+        else:
+            # Estimate FPS based on high performance mode
+            estimated_fps = 10.0 if self.detector.high_performance_mode else 5.0
+            self.fps_label.setText(f"~{estimated_fps:.1f}")
+            
+            # Also update the status bar FPS if it exists
+            if hasattr(self, 'monitor_fps'):
+                self.monitor_fps.setText(f"{int(estimated_fps)}")
+            
+        # Get CPU usage if available
+        try:
+            import psutil
+            cpu_percent = psutil.cpu_percent(interval=None)
+            self.cpu_usage_label.setText(f"{cpu_percent:.1f}%")
+        except (ImportError, AttributeError):
+            self.cpu_usage_label.setText("N/A")
+            
+        # Update processing latency if available
+        if hasattr(self.detector, 'avg_process_time'):
+            latency_ms = self.detector.avg_process_time * 1000
+            self.latency_label.setText(f"{latency_ms:.1f}ms")
+        else:
+            self.latency_label.setText("N/A")
+            
+        # Update Current Settings
+        self.monitor_threshold.setText(f"{self.detector.THRESHOLD:.2f}")
+        self.monitor_cooldown.setText(f"{self.detector.detection_cooldown:.1f}s")
+        self.monitor_key.setText(self.detector.fishing_key)
+        self.monitor_mode.setText("High Perf" if self.detector.high_performance_mode else "Standard")
+        
+        # Update System Info
+        if self.detector.region:
+            left, top, right, bottom = self.detector.region
+            width = right - left
+            height = bottom - top
+            self.region_size_label.setText(f"{width}×{height}")
+        else:
+            self.region_size_label.setText("None")
+            
+        # Update Status
+        if self.detection_running:
+            if getattr(self.detector, 'paused', False):
+                self.monitor_status.setText("Paused")
+            else:
+                self.monitor_status.setText("Running")
+        else:
+            self.monitor_status.setText("Idle")
             
     def start_detection(self):
         """Start the detection process"""
@@ -979,9 +1195,9 @@ class AutoFisherMainWindow(QMainWindow):
         if hasattr(self.detector, 'color_frame') and self.detector.color_frame is not None:
             self.viz_canvas.update_image(self.detector.color_frame, self.detector.diff_frame)
             
-        # Update the timeline
+        # Update the activity graph in its own section
         if hasattr(self.detector, 'change_history') and self.detector.change_history:
-            self.viz_canvas.update_timeline(self.detector.change_history, self.detector.THRESHOLD)
+            self.activity_graph_section.update_graph(self.detector.change_history, self.detector.THRESHOLD)
             
     def increment_detection_count(self):
         """Increment detection count when signal is received"""
