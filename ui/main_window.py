@@ -33,7 +33,8 @@ class AutoFisherMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"AutoFisher Qt v{VERSION} - {VERSION_NAME}")
-        self.setMinimumSize(800, 600)
+        self.setMinimumSize(400, 600)
+        self.setMaximumWidth(900)
         
         # Set application-wide theme
         self.setStyleSheet(f"""
@@ -43,24 +44,27 @@ class AutoFisherMainWindow(QMainWindow):
             }}
             QGroupBox {{
                 border: 1px solid {UI_WOOD_DARK};
-                border-radius: 4px;
-                margin-top: 8px;
-                padding-top: 8px;
+                border-radius: 6px;
+                margin-top: 10px;
+                padding-top: 10px;
                 font-weight: bold;
+                background-color: {UI_PANEL_BG};
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
                 subcontrol-position: top center;
-                padding: 0 5px;
+                padding: 0 8px;
                 color: {UI_ACCENT_COLOR};
+                font-size: 11pt;
             }}
             QPushButton {{
                 background-color: {UI_WOOD_DARK};
                 color: {UI_LIGHT_TEXT};
                 border: none;
-                border-radius: 4px;
-                padding: 6px;
-                margin: 2px;
+                border-radius: 5px;
+                padding: 8px;
+                margin: 3px;
+                font-weight: bold;
             }}
             QPushButton:hover {{
                 background-color: {UI_WOOD_MEDIUM};
@@ -72,42 +76,56 @@ class AutoFisherMainWindow(QMainWindow):
                 background-color: {UI_PANEL_BG};
                 color: {UI_LIGHT_TEXT};
                 border: 1px solid {UI_WOOD_DARK};
-                border-radius: 3px;
-                padding: 2px 4px;
+                border-radius: 4px;
+                padding: 5px;
+                margin: 2px;
             }}
             QCheckBox {{
                 color: {UI_LIGHT_TEXT};
-                spacing: 5px;
+                spacing: 6px;
+                padding: 2px;
             }}
             QCheckBox::indicator {{
-                width: 16px;
-                height: 16px;
+                width: 18px;
+                height: 18px;
             }}
             QCheckBox::indicator:unchecked {{
                 border: 1px solid {UI_WOOD_MEDIUM};
                 background-color: {UI_PANEL_BG};
+                border-radius: 3px;
             }}
             QCheckBox::indicator:checked {{
                 border: 1px solid {UI_ACCENT_COLOR};
                 background-color: {UI_ACCENT_DARK};
+                border-radius: 3px;
                 image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iMTIiIHZpZXdCb3g9IjAgMCAxMiAxMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEwLjE5OTggMi42OTMzNEwzLjk5OTgxIDguODkzMzRMMSA1Ljg5MzM0IiBzdHJva2U9IiNFOEU4RTAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+Cjwvc3ZnPgo=);
             }}
+            QLabel {{
+                padding: 2px;
+            }}
             QSlider::groove:horizontal {{
-                height: 6px;
+                height: 8px;
                 background-color: {UI_PANEL_BG};
-                border-radius: 3px;
+                border-radius: 4px;
             }}
             QSlider::handle:horizontal {{
                 background-color: {UI_ACCENT_COLOR};
                 border: none;
-                width: 14px;
-                height: 14px;
+                width: 16px;
+                height: 16px;
                 margin: -4px 0;
-                border-radius: 7px;
+                border-radius: 8px;
             }}
             QSlider::sub-page:horizontal {{
                 background-color: {UI_ACCENT_DARK};
-                border-radius: 3px;
+                border-radius: 4px;
+            }}
+            QFrame[frameShape="4"], QFrame[frameShape="5"] {{
+                color: {UI_WOOD_DARK};
+            }}
+            QSplitter::handle {{
+                background-color: {UI_WOOD_DARK};
+                height: 1px;
             }}
         """)
         
@@ -175,47 +193,54 @@ class AutoFisherMainWindow(QMainWindow):
         top_layout.setContentsMargins(0, 0, 0, 0)
         top_layout.setSpacing(0)
         
-        # Left panel for visualization
+        # Left panel for visualization - use less margins for more space
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(10, 10, 5, 5)
+        left_layout.setContentsMargins(8, 8, 4, 4)
+        left_layout.setSpacing(6)
         
         # Right panel for collapsible sidebar
         self.sidebar = CollapsibleSidebar()
+        
+        # Connect sidebar expand/collapse to window width adjustment
+        self.sidebar.collapsed_changed.connect(self.adjust_window_width)
         
         # Add panels to top container
         top_layout.addWidget(left_panel, 1)  # Main content stretches
         top_layout.addWidget(self.sidebar, 0)  # Sidebar doesn't stretch
         
-        # Bottom container for logs
+        # Bottom container for logs with improved styling
         bottom_container = QWidget()
         bottom_layout = QVBoxLayout(bottom_container)
-        bottom_layout.setContentsMargins(10, 5, 10, 5)
+        bottom_layout.setContentsMargins(8, 6, 8, 6)
+        bottom_layout.setSpacing(6)
         
         # Add containers to splitter
         self.main_splitter.addWidget(top_container)
         self.main_splitter.addWidget(bottom_container)
         self.main_splitter.setSizes([4, 1])  # 80% top, 20% bottom
         
-        # Add visualization panel to left panel
+        # Add visualization panel to left panel with improved styling
         visualization_section = QFrame()
+        visualization_section.setStyleSheet(f"background-color: {UI_PANEL_BG}; border-radius: 6px;")
         visualization_layout = QVBoxLayout(visualization_section)
-        visualization_layout.setContentsMargins(0, 0, 0, 0)
+        visualization_layout.setContentsMargins(10, 10, 10, 10)
+        visualization_layout.setSpacing(8)
         
-        # Add title for visualization area
+        # Add title for visualization area with cleaner styling
         viz_header = QLabel("Bobber Monitoring")
-        viz_header.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {UI_ACCENT_COLOR};")
+        viz_header.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {UI_ACCENT_COLOR}; padding: 0 0 5px 0;")
         visualization_layout.addWidget(viz_header)
         
-        # Create a frame to contain the canvas with fixed aspect ratio
+        # Create a frame to contain the canvas with improved styling
         viz_frame = QFrame()
         viz_frame.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Sunken)
         viz_frame.setLineWidth(1)
-        viz_frame.setStyleSheet(f"background-color: {UI_DARK_BG}; border: 1px solid {UI_WOOD_DARK}; border-radius: 4px;")
+        viz_frame.setStyleSheet(f"background-color: {UI_DARK_BG}; border: 1px solid {UI_WOOD_DARK}; border-radius: 6px;")
         
-        # Use a layout that maintains the aspect ratio
+        # Use a layout that maintains the aspect ratio with better spacing
         viz_frame_layout = QVBoxLayout(viz_frame)
-        viz_frame_layout.setContentsMargins(4, 4, 4, 4)
+        viz_frame_layout.setContentsMargins(6, 6, 6, 6)
         
         # Create matplotlib canvas for visualization with the correct aspect ratio (1.5:1)
         self.viz_canvas = MatplotlibCanvas(self, width=6, height=4, dpi=100, bg_color=UI_DARK_BG)
@@ -226,58 +251,76 @@ class AutoFisherMainWindow(QMainWindow):
         # Add the frame to the main viz layout
         visualization_layout.addWidget(viz_frame)
         
-        # Add monitoring status indicators
+        # Add monitoring status indicators with better styling
         status_panel = QFrame()
+        status_panel.setStyleSheet(f"background-color: {UI_DARK_BG}; border-radius: 4px; padding: 2px;")
         status_layout = QHBoxLayout(status_panel)
-        status_layout.setContentsMargins(0, 4, 0, 0)
+        status_layout.setContentsMargins(8, 6, 8, 6)
         
-        # Add threshold indicator
+        # Add threshold indicator with improved styling
         threshold_label = QLabel("Threshold:")
-        threshold_label.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt;")
+        threshold_label.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 10pt;")
         status_layout.addWidget(threshold_label)
         
         self.monitor_threshold = QLabel("0.05")
-        self.monitor_threshold.setStyleSheet(f"color: {UI_WARNING_COLOR}; font-weight: bold; font-size: 9pt;")
+        self.monitor_threshold.setStyleSheet(f"color: {UI_WARNING_COLOR}; font-weight: bold; font-size: 10pt;")
         status_layout.addWidget(self.monitor_threshold)
         
-        status_layout.addStretch()
+        # Add separator
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.VLine)
+        separator.setFrameShadow(QFrame.Shadow.Sunken)
+        separator.setStyleSheet(f"color: {UI_WOOD_MEDIUM}; margin: 0 10px;")
+        status_layout.addWidget(separator)
         
-        # Add FPS indicator
+        # Add FPS indicator with improved styling
         fps_label = QLabel("FPS:")
-        fps_label.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 9pt;")
+        fps_label.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 10pt;")
         status_layout.addWidget(fps_label)
         
         self.monitor_fps = QLabel("0")
-        self.monitor_fps.setStyleSheet(f"color: {UI_ACCENT_COLOR}; font-weight: bold; font-size: 9pt;")
+        self.monitor_fps.setStyleSheet(f"color: {UI_ACCENT_COLOR}; font-weight: bold; font-size: 10pt;")
         status_layout.addWidget(self.monitor_fps)
+        
+        status_layout.addStretch()
         
         # Add the status panel to the viz layout
         visualization_layout.addWidget(status_panel)
         
-        # Status bar with current state
+        # Status bar with current state - improved styling
         status_bar = QFrame()
-        status_bar.setStyleSheet(f"background-color: {UI_WOOD_DARK}; border-radius: 4px;")
+        status_bar.setStyleSheet(f"background-color: {UI_WOOD_DARK}; border-radius: 8px; margin-top: 12px; margin-bottom: 6px;")
         status_bar_layout = QHBoxLayout(status_bar)
-        status_bar_layout.setContentsMargins(8, 3, 8, 3)
+        status_bar_layout.setContentsMargins(15, 10, 15, 10)
+        status_bar_layout.setSpacing(15)
         
         status_label = QLabel("Status:")
-        status_label.setStyleSheet("color: #CCC; font-weight: bold;")
+        status_label.setStyleSheet("color: #CCC; font-weight: bold; font-size: 11pt;")
         status_bar_layout.addWidget(status_label)
         
         self.status_label = QLabel("Idle")
-        self.status_label.setStyleSheet("color: white; font-weight: bold;")
+        self.status_label.setStyleSheet("color: white; font-weight: bold; font-size: 11pt;")
         status_bar_layout.addWidget(self.status_label)
         
+        # Add extra spacing between status and controls
+        status_bar_layout.addSpacing(20)
         status_bar_layout.addStretch()
         
         # Add quick control buttons to status bar
-        self.region_button = QPushButton("Select Region")
+        # Import qtawesome for better looking buttons
+        import qtawesome as qta
+        
+        # Create button with icon
+        self.region_button = QPushButton("  Select Region  ")
+        self.region_button.setIcon(qta.icon('fa5s.vector-square', color='white'))
         self.region_button.clicked.connect(self.select_region)
         self.region_button.setStyleSheet(f"""
             QPushButton {{
                 background-color: {UI_ACCENT_DARK};
                 font-weight: bold;
-                padding: 4px 12px;
+                padding: 8px 18px;
+                border-radius: 6px;
+                font-size: 11pt;
             }}
             QPushButton:hover {{
                 background-color: {UI_ACCENT_COLOR};
@@ -285,13 +328,16 @@ class AutoFisherMainWindow(QMainWindow):
         """)
         status_bar_layout.addWidget(self.region_button)
         
-        self.start_button = QPushButton("Start")
+        self.start_button = QPushButton("  Start  ")
+        self.start_button.setIcon(qta.icon('fa5s.play', color='white'))
         self.start_button.clicked.connect(self.start_detection)
         self.start_button.setStyleSheet(f"""
             QPushButton {{
                 background-color: {UI_ACCENT_DARK};
                 font-weight: bold;
-                padding: 4px 12px;
+                padding: 8px 18px;
+                border-radius: 6px;
+                font-size: 11pt;
             }}
             QPushButton:hover {{
                 background-color: {UI_ACCENT_COLOR};
@@ -299,17 +345,33 @@ class AutoFisherMainWindow(QMainWindow):
         """)
         status_bar_layout.addWidget(self.start_button)
         
-        self.pause_button = QPushButton("Pause")
+        self.pause_button = QPushButton("  Pause  ")
+        self.pause_button.setIcon(qta.icon('fa5s.pause', color='white'))
         self.pause_button.clicked.connect(self.toggle_pause)
+        self.pause_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {UI_WOOD_MEDIUM};
+                font-weight: bold;
+                padding: 8px 18px;
+                border-radius: 6px;
+                font-size: 11pt;
+            }}
+            QPushButton:hover {{
+                background-color: {UI_WOOD_LIGHT};
+            }}
+        """)
         status_bar_layout.addWidget(self.pause_button)
         
-        self.stop_button = QPushButton("Stop")
+        self.stop_button = QPushButton("  Stop  ")
+        self.stop_button.setIcon(qta.icon('fa5s.stop', color='white'))
         self.stop_button.clicked.connect(self.stop_detection)
         self.stop_button.setStyleSheet(f"""
             QPushButton {{
                 background-color: {UI_WARNING_COLOR};
                 font-weight: bold;
-                padding: 4px 12px;
+                padding: 8px 18px;
+                border-radius: 6px;
+                font-size: 11pt;
             }}
             QPushButton:hover {{
                 background-color: #C06A5A;
@@ -525,11 +587,36 @@ class AutoFisherMainWindow(QMainWindow):
         self.sidebar.add_section(region_section)
         self.sidebar.add_section(stats_section)
         
-        # Log console in bottom container
-        log_group = QGroupBox("Logs")
-        log_layout = QVBoxLayout(log_group)
+        # Connect popup sections to window resize handler
+        settings_section.popup_state_changed.connect(self.adjust_window_for_popup)
+        advanced_section.popup_state_changed.connect(self.adjust_window_for_popup)
+        stats_section.popup_state_changed.connect(self.adjust_window_for_popup)
         
-        # Create log console with improved styling
+        # Log console in bottom container with cleaner styling
+        log_group = QGroupBox("Activity Logs")
+        log_group.setStyleSheet(f"""
+            QGroupBox {{
+                border: 1px solid {UI_WOOD_DARK};
+                border-radius: 6px;
+                margin-top: 10px;
+                padding: 12px;
+                font-weight: bold;
+                background-color: {UI_PANEL_BG};
+                font-size: 12pt;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top center;
+                padding: 0 8px;
+                color: {UI_ACCENT_COLOR};
+                font-size: 12pt;
+            }}
+        """)
+        log_layout = QVBoxLayout(log_group)
+        log_layout.setContentsMargins(8, 15, 8, 8)  # Extra top margin for the title
+        log_layout.setSpacing(8)
+        
+        # Create log console with better styling
         self.log_console = QTextEdit()
         self.log_console.setReadOnly(True)
         self.log_console.setStyleSheet(f"""
@@ -539,23 +626,45 @@ class AutoFisherMainWindow(QMainWindow):
                 font-family: Consolas, 'Courier New', monospace;
                 font-size: 10pt;
                 border: 1px solid {UI_WOOD_DARK};
-                border-radius: 3px;
-                padding: 5px;
+                border-radius: 5px;
+                padding: 8px;
             }}
         """)
         log_layout.addWidget(self.log_console)
         
-        # Add log control panel with clear button
+        # Add log control panel with improved styling
         log_control_panel = QFrame()
         log_control_layout = QHBoxLayout(log_control_panel)
-        log_control_layout.setContentsMargins(0, 0, 0, 0)
+        log_control_layout.setContentsMargins(0, 5, 0, 0)
+        
+        # Add timestamp indicator
+        timestamp_label = QLabel("Last updated: ")
+        timestamp_label.setStyleSheet(f"color: {UI_SECONDARY_TEXT};")
+        log_control_layout.addWidget(timestamp_label)
+        
+        self.timestamp = QLabel(datetime.datetime.now().strftime("%H:%M:%S"))
+        self.timestamp.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-weight: bold;")
+        log_control_layout.addWidget(self.timestamp)
         
         # Add spacer to push button to the right
         log_control_layout.addStretch()
         
-        # Add clear button
-        clear_log_button = QPushButton("Clear Logs")
-        clear_log_button.setMaximumWidth(100)
+        # Add clear button with icon
+        clear_log_button = QPushButton(" Clear Logs")
+        clear_log_button.setIcon(qta.icon('fa5s.trash-alt', color='white'))
+        clear_log_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {UI_WOOD_DARK};
+                color: {UI_LIGHT_TEXT};
+                border: none;
+                border-radius: 4px;
+                padding: 4px 10px;
+            }}
+            QPushButton:hover {{
+                background-color: {UI_WOOD_MEDIUM};
+            }}
+        """)
+        clear_log_button.setMaximumWidth(120)
         clear_log_button.clicked.connect(self.clear_logs)
         log_control_layout.addWidget(clear_log_button)
         
@@ -588,6 +697,10 @@ class AutoFisherMainWindow(QMainWindow):
             if messages:
                 for message in messages:
                     self.log_console.append(message)
+                
+                # Update timestamp
+                current_time = datetime.datetime.now().strftime("%H:%M:%S")
+                self.timestamp.setText(current_time)
                 
                 # Autoscroll only if we were already at the bottom
                 if autoscroll:
@@ -878,4 +991,52 @@ class AutoFisherMainWindow(QMainWindow):
         self.detections_label.setText(str(self.total_detections))
         
         # Log the detection
-        self.log(f"Detection #{self.total_detections} triggered!") 
+        self.log(f"Detection #{self.total_detections} triggered!")
+        
+    def adjust_window_width(self, is_collapsed):
+        """Adjust the window width when sidebar is expanded/collapsed"""
+        # Get current window geometry
+        current_geometry = self.geometry()
+        
+        # Calculate width difference based on sidebar state
+        width_diff = 200  # Approximate difference between expanded and collapsed sidebar
+        
+        # Calculate new width based on collapsed state, respecting the max width
+        if is_collapsed:
+            # Sidebar is collapsing, reduce window width
+            new_width = max(400, current_geometry.width() - width_diff)
+        else:
+            # Sidebar is expanding, increase width but respect maximum
+            new_width = min(900, current_geometry.width() + width_diff)
+        
+        # Set new geometry
+        self.setGeometry(
+            current_geometry.x(),
+            current_geometry.y(),
+            new_width,
+            current_geometry.height()
+        )
+    
+    def adjust_window_for_popup(self, is_popped_out):
+        """Adjust the window width when a section is popped out"""
+        # Get current window geometry
+        current_geometry = self.geometry()
+        
+        # Calculate width difference based on popup state
+        width_diff = 350  # Width of the popup extension
+        
+        # Calculate new width based on popup state, respecting max width
+        if is_popped_out:
+            # Section is popping out, increase window width but respect the maximum
+            new_width = min(900, current_geometry.width() + width_diff)
+        else:
+            # Section is popping in, reduce window width
+            new_width = max(400, current_geometry.width() - width_diff)
+        
+        # Set new geometry
+        self.setGeometry(
+            current_geometry.x(),
+            current_geometry.y(),
+            new_width,
+            current_geometry.height()
+        ) 
