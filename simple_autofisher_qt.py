@@ -1432,328 +1432,440 @@ class SimpleAutoFisherGUI(QMainWindow):
                                 "Please make sure the game is running before selecting a region.")
             return False
             
-        # Get window position and size with more accurate method
+        # Get window position and size
         try:
-            # Get the window handle
-            hwnd = self.detector.play_together_window
-            
-            # Get the window rectangle (entire window including borders and title bar)
-            window_rect = win32gui.GetWindowRect(hwnd)
+            window_rect = win32gui.GetWindowRect(self.detector.play_together_window)
             win_left, win_top, win_right, win_bottom = window_rect
             win_width = win_right - win_left
             win_height = win_bottom - win_top
             
             # Get the client area (actual game content area)
-            client_rect = win32gui.GetClientRect(hwnd)
-            client_width, client_height = client_rect[2], client_rect[3]
+            client_rect = win32gui.GetClientRect(self.detector.play_together_window)
+            client_left, client_top, client_right, client_bottom = client_rect
             
             # Convert client coordinates to screen coordinates
-            client_left, client_top = win32gui.ClientToScreen(hwnd, (0, 0))
-            client_right = client_left + client_width
-            client_bottom = client_top + client_height
-            
-            # Log the dimensions for debugging
-            self.log(f"Window rect: {window_rect}")
-            self.log(f"Client area: ({client_left},{client_top}) to ({client_right},{client_bottom})")
-            self.log(f"Client size: {client_width}x{client_height}")
+            client_left, client_top = win32gui.ClientToScreen(self.detector.play_together_window, (client_left, client_top))
+            client_right, client_bottom = win32gui.ClientToScreen(self.detector.play_together_window, (client_right, client_bottom))
             
             # Use client area dimensions for more accurate game content area
-            game_width = client_width
-            game_height = client_height
+            game_width = client_right - client_left
+            game_height = client_bottom - client_top
             
             self.log(f"Game window found: {win_width}x{win_height} at ({win_left},{win_top})")
             self.log(f"Game content area: {game_width}x{game_height} at ({client_left},{client_top})")
         except Exception as e:
             self.log(f"Error getting window dimensions: {e}")
-            traceback.print_exc()
             return
         
-        try:
-            # Calculate region dimensions based on 1.5:1 ratio (width:height)
-            box_height = size
-            box_width = int(size * 1.5)
-            
-            # Temporarily minimize our own window
-            self.hide()
-            time.sleep(0.5)  # Give time for window to minimize
-            
-            # Force focus on the game window before creating overlay
-            self.log("Focusing game window before creating overlay")
-            force_focus_window(hwnd)
-            time.sleep(0.2)  # Give time for focus to take effect
-            
-            # Create a transparent window for selection that matches the game window exactly
-            selection_window = QWidget(None, Qt.WindowType.FramelessWindowHint | 
-                                      Qt.WindowType.WindowStaysOnTopHint | 
-                                      Qt.WindowType.Tool)
-            selection_window.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-            
-            # Set the geometry to match the client area exactly
-            selection_window.setGeometry(client_left, client_top, client_width, client_height)
-            
-            # Create a custom widget for drawing
-            class SelectionCanvas(QWidget):
-                def __init__(self, parent=None):
-                    super().__init__(parent)
-                    self.setMouseTracking(True)
-                    self.setGeometry(0, 0, client_width, client_height)
-                    self.current_x = client_width // 2
-                    self.current_y = client_height // 2
-                    self.box_width = box_width
-                    self.box_height = box_height
-                    self.client_left = client_left
-                    self.client_top = client_top
-                    self.client_width = client_width
-                    self.client_height = client_height
-                    self.colors = {
-                        'bg_dark': QColor(24, 25, 20, 50),  # Semi-transparent dark background
-                        'accent': QColor(163, 217, 119),  # Matcha green
-                        'green': QColor(163, 217, 119),  # Matcha green
-                        'text': QColor(248, 245, 227),  # Warm off-white
-                        'text_bright': QColor(255, 255, 255),  # White
-                        'grid': QColor(163, 217, 119, 120)  # Semi-transparent green
-                    }
-                    
-                    # Start a timer to track cursor position
-                    self.cursor_timer = QTimer(self)
-                    self.cursor_timer.setInterval(10)  # 10ms for smooth tracking
-                    self.cursor_timer.timeout.connect(self.track_cursor)
-                    self.cursor_timer.start()
+        # Calculate region dimensions based on 1.5:1 ratio
+        width = int(size * 1.5)
+        height = size
+        
+        # Temporarily minimize our own window
+        self.hide()
+        time.sleep(0.5)  # Give time for window to minimize
+        
+        # Create a transparent window for selection that matches the game window exactly
+        selection_window = QWidget(None, Qt.WindowType.FramelessWindowHint | 
+                                  Qt.WindowType.WindowStaysOnTopHint | 
+                                  Qt.WindowType.Tool)
+        selection_window.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        selection_window.setGeometry(client_left, client_top, game_width, game_height)
+        
+        # Create a custom widget for drawing
+        class SelectionCanvas(QWidget):
+            def __init__(self, parent=None):
+                super().__init__(parent)
+                self.setMouseTracking(True)
+                self.setGeometry(0, 0, game_width, game_height)
+                self.current_x = game_width // 2
+                self.current_y = game_height // 2
+                self.box_width = width
+                self.box_height = height
+                self.client_left = client_left
+                self.client_top = client_top
+                self.preview_rect = None
+                self.outline_rect = None
+                self.grid_lines = []
+                self.info_text = None
                 
-                def track_cursor(self):
-                    """Track the cursor position in global screen coordinates"""
-                    global_pos = QCursor.pos()
-                    
-                    # Check if cursor is within the game window bounds
-                    if (global_pos.x() >= self.client_left and 
-                        global_pos.x() < self.client_left + self.client_width and
-                        global_pos.y() >= self.client_top and 
-                        global_pos.y() < self.client_top + self.client_height):
-                        
-                        # Convert global position to widget-local position
-                        self.current_x = global_pos.x() - self.client_left
-                        self.current_y = global_pos.y() - self.client_top
-                        self.update()  # Request a repaint
+                # Colors for a clean, sleek interface
+                self.colors = {
+                    'bg_dark': QColor(24, 25, 20, 50),    # Semi-transparent dark background
+                    'accent': QColor(163, 217, 119),       # Matcha green
+                    'green': QColor(163, 217, 119),        # Bright green
+                    'text': QColor(248, 245, 227),         # Warm off-white
+                    'text_bright': QColor(255, 255, 255),  # White
+                    'grid': QColor(163, 217, 119, 120),    # Semi-transparent green
+                    'border': QColor(163, 217, 119, 200),  # More opaque green for borders
+                }
                 
-                def paintEvent(self, event):
-                    painter = QPainter(self)
-                    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                # Start a timer to track cursor position
+                self.cursor_timer = QTimer(self)
+                self.cursor_timer.setInterval(10)  # 10ms for smooth tracking
+                self.cursor_timer.timeout.connect(self.track_cursor)
+                self.cursor_timer.start()
+                
+                # For preview image
+                self.preview_pixmap = None
+                self.preview_timer = QTimer(self)
+                self.preview_timer.setInterval(100)  # Update preview 10 times per second
+                self.preview_timer.timeout.connect(self.update_preview)
+                self.preview_timer.start()
+            
+            def track_cursor(self):
+                """Track the cursor position in global screen coordinates"""
+                global_pos = QCursor.pos()
+                
+                # Check if cursor is within the game window bounds
+                if (global_pos.x() >= self.client_left and 
+                    global_pos.x() < self.client_left + game_width and
+                    global_pos.y() >= self.client_top and 
+                    global_pos.y() < self.client_top + game_height):
                     
-                    # Draw semi-transparent background
-                    painter.fillRect(self.rect(), self.colors['bg_dark'])
+                    # Convert global position to widget-local position
+                    self.current_x = global_pos.x() - self.client_left
+                    self.current_y = global_pos.y() - self.client_top
+                    self.update()  # Request a repaint
+            
+            def update_preview(self):
+                """Update the preview image of the current selection"""
+                # Calculate box coordinates centered on cursor position
+                left = self.current_x - self.box_width // 2
+                top = self.current_y - self.box_height // 2
+                right = left + self.box_width
+                bottom = top + self.box_height
+                
+                # Ensure box stays within screen bounds
+                if left < 0:
+                    left = 0
+                    right = self.box_width
+                elif right > game_width:
+                    right = game_width
+                    left = right - self.box_width
                     
-                    # Calculate box coordinates centered on current mouse position
-                    left = int(self.current_x - self.box_width // 2)
-                    top = int(self.current_y - self.box_height // 2)
+                if top < 0:
+                    top = 0
+                    bottom = self.box_height
+                elif bottom > game_height:
+                    bottom = game_height
+                    top = bottom - self.box_height
+                
+                try:
+                    # Calculate absolute screen coordinates for capture
+                    abs_left = self.client_left + left
+                    abs_top = self.client_top + top
+                    abs_right = abs_left + (right - left)
+                    abs_bottom = abs_top + (bottom - top)
+                    
+                    # Capture the current selection using QScreen
+                    screen = QApplication.primaryScreen()
+                    self.preview_pixmap = screen.grabWindow(
+                        0,  # Capture entire screen
+                        abs_left, abs_top,
+                        abs_right - abs_left, abs_bottom - abs_top
+                    )
+                except Exception as e:
+                    print(f"Error updating preview: {e}")
+                
+                self.update()  # Request a repaint
+            
+            def paintEvent(self, event):
+                painter = QPainter(self)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                
+                # Draw a very transparent background
+                painter.fillRect(self.rect(), self.colors['bg_dark'])
+                
+                # Draw guides (crosshair)
+                painter.setPen(QPen(self.colors['grid'], 1, Qt.PenStyle.DashLine))
+                painter.drawLine(self.current_x, 0, self.current_x, self.height())
+                painter.drawLine(0, self.current_y, self.width(), self.current_y)
+                
+                # Calculate box coordinates centered on cursor position
+                left = self.current_x - self.box_width // 2
+                top = self.current_y - self.box_height // 2
+                right = left + self.box_width
+                bottom = top + self.box_height
+                
+                # Ensure box stays within screen bounds
+                if left < 0:
+                    left = 0
+                    right = self.box_width
+                elif right > game_width:
+                    right = game_width
+                    left = right - self.box_width
+                    
+                if top < 0:
+                    top = 0
+                    bottom = self.box_height
+                elif bottom > game_height:
+                    bottom = game_height
+                    top = bottom - self.box_height
+                
+                # Draw a clean, minimal border (slightly larger for visibility)
+                painter.setPen(QPen(self.colors['accent'], 2))
+                painter.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+                painter.drawRect(left-2, top-2, (right-left)+4, (bottom-top)+4)
+                
+                # Draw the inner rectangle with minimal styling
+                painter.setPen(QPen(self.colors['green'], 1))
+                
+                # Semi-transparent fill
+                painter.setBrush(QBrush(QColor(self.colors['green'].red(), 
+                                             self.colors['green'].green(), 
+                                             self.colors['green'].blue(), 30)))
+                painter.drawRect(left, top, right-left, bottom-top)
+                
+                # Add grid lines (3x3 grid)
+                cell_width = self.box_width // 3
+                cell_height = self.box_height // 3
+                
+                painter.setPen(QPen(self.colors['grid'], 1, Qt.PenStyle.DotLine))
+                
+                # Vertical grid lines
+                for i in range(1, 3):
+                    painter.drawLine(left + i * cell_width, top, left + i * cell_width, bottom)
+                    
+                # Horizontal grid lines
+                for i in range(1, 3):
+                    painter.drawLine(left, top + i * cell_height, right, top + i * cell_height)
+                
+                # Highlight center of the box (where bobber should be)
+                center_x = left + self.box_width // 2
+                center_y = top + self.box_height // 2
+                center_size = min(self.box_width, self.box_height) // 6
+                
+                # Draw center target circle
+                painter.setPen(QPen(self.colors['accent'], 2))
+                painter.drawEllipse(center_x - center_size//2, center_y - center_size//2, 
+                                    center_size, center_size)
+                
+                # Draw center crosshair
+                painter.drawLine(center_x - center_size, center_y, 
+                                center_x + center_size, center_y)
+                painter.drawLine(center_x, center_y - center_size, 
+                                center_x, center_y + center_size)
+                
+                # Draw a small dot at the very center
+                painter.setBrush(QBrush(self.colors['accent']))
+                painter.drawEllipse(center_x-1, center_y-1, 2, 2)
+                
+                # Create coordinate display with more information
+                # Convert to absolute screen coordinates
+                abs_left = self.client_left + left
+                abs_top = self.client_top + top
+                coord_text = f"position: ({abs_left},{abs_top}) • size: {self.box_width}×{self.box_height}"
+                
+                # Draw background for text at bottom
+                text_rect = QRect(0, game_height - 30, game_width, 25)
+                painter.fillRect(text_rect, QColor(0, 0, 0, 150))
+                
+                # Display information at the bottom center
+                painter.setPen(QPen(self.colors['text_bright']))
+                font = painter.font()
+                font.setPointSize(10)
+                font.setBold(True)
+                painter.setFont(font)
+                painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, coord_text)
+                
+                # Draw instructions panel
+                instructions = "POSITION OVER FISHING BOBBER • CLICK TO SELECT • ESC TO CANCEL"
+                instructions_rect = QRect(0, 30, game_width, 30)
+                
+                # Draw background for instructions
+                bg_rect = instructions_rect.adjusted(-10, -5, 10, 5)
+                painter.fillRect(bg_rect, QColor(0, 0, 0, 150))
+                painter.setPen(QPen(self.colors['accent']))
+                painter.drawRect(bg_rect)
+                
+                # Draw text
+                painter.setPen(QPen(self.colors['text_bright']))
+                font = painter.font()
+                font.setPointSize(11)
+                font.setBold(True)
+                painter.setFont(font)
+                painter.drawText(instructions_rect, Qt.AlignmentFlag.AlignCenter, instructions)
+                
+                # Add second line of instructions
+                detail_text = f"Fixed box size: {self.box_height}×{self.box_width} pixels (height × width) • Center the green target on the bobber"
+                detail_rect = QRect(0, 55, game_width, 20)
+                font.setPointSize(10)
+                font.setBold(False)
+                painter.setFont(font)
+                painter.drawText(detail_rect, Qt.AlignmentFlag.AlignCenter, detail_text)
+                
+                # Draw preview box in corner if available
+                if self.preview_pixmap:
+                    preview_size = 150  # Preview size
+                    
+                    # Draw preview background and border
+                    preview_rect = QRect(
+                        game_width - preview_size - 10, 
+                        10, 
+                        preview_size, 
+                        preview_size
+                    )
+                    
+                    # Draw background for preview
+                    painter.fillRect(preview_rect, QColor(0, 0, 0, 150))
+                    
+                    # Draw border
+                    painter.setPen(QPen(self.colors['accent'], 2))
+                    painter.drawRect(preview_rect)
+                    
+                    # Draw preview label
+                    label_rect = QRect(
+                        game_width - preview_size - 10,
+                        10,
+                        preview_size,
+                        20
+                    )
+                    painter.setPen(QPen(self.colors['text_bright']))
+                    painter.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, "LIVE PREVIEW")
+                    
+                    # Calculate scaled preview image
+                    scaled_pixmap = self.preview_pixmap.scaled(
+                        preview_size - 10, 
+                        preview_size - 30, 
+                        Qt.AspectRatioMode.KeepAspectRatio, 
+                        Qt.TransformationMode.SmoothTransformation
+                    )
+                    
+                    # Draw the preview image
+                    painter.drawPixmap(
+                        game_width - scaled_pixmap.width() - 15,
+                        35,
+                        scaled_pixmap
+                    )
+            
+            def mousePressEvent(self, event):
+                """Handle mouse click to finalize selection"""
+                if event.button() == Qt.MouseButton.LeftButton:
+                    # Calculate region coordinates centered on mouse position
+                    left = self.current_x - self.box_width // 2
+                    top = self.current_y - self.box_height // 2
                     right = left + self.box_width
                     bottom = top + self.box_height
                     
-                    # Ensure box stays within screen bounds
+                    # Ensure region stays within screen bounds
                     if left < 0:
                         left = 0
                         right = self.box_width
-                    elif right > self.client_width:
-                        right = self.client_width
+                    elif right > game_width:
+                        right = game_width
                         left = right - self.box_width
                         
                     if top < 0:
                         top = 0
                         bottom = self.box_height
-                    elif bottom > self.client_height:
-                        bottom = self.client_height
+                    elif bottom > game_height:
+                        bottom = game_height
                         top = bottom - self.box_height
                     
-                    # Draw guides (lines across the screen)
-                    painter.setPen(QPen(self.colors['grid'], 1, Qt.PenStyle.DashLine))
-                    painter.drawLine(0, int(self.current_y), self.client_width, int(self.current_y))
-                    painter.drawLine(int(self.current_x), 0, int(self.current_x), self.client_height)
+                    # Stop the timers
+                    self.cursor_timer.stop()
+                    self.preview_timer.stop()
                     
-                    # Draw outer border (slightly larger for visibility)
-                    painter.setPen(QPen(self.colors['accent'], 2))
-                    painter.setBrush(QBrush(Qt.BrushStyle.NoBrush))
-                    painter.drawRect(left-2, top-2, (right-left)+4, (bottom-top)+4)
-                    
-                    # Draw the inner rectangle with minimal styling
-                    painter.setPen(QPen(self.colors['green'], 1))
-                    
-                    # Semi-transparent fill
-                    painter.setBrush(QBrush(QColor(self.colors['green'].red(), 
-                                                  self.colors['green'].green(), 
-                                                  self.colors['green'].blue(), 30)))
-                    painter.drawRect(left, top, right-left, bottom-top)
-                    
-                    # Add grid lines (3x3 grid)
-                    cell_width = self.box_width // 3
-                    cell_height = self.box_height // 3
-                    
-                    painter.setPen(QPen(self.colors['grid'], 1, Qt.PenStyle.DotLine))
-                    
-                    # Vertical grid lines
-                    for i in range(1, 3):
-                        painter.drawLine(left + i * cell_width, top, left + i * cell_width, bottom)
-                        
-                    # Horizontal grid lines
-                    for i in range(1, 3):
-                        painter.drawLine(left, top + i * cell_height, right, top + i * cell_height)
-                    
-                    # Create coordinate display with more information
                     # Convert to absolute screen coordinates
                     abs_left = self.client_left + left
                     abs_top = self.client_top + top
-                    coord_text = f"position: ({abs_left},{abs_top}) • size: {self.box_width}×{self.box_height}"
+                    abs_right = abs_left + self.box_width
+                    abs_bottom = abs_top + self.box_height
                     
-                    # Draw background for text at bottom
-                    text_rect = QRect(0, self.client_height - 40, self.client_width, 30)
-                    painter.fillRect(text_rect, QColor(0, 0, 0, 150))
-                    
-                    # Display information at the bottom center
-                    painter.setPen(QPen(self.colors['text_bright']))
-                    painter.setFont(QFont("Consolas", 10))
-                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, coord_text)
-                    
-                    # Create instruction panel at top
-                    instruction_bg = QRect(self.client_width//2 - 300, 20, 600, 60)
-                    painter.fillRect(instruction_bg, QColor(0, 0, 0, 150))
-                    painter.setPen(QPen(self.colors['green']))
-                    painter.drawRect(instruction_bg)
-                    
-                    # Draw instructions
-                    painter.setPen(QPen(self.colors['text_bright']))
-                    painter.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-                    painter.drawText(QRect(0, 30, self.client_width, 30), 
-                                    Qt.AlignmentFlag.AlignCenter, "SELECT REGION • CLICK TO PLACE • ESC TO CANCEL")
-                    
-                    # Add second line of instructions
-                    painter.setFont(QFont("Segoe UI", 10))
-                    painter.drawText(QRect(0, 55, self.client_width, 20), 
-                                    Qt.AlignmentFlag.AlignCenter, 
-                                    f"Region size: {self.box_width}×{self.box_height} pixels • Move mouse to position")
+                    # Close selection window and return the selected region
+                    self.parent().close()
+                    self.parent().selected_region = (abs_left, abs_top, abs_right, abs_bottom)
+                    self.parent().selection_complete = True
+            
+            def keyPressEvent(self, event):
+                """Handle key press to cancel selection"""
+                if event.key() == Qt.Key.Key_Escape:
+                    self.cursor_timer.stop()
+                    self.preview_timer.stop()
+                    self.parent().close()
+                    self.parent().selected_region = None
+                    self.parent().selection_complete = False
+        
+        # Set up selection window properties
+        selection_window.selection_complete = False
+        selection_window.selected_region = None
+        
+        # Create canvas and add to window
+        canvas = SelectionCanvas(selection_window)
+        
+        # Set cursor to crosshair
+        selection_window.setCursor(Qt.CursorShape.CrossCursor)
+        canvas.setCursor(Qt.CursorShape.CrossCursor)
+        
+        # Show the selection window
+        selection_window.show()
+        selection_window.activateWindow()
+        selection_window.raise_()
+        
+        # Force focus on the game window first
+        force_focus_window(self.detector.play_together_window)
+        time.sleep(0.1)
+        
+        # Now bring selection window to top
+        selection_window.activateWindow()
+        selection_window.raise_()
+        
+        # Initialize cursor position to center of window
+        cursor = QCursor()
+        center_x = client_left + (game_width // 2)
+        center_y = client_top + (game_height // 2)
+        cursor.setPos(center_x, center_y)
+        
+        # Set up a timer to check if selection is complete
+        check_timer = QTimer(self)
+        check_timer.setInterval(100)  # Check every 100ms
+        
+        def check_selection_status():
+            if not selection_window.isVisible():
+                check_timer.stop()
                 
-                def mousePressEvent(self, event):
-                    """Handle mouse click to finalize selection"""
-                    if event.button() == Qt.MouseButton.LeftButton:
-                        # Calculate region coordinates centered on mouse position
-                        left = int(self.current_x - self.box_width // 2)
-                        top = int(self.current_y - self.box_height // 2)
-                        right = left + self.box_width
-                        bottom = top + self.box_height
-                        
-                        # Ensure region stays within screen bounds
-                        if left < 0:
-                            left = 0
-                            right = self.box_width
-                        elif right > self.client_width:
-                            right = self.client_width
-                            left = right - self.box_width
-                            
-                        if top < 0:
-                            top = 0
-                            bottom = self.box_height
-                        elif bottom > self.client_height:
-                            bottom = self.client_height
-                            top = bottom - self.box_height
-                        
-                        # Stop the cursor tracking timer
-                        self.cursor_timer.stop()
-                        
-                        # Convert to absolute screen coordinates
-                        abs_left = self.client_left + left
-                        abs_top = self.client_top + top
-                        abs_right = abs_left + self.box_width
-                        abs_bottom = abs_top + self.box_height
-                        
-                        # Close selection window and return the selected region
-                        self.parent().close()
-                        self.parent().selected_region = (abs_left, abs_top, abs_right, abs_bottom)
-                        self.parent().selection_complete = True
+                # Show our window again
+                self.show()
+                self.activateWindow()
                 
-                def keyPressEvent(self, event):
-                    """Handle key press to cancel selection"""
-                    if event.key() == Qt.Key.Key_Escape:
-                        self.cursor_timer.stop()
-                        self.parent().close()
-                        self.parent().selected_region = None
-                        self.parent().selection_complete = False
-            
-            # Set up selection window properties
-            selection_window.selection_complete = False
-            selection_window.selected_region = None
-            
-            # Create canvas and add to window
-            canvas = SelectionCanvas(selection_window)
-            
-            # Set cursor to crosshair
-            selection_window.setCursor(Qt.CursorShape.CrossCursor)
-            canvas.setCursor(Qt.CursorShape.CrossCursor)
-            
-            # Show the selection window
-            selection_window.show()
-            selection_window.activateWindow()
-            selection_window.raise_()
-            
-            # Force focus on the game window again
-            win32gui.SetForegroundWindow(hwnd)
-            win32gui.BringWindowToTop(hwnd)
-            time.sleep(0.1)
-            
-            # Now bring selection window to top again
-            selection_window.activateWindow()
-            selection_window.raise_()
-            
-            # Initialize cursor position to center of window
-            cursor = QCursor()
-            center_x = client_left + (client_width // 2)
-            center_y = client_top + (client_height // 2)
-            cursor.setPos(center_x, center_y)
-            
-            # Set up a timer to check if selection is complete
-            check_timer = QTimer(self)
-            check_timer.setInterval(100)  # Check every 100ms
-            
-            def check_selection_status():
-                if not selection_window.isVisible():
-                    check_timer.stop()
+                if selection_window.selection_complete and selection_window.selected_region:
+                    # Store the region in the detector
+                    self.detector.region = selection_window.selected_region
+                    left, top, right, bottom = self.detector.region
+                    width = right - left
+                    height = bottom - top
                     
-                    # Show our window again
-                    self.show()
-                    self.activateWindow()
+                    self.log(f"Region selected: ({left},{top}) to ({right},{bottom}), size: {width}×{height}")
                     
-                    if selection_window.selection_complete and selection_window.selected_region:
-                        # Store the region in the detector
-                        self.detector.region = selection_window.selected_region
-                        left, top, right, bottom = self.detector.region
-                        width = right - left
-                        height = bottom - top
-                        
-                        self.log(f"Region selected: ({left},{top}) to ({right},{bottom}), size: {width}×{height}")
-                        
-                        # Update region info display if available
-                        if hasattr(self, 'region_info_label'):
-                            self.region_info_label.setText(f"Position: ({left},{top}) • Size: {width}×{height}")
-                        
-                        # Validate the region and capture reference frame
-                        if self.detector.validate_region():
-                            self.detector.capture_reference()
-                            self.log("Reference frame captured for the selected region")
-                            self.status_label.setText(f"Region selected: {width}×{height} at ({left},{top})")
-                            self.start_button.setEnabled(True)
-                        else:
-                            self.log("Selected region is invalid")
-                            self.status_label.setText("Invalid region selected")
+                    # Update region info display
+                    if hasattr(self, 'region_info_label'):
+                        self.region_info_label.setText(f"Position: ({left},{top}) • Size: {width}×{height}")
+                    
+                    # Validate the region with a preview capture
+                    if self.detector.validate_region():
+                        # Also capture a reference frame right away
+                        self.detector.capture_reference()
+                        self.log("Reference frame captured for the selected region")
+                        self.status_label.setText(f"Region selected: {width}×{height} at ({left},{top})")
+                        self.start_button.setEnabled(True)
                     else:
-                        self.log("Region selection canceled")
-            
-            # Connect timer and start it
-            check_timer.timeout.connect(check_selection_status)
-            check_timer.start()
-            
-            return True
-            
-        except Exception as e:
-            self.log(f"Error in region selection: {str(e)}")
-            traceback.print_exc()
-            self.show()  # Make sure our window is visible again
-            return False
+                        self.log("Selected region is invalid")
+                        self.status_label.setText("Invalid region selected")
+                else:
+                    self.log("Region selection canceled")
+        
+        # Connect timer and start it
+        check_timer.timeout.connect(check_selection_status)
+        check_timer.start()
+        
+        return True
+    
+    # except Exception as e:
+    #     self.log(f"Error in region selection: {str(e)}")
+    #     traceback.print_exc()
+    #     self.show()  # Make sure our window is visible again
+    #     return False
         
     def update_statistics(self):
         """Update statistics display"""
