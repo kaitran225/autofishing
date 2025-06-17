@@ -11,8 +11,8 @@ from PyQt6.QtWidgets import (
     QCheckBox, QTextEdit, QFrame, QSplitter, QDialog, QFormLayout, QDialogButtonBox, 
     QSpinBox, QMessageBox, QGroupBox, QSlider
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot, QRect, QPoint, QObject
-from PyQt6.QtGui import QFont, QColor, QPalette, QPainter, QPen, QBrush, QScreen, QPixmap, QImage, QCursor
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot, QRect, QPoint, QObject, QRectF
+from PyQt6.QtGui import QFont, QColor, QPalette, QPainter, QPen, QBrush, QScreen, QPixmap, QImage, QCursor, QPainterPath
 import keyboard
 import queue
 import datetime
@@ -47,53 +47,97 @@ VERSION_NAME = "Direct Control Edition"
 
 # Matplotlib canvas class for Qt integration
 class MatplotlibCanvas(FigureCanvas):
-    def __init__(self, parent=None, width=5, height=4, dpi=100, bg_color='#333333'):
-        # Create figure and axes with dark theme
-        self.fig = Figure(figsize=(width, height), dpi=dpi, facecolor=bg_color)
+    def __init__(self, parent=None, width=5, height=3.33, dpi=100, bg_color='#333333'):
+        # Create figure with correct aspect ratio (1.5:1 width to height)
+        # Add extra height for the timeline
+        adjusted_height = height * 1.15  # Add 15% height for timeline
+        self.fig = Figure(figsize=(width, adjusted_height), dpi=dpi, facecolor=bg_color)
         
-        # Main image display
-        self.current_ax = self.fig.add_subplot(111)
+        # Create properly spaced subplots - one for image, one for timeline
+        gs = self.fig.add_gridspec(2, 1, height_ratios=[9, 1], hspace=0.15)
+        
+        # Main image display - top subplot
+        self.current_ax = self.fig.add_subplot(gs[0, 0])
         self.current_ax.set_facecolor(bg_color)
         self.current_ax.axis('off')
         
-        # Initialize empty image
-        self.current_image = self.current_ax.imshow(np.zeros((100, 100, 3)), cmap='gray')
-        self.diff_overlay = self.current_ax.imshow(np.zeros((100, 100, 4)), alpha=0.5)
+        # Initialize empty image with correct aspect ratio (1.5:1)
+        empty_img = np.zeros((100, 150, 3), dtype=np.uint8)  # 150x100 = 1.5:1 ratio
+        self.current_image = self.current_ax.imshow(empty_img, aspect='equal', interpolation='none')
+        self.diff_overlay = self.current_ax.imshow(np.zeros((100, 150, 4), dtype=np.uint8), 
+                                                  alpha=0.5, interpolation='none')
         
-        # Add timeline for activity monitoring
-        self.timeline_ax = self.current_ax.inset_axes([0.0, -0.15, 1.0, 0.1], transform=self.current_ax.transAxes)
+        # Add rectangle border around image
+        rect = plt.Rectangle((0, 0), 1, 1, fill=False, ec='#666', linewidth=1.5, 
+                            transform=self.current_ax.transAxes, clip_on=False)
+        self.current_ax.add_patch(rect)
+        
+        # Add timeline for activity monitoring in separate subplot
+        self.timeline_ax = self.fig.add_subplot(gs[1, 0])
         self.timeline_ax.set_facecolor(bg_color)
         self.timeline_ax.set_xticks([])
         self.timeline_ax.set_yticks([])
         
+        # Add border for timeline
+        self.timeline_ax.spines['top'].set_visible(False)
+        self.timeline_ax.spines['right'].set_visible(False)
+        self.timeline_ax.spines['bottom'].set_visible(False)
+        self.timeline_ax.spines['left'].set_visible(False)
+        
         # Initialize timeline data
         x_data = np.arange(100)
         y_data = np.ones(100) * 0.5
-        self.activity_line, = self.timeline_ax.plot(x_data, y_data, color='#77DD77', linewidth=1)
-        self.threshold_line = self.timeline_ax.axhline(y=0.05, color='#FF6961', linestyle='--', alpha=0.5, linewidth=0.5)
+        self.activity_line, = self.timeline_ax.plot(x_data, y_data, color='#77DD77', linewidth=1.5)
+        self.threshold_line = self.timeline_ax.axhline(y=0.05, color='#FF6961', 
+                                                      linestyle='--', alpha=0.7, linewidth=1)
+        self.timeline_ax.set_ylim(0, 1)
         
-        # Add border to main image area
-        rect = plt.Rectangle((0, 0), 1, 1, fill=False, ec='#666', linewidth=1, transform=self.current_ax.transAxes)
-        self.current_ax.add_patch(rect)
-        
-        # Add title to timeline with threshold value in minimal format
-        self.timeline_ax.set_title("ACTIVITY", color='#77DD77', fontsize=8, fontweight='normal')
+        # Add title to timeline with threshold value
+        self.timeline_ax.set_title("ACTIVITY", color='#77DD77', fontsize=8, fontweight='normal', pad=2)
         
         # Initialize the figure canvas
         super(MatplotlibCanvas, self).__init__(self.fig)
         self.setParent(parent)
         
         # Add placeholder text
-        self.placeholder_text = self.fig.text(0.5, 0.5, "Awaiting data...", color='#999', 
+        self.placeholder_text = self.fig.text(0.5, 0.45, "Awaiting data...", color='#999', 
                                              ha='center', va='center', fontsize=10)
+        
+        # Set min/fixed size to maintain aspect ratio
+        self.setMinimumSize(300, 200)
+        
+    def resizeEvent(self, event):
+        """Handle resize events to maintain proper aspect ratio"""
+        super().resizeEvent(event)
+        # Update aspect ratio by adjusting the axes
+        self.current_ax.set_aspect('equal')
+        self.current_ax.figure.canvas.draw_idle()
 
     def update_image(self, frame=None, diff_frame=None):
-        """Update the displayed image"""
+        """Update the displayed image maintaining aspect ratio"""
         if self.placeholder_text:
             self.placeholder_text.remove()
             self.placeholder_text = None
             
         if frame is not None:
+            # If frame doesn't have the correct aspect ratio, resize it
+            h, w = frame.shape[:2]
+            target_ratio = 1.5
+            actual_ratio = w / h
+            
+            if abs(actual_ratio - target_ratio) > 0.01:  # If ratio is off by more than 1%
+                # Resize the image to match the target ratio
+                new_w = w
+                new_h = int(w / target_ratio)
+                if new_h > h:
+                    new_h = h
+                    new_w = int(h * target_ratio)
+                
+                # Center crop to the new size
+                y_start = (h - new_h) // 2
+                x_start = (w - new_w) // 2
+                frame = frame[y_start:y_start+new_h, x_start:x_start+new_w]
+                
             self.current_image.set_data(frame)
             
         if diff_frame is not None:
@@ -118,8 +162,10 @@ class MatplotlibCanvas(FigureCanvas):
             
             self.diff_overlay.set_data(colored_diff_alpha)
         
-        self.fig.canvas.draw_idle()
-        
+        # Ensure display maintains correct aspect ratio
+        self.current_ax.set_aspect('equal')
+        self.current_ax.figure.canvas.draw_idle()
+    
     def update_timeline(self, history=None, threshold=0.05):
         """Update the activity timeline"""
         if history and len(history) > 0:
@@ -503,79 +549,81 @@ class PixelChangeDetector(QObject):
     detection_signal = pyqtSignal()
     
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.parent = parent  # Parent reference for callback
-        self.THRESHOLD = 0.05  # Default threshold for pixel change
+        super().__init__()
+        # Store parent for callbacks
+        self.parent = parent
         
-        # Detector state
+        # Initialize logging
+        self.log_history = []  # Store log messages locally
+        
+        # Initialize variables
+        self.region = None
+        self.reference_frame = None
+        self.previous_frame = None
+        self.current_frame = None
+        self.color_frame = None  # For visualization
+        self.diff_frame = None
+        
+        # Play Together window handling
+        self.play_together_window = None
+        
+        # Detection parameters
+        self.THRESHOLD = 0.05
+        self.detection_cooldown = 5.0
+        self.last_detection_time = 0
+        self.change_history = []
+        self.fishing_key = "f"
+        
+        # Options
+        self.high_performance_mode = True
+        self.respect_fullscreen = True
+        self.direct_control = True
+        
+        # Thread handling
+        self.thread_control = {"stop_requested": False}
         self.running = False
         self.paused = False
+        self.capture_interval = 0.1  # 10 FPS default
         
-        # Screen capture region (required)
-        self.region = None  # (left, top, right, bottom)
-        
-        # Settings
-        self.background_mode = False
-        self.high_performance_mode = True  # Use more resources for better reliability
-        self.respect_fullscreen = True  # Don't interrupt fullscreen applications
-        self.direct_control = True  # Use direct key input to game
-        
-        # Initialize visualization data
-        self.current_frame = None
-        self.previous_frame = None
-        self.reference_frame = None
-        self.reference_color_frame = None  # Store color reference frame
-        self.diff_frame = None
-        self.change_history = []
-        self.color_frame = None
-        
-        # Last detection time for cooldown
-        self.last_detection_time = 0
-        self.detection_cooldown = 5.0  # Cooldown between detections
-        
-        # Capture interval in seconds
-        self.capture_interval = 0.05  # Capture interval
-        self.max_fps = 30  # Maximum frames per second
-        
-        # Play Together window tracking
-        self.play_together_window = None
-        self.play_together_pid = None
-        
-        # Key settings
-        self.fishing_key = "f"  # Default fishing key
-        
-        # Detection thread reference
-        self.detection_thread = None
-        
-        # Stats tracking
+        # Initialize stats
         self.stats = {
             "total_detections": 0,
-            "false_positives": 0,
-            "session_start_time": time.time(),
             "last_detection_time": 0,
             "avg_detection_interval": 0
         }
         
-        # Performance monitoring
+        # Find Play Together window
+        self.find_play_together_process()
+        
+        # Set up performance metrics
         self.performance = {
-            "avg_processing_time": 0.05,
-            "processing_samples": 0,
-            "cpu_usage": 0
+            "fps": 0,
+            "processing_samples": 0
         }
         
-        # Thread control
-        self.thread_control = {
-            "running": True,
-            "paused": False,
-            "stop_requested": False
-        }
+        # Log initialization
+        self.log("PixelChangeDetector initialized")
     
     def log(self, message):
-        """Send log message to parent"""
-        if self.parent and hasattr(self.parent, "log"):
-            self.parent.log(message)
-        else:
-            print(f"[Detector] {message}")
+        """Log a message to the parent application or print to console"""
+        try:
+            # Send to parent's log queue if available
+            if self.parent:
+                # Make sure we're using the parent's log method
+                self.parent.log(message)
+            else:
+                # Otherwise print to console
+                print(f"[Detector] {message}")
+                
+            # Add to local log history
+            timestamp = time.strftime("%H:%M:%S", time.localtime())
+            self.log_history.append(f"[{timestamp}] {message}")
+            while len(self.log_history) > 100:  # Limit history size
+                self.log_history.pop(0)
+        except Exception as e:
+            # Emergency fallback
+            print(f"[ERROR] Failed to log message: {e}")
+            print(f"[DEBUG] Original message: {message}")
     
     def find_play_together_process(self):
         """Find Play Together process and window handle"""
@@ -769,6 +817,9 @@ class PixelChangeDetector(QObject):
         fps_counter = 0
         fps_timer = time.time()
         
+        # Track consecutive detections to filter false positives
+        detection_intensity = 0  # Used to track detection confidence
+        
         while self.running:
             try:
                 # Check if paused
@@ -801,31 +852,49 @@ class PixelChangeDetector(QObject):
                 
                 # Check for detection with cooldown
                 current_time = time.time()
-                if change_percent > self.THRESHOLD and (current_time - self.last_detection_time) > self.detection_cooldown:
-                    change_percent_display = round(change_percent * 100, 2)
-                    self.log(f"Major pixel change detected! Change: {change_percent_display}%")
-                    self.last_detection_time = current_time
+                cooldown_passed = (current_time - self.last_detection_time) > self.detection_cooldown
+                
+                # Calculate triggering threshold with hysteresis
+                # Use higher threshold for isolated frames to avoid false positives
+                # Use lower threshold for consecutive detections
+                trigger_threshold = self.THRESHOLD * (1.0 - min(detection_intensity / 10.0, 0.5))
+                
+                if change_percent > trigger_threshold:
+                    # Increase detection confidence
+                    detection_intensity = min(detection_intensity + 1, 10)
                     
-                    # Update stats
-                    self.stats["total_detections"] += 1
-                    
-                    # Calculate interval since last detection
-                    if self.stats["last_detection_time"] > 0:
-                        interval = current_time - self.stats["last_detection_time"]
-                        # Update average detection interval using moving average
-                        if self.stats["avg_detection_interval"] == 0:
-                            self.stats["avg_detection_interval"] = interval
-                        else:
-                            self.stats["avg_detection_interval"] = (
-                                0.8 * self.stats["avg_detection_interval"] + 0.2 * interval
-                            )
-                    self.stats["last_detection_time"] = current_time
-                    
-                    # Emit the detection signal
-                    self.detection_signal.emit()
-                    
-                    # Handle the detection with fishing sequence
-                    self._handle_detection()
+                    # Check if we should trigger action sequence
+                    if detection_intensity >= 3 and cooldown_passed:  # Require at least 3 consecutive detections
+                        change_percent_display = round(change_percent * 100, 2)
+                        self.log(f"Major pixel change detected! Change: {change_percent_display}% (Confidence: {detection_intensity}/10)")
+                        self.last_detection_time = current_time
+                        
+                        # Reset detection intensity after triggering
+                        detection_intensity = 0
+                        
+                        # Update stats
+                        self.stats["total_detections"] += 1
+                        
+                        # Calculate interval since last detection
+                        if self.stats["last_detection_time"] > 0:
+                            interval = current_time - self.stats["last_detection_time"]
+                            # Update average detection interval using moving average
+                            if self.stats["avg_detection_interval"] == 0:
+                                self.stats["avg_detection_interval"] = interval
+                            else:
+                                self.stats["avg_detection_interval"] = (
+                                    0.8 * self.stats["avg_detection_interval"] + 0.2 * interval
+                                )
+                        self.stats["last_detection_time"] = current_time
+                        
+                        # Emit the detection signal
+                        self.detection_signal.emit()
+                        
+                        # Handle the detection with fishing sequence
+                        self._handle_detection()
+                else:
+                    # Gradually decrease detection confidence
+                    detection_intensity = max(detection_intensity - 0.5, 0)
                     
                 # Store current frame as previous for next comparison if not using reference
                 if self.reference_frame is None:
@@ -841,17 +910,21 @@ class PixelChangeDetector(QObject):
                     
                     # Update performance metrics
                     if hasattr(self, 'performance'):
+                        self.performance["fps"] = fps
                         self.performance["processing_samples"] += 1
                         if self.performance["processing_samples"] > 100:
                             self.performance["processing_samples"] = 1
                 
-                # Sleep to control capture rate
-                time.sleep(self.capture_interval)
+                # Sleep to control capture rate - use adaptive timing based on performance
+                sleep_time = max(0.01, self.capture_interval)  # Minimum 10ms sleep
+                time.sleep(sleep_time)
                 
             except Exception as e:
                 self.log(f"Error in detection loop: {e}")
                 traceback.print_exc()
                 time.sleep(0.1)  # Short delay on error
+                # Reset detection intensity on errors
+                detection_intensity = 0
         
         # Thread is exiting
         self.log("Detection thread exiting")
@@ -860,72 +933,122 @@ class PixelChangeDetector(QObject):
     def _handle_detection(self):
         """Handle detection event with optimized sequence"""
         try:
-            # Handle key press with focus
-            if self.focus_play_together_window():
-                self.log(f"Pressing {self.fishing_key.upper()} key to catch fish...")
-                self.send_fishing_key()
-                time.sleep(0.2)
-            else:
-                self.log("Failed to focus window, skipping key press")
+            # STEP 1: Press fishing key to catch fish
+            self.log("STEP 1: Catching fish...")
+            success = False
             
-            # Pause detection based on the configured cooldown
+            # Try up to 3 times to press fishing key
+            for attempt in range(3):
+                if self.focus_play_together_window():
+                    self.log(f"Pressing {self.fishing_key.upper()} key to catch fish (attempt {attempt+1})")
+                    if self.send_fishing_key():
+                        success = True
+                        break
+                    time.sleep(0.2)
+                else:
+                    self.log(f"Failed to focus window, retrying ({attempt+1}/3)")
+                    time.sleep(0.1)
+            
+            if not success:
+                self.log("Failed to send fishing key after multiple attempts")
+            
+            # STEP 2: Wait for cooldown period
             cooldown = self.detection_cooldown
-            self.log(f"Pausing detection for {cooldown:.1f} seconds...")
+            self.log(f"STEP 2: Pausing for {cooldown:.1f} seconds...")
             
-            # Initial delay
-            time.sleep(min(2.0, cooldown / 2))
-            
+            # Update UI with countdown
             pause_start = time.time()
-            
-            # Wait additional time, checking for stop requests
             pause_end = pause_start + cooldown
+            
             while time.time() < pause_end and self.running and not self.thread_control.get("stop_requested", False):
                 remaining = int(pause_end - time.time())
                 if self.parent:
-                    # Update UI with remaining time
                     QTimer.singleShot(0, lambda r=remaining: self.parent.status_label.setText(f"Paused ({r}s)"))
                 time.sleep(0.1)
             
-            # Press ESC after pause
+            # STEP 3: Exit fishing menu with ESC key
             if self.running and not self.thread_control.get("stop_requested", False):
-                self.log("Pressing ESC key to exit fishing menu...")
-                if self.focus_play_together_window():
-                    self.send_esc_key()
-                else:
-                    self.log("Failed to focus window, skipping ESC key press")
+                self.log("STEP 3: Exiting fishing menu...")
+                success = False
+                
+                # Try up to 3 times to press ESC key
+                for attempt in range(3):
+                    if self.focus_play_together_window():
+                        self.log(f"Pressing ESC key (attempt {attempt+1})")
+                        if self.send_esc_key():
+                            success = True
+                            break
+                        time.sleep(0.2)
+                    else:
+                        self.log(f"Failed to focus window for ESC key, retrying ({attempt+1}/3)")
+                        time.sleep(0.1)
+                
+                if not success:
+                    self.log("Failed to send ESC key after multiple attempts")
             
-            # Wait before casting again
-            esc_end = time.time() + 2
-            while time.time() < esc_end and self.running and not self.thread_control.get("stop_requested", False):
+            # STEP 4: Wait briefly for menu to close
+            self.log("STEP 4: Waiting for menu to close...")
+            menu_close_time = 2.0  # Wait 2 seconds for menu to close
+            menu_close_end = time.time() + menu_close_time
+            
+            while time.time() < menu_close_end and self.running and not self.thread_control.get("stop_requested", False):
                 time.sleep(0.1)
             
-            # Cast fishing line again
+            # STEP 5: Cast fishing line again
             if self.running and not self.thread_control.get("stop_requested", False):
-                self.log(f"Pressing {self.fishing_key.upper()} key to cast fishing line...")
-                if self.focus_play_together_window():
-                    self.send_fishing_key()
-                    time.sleep(2)  # Wait for screen to update
-                else:
-                    self.log("Failed to focus window, skipping fishing cast")
+                self.log("STEP 5: Casting fishing line again...")
+                success = False
                 
-                # Get a new reference frame
+                # Try up to 3 times to cast fishing line
+                for attempt in range(3):
+                    if self.focus_play_together_window():
+                        self.log(f"Casting fishing line with {self.fishing_key.upper()} key (attempt {attempt+1})")
+                        if self.send_fishing_key():
+                            success = True
+                            break
+                        time.sleep(0.2)
+                    else:
+                        self.log(f"Failed to focus window for casting, retrying ({attempt+1}/3)")
+                        time.sleep(0.1)
+                
+                if not success:
+                    self.log("Failed to cast fishing line after multiple attempts")
+                
+                # Wait for screen to update after casting
+                self.log("Waiting for screen to update after casting...")
+                time.sleep(2)
+                
+                # Capture new reference frame
+                self.log("Capturing new reference frame...")
                 self.capture_reference()
                 self.log("New reference frame captured after casting")
             
-            # Update status to running
+            # STEP 6: Resume monitoring
             if self.parent and self.running and not self.thread_control.get("stop_requested", False):
+                self.log("STEP 6: Resuming monitoring...")
                 QTimer.singleShot(0, lambda: self.parent.status_label.setText("Running - Monitoring for changes"))
             
-            # Pause a bit more to let the game stabilize
-            stabilize_time = min(2.0, self.detection_cooldown * 0.2)
+            # STEP 7: Stabilization pause
+            self.log("STEP 7: Short stabilization pause...")
+            stabilize_time = min(1.5, self.detection_cooldown * 0.15)
             time.sleep(stabilize_time)
             
+            self.log("Action sequence completed successfully")
+            
         except Exception as e:
-            self.log(f"Error handling detection: {e}")
-            # Try to recover
-            if self.parent:
-                QTimer.singleShot(0, lambda: self.parent.status_label.setText("Running - Monitoring for changes"))
-                
+            self.log(f"Error during action sequence: {e}")
+            traceback.print_exc()
+            # Try to recover by updating status and capturing new reference
+            if self.running and not self.thread_control.get("stop_requested", False):
+                if self.parent:
+                    QTimer.singleShot(0, lambda: self.parent.status_label.setText("Running - Monitoring after error"))
+                # Try to capture new reference frame to recover
+                try:
+                    self.capture_reference()
+                    self.log("Captured recovery reference frame")
+                except:
+                    pass
+    
     def send_fishing_key(self):
         """Send the configured fishing key to the game window"""
         try:
@@ -934,8 +1057,22 @@ class PixelChangeDetector(QObject):
                 self.focus_play_together_window()
                 time.sleep(0.05)  # Short delay
             
-            # Use direct key press function
-            direct_key_press(self.fishing_key)
+            # Method 1: Use keyboard library
+            keyboard.press_and_release(self.fishing_key)
+            time.sleep(0.05)
+            
+            # Method 2: Use direct virtual key code
+            vk_code = ord(self.fishing_key.upper())
+            win32api.keybd_event(vk_code, 0, 0, 0)  # key down
+            time.sleep(0.05)
+            win32api.keybd_event(vk_code, 0, win32con.KEYEVENTF_KEYUP, 0)  # key up
+            
+            # Method 3: Send message to window
+            win32gui.PostMessage(self.play_together_window, win32con.WM_KEYDOWN, vk_code, 0)
+            time.sleep(0.05)
+            win32gui.PostMessage(self.play_together_window, win32con.WM_KEYUP, vk_code, 0)
+            
+            self.log(f"Fishing key '{self.fishing_key}' sent via multiple methods")
             return True
         except Exception as e:
             self.log(f"Error sending fishing key: {e}")
@@ -949,18 +1086,97 @@ class PixelChangeDetector(QObject):
                 self.focus_play_together_window()
                 time.sleep(0.05)  # Short delay
             
-            # Use direct key press for ESC
+            # Method 1: Use keyboard library
             keyboard.press_and_release('esc')
+            time.sleep(0.05)
             
-            # Also try with virtual key code
+            # Method 2: Use virtual key code
             vk_code = 0x1B  # VK_ESCAPE
             win32api.keybd_event(vk_code, 0, 0, 0)  # key down
             time.sleep(0.05)
             win32api.keybd_event(vk_code, 0, win32con.KEYEVENTF_KEYUP, 0)  # key up
             
+            # Method 3: Send message to window
+            win32gui.PostMessage(self.play_together_window, win32con.WM_KEYDOWN, vk_code, 0)
+            time.sleep(0.05)
+            win32gui.PostMessage(self.play_together_window, win32con.WM_KEYUP, vk_code, 0)
+            
+            self.log("ESC key sent via multiple methods")
             return True
         except Exception as e:
             self.log(f"Error sending ESC key: {e}")
+            return False
+    
+    def focus_play_together_window(self):
+        """Focus the Play Together window using multiple aggressive methods"""
+        try:
+            if not self.play_together_window:
+                self.find_play_together_process()
+                if not self.play_together_window:
+                    self.log("Cannot focus window: Play Together window not found")
+                    return False
+                    
+            # Check if window exists
+            if not win32gui.IsWindow(self.play_together_window):
+                self.log("Window no longer exists, trying to find it again")
+                self.find_play_together_process()
+                if not self.play_together_window:
+                    return False
+            
+            # Method 1: Standard SetForegroundWindow
+            current_hwnd = user32.GetForegroundWindow()
+            if current_hwnd == self.play_together_window:
+                return True  # Already in focus
+                
+            # Try standard approach first
+            result = user32.SetForegroundWindow(self.play_together_window)
+            
+            # Method 2: Try AttachThreadInput approach
+            if not result:
+                foreground_thread = user32.GetWindowThreadProcessId(current_hwnd, None)
+                target_thread = user32.GetWindowThreadProcessId(self.play_together_window, None)
+                
+                if foreground_thread != target_thread:
+                    user32.AttachThreadInput(foreground_thread, target_thread, True)
+                    result = user32.SetForegroundWindow(self.play_together_window)
+                    user32.AttachThreadInput(foreground_thread, target_thread, False)
+            
+            # Method 3: Try BringWindowToTop and show window
+            if not result:
+                user32.ShowWindow(self.play_together_window, win32con.SW_RESTORE)
+                user32.BringWindowToTop(self.play_together_window)
+                user32.SetForegroundWindow(self.play_together_window)
+            
+            # Method 4: Use SetWindowPos with TOPMOST flag
+            if not result:
+                user32.SetWindowPos(
+                    self.play_together_window,
+                    HWND_TOPMOST,
+                    0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                )
+                # Then set back to non-topmost to avoid staying always on top
+                user32.SetWindowPos(
+                    self.play_together_window,
+                    win32con.HWND_NOTOPMOST,
+                    0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                )
+            
+            # Final check if focus was achieved
+            time.sleep(0.05)  # Short delay to let OS update window state
+            focused_hwnd = user32.GetForegroundWindow()
+            success = focused_hwnd == self.play_together_window
+            
+            if success:
+                self.log("Successfully focused Play Together window")
+            else:
+                self.log(f"Warning: Failed to focus Play Together window (current focus: {focused_hwnd})")
+                
+            return success
+            
+        except Exception as e:
+            self.log(f"Error focusing window: {e}")
             return False
 
 # Main application class
@@ -993,6 +1209,12 @@ class SimpleAutoFisherGUI(QMainWindow):
         self.vis_timer = QTimer()
         self.vis_timer.setInterval(100)  # 10 FPS for visualization updates
         self.vis_timer.timeout.connect(self.update_visualization)
+        
+        # Configure logs update timer - add this to update logs every 100ms
+        self.log_timer = QTimer()
+        self.log_timer.setInterval(100)  # 10 times per second
+        self.log_timer.timeout.connect(self.update_logs)
+        self.log_timer.start()  # Start the log timer immediately
         
         # Configure stats update timer
         self.stats_timer = QTimer()
@@ -1097,21 +1319,10 @@ class SimpleAutoFisherGUI(QMainWindow):
         fishing_key_layout.addWidget(self.apply_button)
         settings_layout.addLayout(fishing_key_layout, 3, 1)
         
-        # Background Mode Options
+        # Advanced Options
         options_frame = QFrame()
         options_layout = QVBoxLayout(options_frame)
         options_layout.setContentsMargins(0, 10, 0, 0)
-        
-        # Background Mode
-        self.background_checkbox = QCheckBox("Background Mode (don't steal focus)")
-        self.background_checkbox.setChecked(self.detector.background_mode)
-        self.background_checkbox.stateChanged.connect(self.update_background_mode)
-        options_layout.addWidget(self.background_checkbox)
-        
-        # Add description
-        bg_desc = QLabel("Background mode sends keys without interrupting your work")
-        bg_desc.setStyleSheet("color: gray; font-size: 10px;")
-        options_layout.addWidget(bg_desc)
         
         # High Performance Mode
         self.high_performance_checkbox = QCheckBox("High Performance Mode (uses more CPU)")
@@ -1120,7 +1331,7 @@ class SimpleAutoFisherGUI(QMainWindow):
         options_layout.addWidget(self.high_performance_checkbox)
         
         # Add description
-        hp_desc = QLabel("Increases reliability of background mode using more system resources")
+        hp_desc = QLabel("Increases reliability using more system resources")
         hp_desc.setStyleSheet("color: gray; font-size: 10px;")
         options_layout.addWidget(hp_desc)
         
@@ -1131,18 +1342,18 @@ class SimpleAutoFisherGUI(QMainWindow):
         options_layout.addWidget(self.respect_fullscreen_checkbox)
         
         # Add description
-        fs_desc = QLabel("Prevents any interruption when other fullscreen applications are active")
+        fs_desc = QLabel("Prevents interruption when other fullscreen applications are active")
         fs_desc.setStyleSheet("color: gray; font-size: 10px;")
         options_layout.addWidget(fs_desc)
         
         # Direct Control Mode
-        self.direct_control_checkbox = QCheckBox("Direct Control Mode (uses less CPU)")
+        self.direct_control_checkbox = QCheckBox("Direct Control Mode (recommended)")
         self.direct_control_checkbox.setChecked(self.detector.direct_control)
         self.direct_control_checkbox.stateChanged.connect(self.update_direct_control)
         options_layout.addWidget(self.direct_control_checkbox)
         
         # Add description
-        dc_desc = QLabel("Reduces CPU usage by not stealing focus")
+        dc_desc = QLabel("Uses direct input methods for maximum reliability")
         dc_desc.setStyleSheet("color: gray; font-size: 10px;")
         options_layout.addWidget(dc_desc)
         
@@ -1250,9 +1461,52 @@ class SimpleAutoFisherGUI(QMainWindow):
         viz_group = QGroupBox("Monitoring")
         viz_layout = QVBoxLayout(viz_group)
         
-        # Create matplotlib canvas for visualization
-        self.viz_canvas = MatplotlibCanvas(self, width=5, height=4, dpi=100, bg_color='#232323')
-        viz_layout.addWidget(self.viz_canvas)
+        # Create a frame to contain the canvas with fixed aspect ratio
+        viz_frame = QFrame()
+        viz_frame.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Sunken)
+        viz_frame.setLineWidth(1)
+        viz_frame.setStyleSheet("background-color: #232323; border: 1px solid #444;")
+        
+        # Use a layout that maintains the aspect ratio
+        viz_frame_layout = QVBoxLayout(viz_frame)
+        viz_frame_layout.setContentsMargins(4, 4, 4, 4)
+        
+        # Create matplotlib canvas for visualization with the correct aspect ratio (1.5:1)
+        self.viz_canvas = MatplotlibCanvas(self, width=6, height=4, dpi=100, bg_color='#232323')
+        
+        # Add the canvas to the frame
+        viz_frame_layout.addWidget(self.viz_canvas)
+        
+        # Add the frame to the main viz layout
+        viz_layout.addWidget(viz_frame)
+        
+        # Add monitoring status indicators
+        status_panel = QFrame()
+        status_layout = QHBoxLayout(status_panel)
+        status_layout.setContentsMargins(0, 4, 0, 0)
+        
+        # Add threshold indicator
+        threshold_label = QLabel("Threshold:")
+        threshold_label.setStyleSheet("color: #AAA; font-size: 9pt;")
+        status_layout.addWidget(threshold_label)
+        
+        self.monitor_threshold = QLabel("0.05")
+        self.monitor_threshold.setStyleSheet("color: #FF6961; font-weight: bold; font-size: 9pt;")
+        status_layout.addWidget(self.monitor_threshold)
+        
+        status_layout.addStretch()
+        
+        # Add FPS indicator
+        fps_label = QLabel("FPS:")
+        fps_label.setStyleSheet("color: #AAA; font-size: 9pt;")
+        status_layout.addWidget(fps_label)
+        
+        self.monitor_fps = QLabel("0")
+        self.monitor_fps.setStyleSheet("color: #77DD77; font-weight: bold; font-size: 9pt;")
+        status_layout.addWidget(self.monitor_fps)
+        
+        # Add the status panel to the viz layout
+        viz_layout.addWidget(status_panel)
         
         right_layout.addWidget(viz_group)
         
@@ -1260,9 +1514,38 @@ class SimpleAutoFisherGUI(QMainWindow):
         log_group = QGroupBox("Logs")
         log_layout = QVBoxLayout(log_group)
         
+        # Create log console with improved styling
         self.log_console = QTextEdit()
         self.log_console.setReadOnly(True)
+        self.log_console.setStyleSheet("""
+            QTextEdit {
+                background-color: #1E1E1E;
+                color: #E0E0E0;
+                font-family: Consolas, 'Courier New', monospace;
+                font-size: 10pt;
+                border: 1px solid #333333;
+                border-radius: 3px;
+                padding: 5px;
+            }
+        """)
         log_layout.addWidget(self.log_console)
+        
+        # Add log control panel with clear button
+        log_control_panel = QFrame()
+        log_control_layout = QHBoxLayout(log_control_panel)
+        log_control_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Add spacer to push button to the right
+        log_control_layout.addStretch()
+        
+        # Add clear button
+        clear_log_button = QPushButton("Clear Logs")
+        clear_log_button.setMaximumWidth(100)
+        clear_log_button.clicked.connect(self.clear_logs)
+        log_control_layout.addWidget(clear_log_button)
+        
+        # Add control panel to log layout
+        log_layout.addWidget(log_control_panel)
         
         bottom_layout.addWidget(log_group)
         
@@ -1274,15 +1557,42 @@ class SimpleAutoFisherGUI(QMainWindow):
     def update_logs(self):
         """Process any new log messages from the queue"""
         try:
-            while True:
-                message = self.log_queue.get_nowait()
-                self.log_console.append(message)
-                # Ensure the latest log is visible
-                self.log_console.verticalScrollBar().setValue(
-                    self.log_console.verticalScrollBar().maximum()
-                )
-        except queue.Empty:
-            pass
+            # Check if we need to autoscroll (scroll was at the bottom)
+            scroll_bar = self.log_console.verticalScrollBar()
+            autoscroll = scroll_bar.value() == scroll_bar.maximum()
+            
+            # Process messages from queue
+            messages = []
+            while not self.log_queue.empty():
+                try:
+                    messages.append(self.log_queue.get_nowait())
+                except queue.Empty:
+                    break
+                    
+            # If we have messages, add them to log console
+            if messages:
+                for message in messages:
+                    self.log_console.append(message)
+                    
+                # Apply style to make logs more readable
+                self.log_console.setStyleSheet("""
+                    QTextEdit {
+                        background-color: #1E1E1E; 
+                        color: #E0E0E0; 
+                        font-family: Consolas, 'Courier New', monospace; 
+                        font-size: 10pt;
+                    }
+                """)
+                
+                # Autoscroll only if we were already at the bottom
+                if autoscroll:
+                    self.log_console.verticalScrollBar().setValue(
+                        self.log_console.verticalScrollBar().maximum()
+                    )
+        except Exception as e:
+            # Emergency logging if the normal logging system fails
+            print(f"Error updating logs: {e}")
+            traceback.print_exc()
             
     def clear_logs(self):
         """Clear the log console"""
@@ -1294,13 +1604,7 @@ class SimpleAutoFisherGUI(QMainWindow):
         threshold_value = value / 100.0
         self.threshold_label.setText(f"{threshold_value:.2f}")
         
-    def update_background_mode(self):
-        """Update background mode setting"""
-        self.detector.background_mode = self.background_checkbox.isChecked()
-        if self.detector:
-            self.detector.background_mode = self.background_checkbox.isChecked()
-            mode = "enabled" if self.detector.background_mode else "disabled"
-            self.log(f"Background mode {mode}")
+    # Background mode removed
             
     def update_high_performance(self):
         """Update high performance mode setting"""
@@ -1361,17 +1665,15 @@ class SimpleAutoFisherGUI(QMainWindow):
                 self.detector.THRESHOLD = threshold_value
                 self.detector.detection_cooldown = cooldown_value
                 self.detector.fishing_key = fishing_key
-                self.detector.background_mode = self.background_checkbox.isChecked()
                 self.detector.high_performance_mode = self.high_performance_checkbox.isChecked()
                 self.detector.respect_fullscreen = self.respect_fullscreen_checkbox.isChecked()
                 self.detector.direct_control = self.direct_control_checkbox.isChecked()
                 
-                background_status = "enabled" if self.detector.background_mode else "disabled"
                 high_perf_status = "enabled" if self.detector.high_performance_mode else "disabled"
                 fullscreen_status = "enabled" if self.detector.respect_fullscreen else "disabled"
                 direct_control_status = "enabled" if self.detector.direct_control else "disabled"
                 
-                self.log(f"Settings applied: threshold={threshold_value:.2f}, cooldown={cooldown_value}s, key={fishing_key}, background={background_status}, high_perf={high_perf_status}, respect_fullscreen={fullscreen_status}, direct_control={direct_control_status}")
+                self.log(f"Settings applied: threshold={threshold_value:.2f}, cooldown={cooldown_value}s, key={fishing_key}, high_perf={high_perf_status}, respect_fullscreen={fullscreen_status}, direct_control={direct_control_status}")
                 
                 # Log changes
                 if old_threshold != threshold_value:
@@ -1491,18 +1793,21 @@ class SimpleAutoFisherGUI(QMainWindow):
                 
                 # Colors for a clean, sleek interface
                 self.colors = {
-                    'bg_dark': QColor(24, 25, 20, 50),    # Semi-transparent dark background
-                    'accent': QColor(163, 217, 119),       # Matcha green
-                    'green': QColor(163, 217, 119),        # Bright green
-                    'text': QColor(248, 245, 227),         # Warm off-white
-                    'text_bright': QColor(255, 255, 255),  # White
-                    'grid': QColor(163, 217, 119, 120),    # Semi-transparent green
-                    'border': QColor(163, 217, 119, 200),  # More opaque green for borders
+                    'bg_dark': QColor(0, 0, 0, 40),               # More transparent background
+                    'accent': QColor(87, 207, 255, 220),           # Bright cyan blue
+                    'highlight': QColor(255, 255, 255, 180),       # White with transparency
+                    'text': QColor(255, 255, 255, 255),            # Pure white text
+                    'text_shadow': QColor(0, 0, 0, 180),           # Text shadow
+                    'grid': QColor(87, 207, 255, 80),              # Light grid lines
+                    'target': QColor(255, 255, 100, 220),          # Yellow targeting color
+                    'border': QColor(87, 207, 255, 180),           # Border blue
+                    'header_bg': QColor(40, 40, 40, 200),          # Dark header background
+                    'preview_border': QColor(255, 255, 255, 100)   # Preview area border
                 }
                 
-                # Start a timer to track cursor position
+                # Start a timer to track cursor position with higher frequency
                 self.cursor_timer = QTimer(self)
-                self.cursor_timer.setInterval(10)  # 10ms for smooth tracking
+                self.cursor_timer.setInterval(5)  # 5ms for smoother tracking
                 self.cursor_timer.timeout.connect(self.track_cursor)
                 self.cursor_timer.start()
                 
@@ -1512,6 +1817,26 @@ class SimpleAutoFisherGUI(QMainWindow):
                 self.preview_timer.setInterval(100)  # Update preview 10 times per second
                 self.preview_timer.timeout.connect(self.update_preview)
                 self.preview_timer.start()
+                
+                # For pulsing animation effect
+                self.pulse_timer = QTimer(self)
+                self.pulse_timer.setInterval(20)
+                self.pulse_alpha = 0
+                self.pulse_increasing = True
+                self.pulse_timer.timeout.connect(self.update_pulse)
+                self.pulse_timer.start()
+                
+            def update_pulse(self):
+                """Create a pulsing animation effect"""
+                if self.pulse_increasing:
+                    self.pulse_alpha += 3
+                    if self.pulse_alpha >= 100:
+                        self.pulse_increasing = False
+                else:
+                    self.pulse_alpha -= 3
+                    if self.pulse_alpha <= 20:
+                        self.pulse_increasing = True
+                self.update()
             
             def track_cursor(self):
                 """Track the cursor position in global screen coordinates"""
@@ -1526,7 +1851,9 @@ class SimpleAutoFisherGUI(QMainWindow):
                     # Convert global position to widget-local position
                     self.current_x = global_pos.x() - self.client_left
                     self.current_y = global_pos.y() - self.client_top
-                    self.update()  # Request a repaint
+                
+                # Always update to ensure the box follows cursor movement
+                self.update()
             
             def update_preview(self):
                 """Update the preview image of the current selection"""
@@ -1572,15 +1899,12 @@ class SimpleAutoFisherGUI(QMainWindow):
             
             def paintEvent(self, event):
                 painter = QPainter(self)
-                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+                painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
                 
                 # Draw a very transparent background
                 painter.fillRect(self.rect(), self.colors['bg_dark'])
-                
-                # Draw guides (crosshair)
-                painter.setPen(QPen(self.colors['grid'], 1, Qt.PenStyle.DashLine))
-                painter.drawLine(self.current_x, 0, self.current_x, self.height())
-                painter.drawLine(0, self.current_y, self.width(), self.current_y)
                 
                 # Calculate box coordinates centered on cursor position
                 left = self.current_x - self.box_width // 2
@@ -1603,25 +1927,40 @@ class SimpleAutoFisherGUI(QMainWindow):
                     bottom = game_height
                     top = bottom - self.box_height
                 
-                # Draw a clean, minimal border (slightly larger for visibility)
-                painter.setPen(QPen(self.colors['accent'], 2))
+                # Draw subtle guides (crosshair)
+                painter.setPen(QPen(self.colors['grid'], 1, Qt.PenStyle.DashLine))
+                painter.drawLine(self.current_x, 0, self.current_x, self.height())
+                painter.drawLine(0, self.current_y, self.width(), self.current_y)
+                
+                # Draw selection box with glowing effect
+                # Outer glow
+                glow_size = 3
+                for i in range(glow_size, 0, -1):
+                    glow_color = QColor(self.colors['accent'])
+                    glow_color.setAlpha(40 + (180//glow_size)*i)
+                    painter.setPen(QPen(glow_color, i))
+                    painter.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+                    painter.drawRect(left-i, top-i, (right-left)+(i*2), (bottom-top)+(i*2))
+                
+                # Main border (crisp)
+                painter.setPen(QPen(self.colors['accent'], 2, Qt.PenStyle.SolidLine))
                 painter.setBrush(QBrush(Qt.BrushStyle.NoBrush))
-                painter.drawRect(left-2, top-2, (right-left)+4, (bottom-top)+4)
-                
-                # Draw the inner rectangle with minimal styling
-                painter.setPen(QPen(self.colors['green'], 1))
-                
-                # Semi-transparent fill
-                painter.setBrush(QBrush(QColor(self.colors['green'].red(), 
-                                             self.colors['green'].green(), 
-                                             self.colors['green'].blue(), 30)))
                 painter.drawRect(left, top, right-left, bottom-top)
                 
-                # Add grid lines (3x3 grid)
+                # Very subtle fill
+                fill_color = QColor(self.colors['accent'])
+                fill_color.setAlpha(10 + self.pulse_alpha//4)
+                painter.setBrush(QBrush(fill_color))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawRect(left, top, right-left, bottom-top)
+                
+                # Add subtle grid lines
                 cell_width = self.box_width // 3
                 cell_height = self.box_height // 3
                 
-                painter.setPen(QPen(self.colors['grid'], 1, Qt.PenStyle.DotLine))
+                grid_color = QColor(self.colors['grid'])
+                grid_color.setAlpha(60)
+                painter.setPen(QPen(grid_color, 1, Qt.PenStyle.DotLine))
                 
                 # Vertical grid lines
                 for i in range(1, 3):
@@ -1631,117 +1970,167 @@ class SimpleAutoFisherGUI(QMainWindow):
                 for i in range(1, 3):
                     painter.drawLine(left, top + i * cell_height, right, top + i * cell_height)
                 
-                # Highlight center of the box (where bobber should be)
+                # Create an elegant targeting element at center
                 center_x = left + self.box_width // 2
                 center_y = top + self.box_height // 2
-                center_size = min(self.box_width, self.box_height) // 6
+                center_size = min(self.box_width, self.box_height) // 8
                 
-                # Draw center target circle
-                painter.setPen(QPen(self.colors['accent'], 2))
+                # Pulsing target circle
+                target_color = QColor(self.colors['target'])
+                target_color.setAlpha(100 + self.pulse_alpha)
+                
+                # Outer targeting circle
+                painter.setPen(QPen(target_color, 2))
+                painter.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+                painter.drawEllipse(center_x - center_size, center_y - center_size, 
+                                   center_size*2, center_size*2)
+                
+                # Inner targeting circle
+                painter.setPen(QPen(self.colors['target'], 1))
                 painter.drawEllipse(center_x - center_size//2, center_y - center_size//2, 
-                                    center_size, center_size)
+                                   center_size, center_size)
                 
-                # Draw center crosshair
-                painter.drawLine(center_x - center_size, center_y, 
-                                center_x + center_size, center_y)
-                painter.drawLine(center_x, center_y - center_size, 
-                                center_x, center_y + center_size)
+                # Draw crosshair lines
+                painter.setPen(QPen(target_color, 1, Qt.PenStyle.SolidLine))
+                # Horizontal line
+                painter.drawLine(int(center_x - center_size*1.5), int(center_y), 
+                                int(center_x - center_size//2), int(center_y))
+                painter.drawLine(int(center_x + center_size//2), int(center_y),
+                                int(center_x + center_size*1.5), int(center_y))
+                # Vertical line
+                painter.drawLine(int(center_x), int(center_y - center_size*1.5),
+                                int(center_x), int(center_y - center_size//2))
+                painter.drawLine(int(center_x), int(center_y + center_size//2),
+                                int(center_x), int(center_y + center_size*1.5))
                 
-                # Draw a small dot at the very center
-                painter.setBrush(QBrush(self.colors['accent']))
-                painter.drawEllipse(center_x-1, center_y-1, 2, 2)
+                # Draw center dot
+                painter.setBrush(QBrush(target_color))
+                painter.drawEllipse(center_x-2, center_y-2, 4, 4)
                 
-                # Create coordinate display with more information
+                # Create modern header bar
+                header_height = 36
+                header_rect = QRect(0, 0, game_width, header_height)
+                painter.fillRect(header_rect, self.colors['header_bg'])
+                
+                # Draw header text with shadow
+                font = QFont("Segoe UI", 10)
+                font.setBold(True)
+                painter.setFont(font)
+                
+                header_text = "POSITION OVER FISHING BOBBER • CLICK TO SELECT • ESC TO CANCEL"
+                
+                # Draw text shadow
+                painter.setPen(QPen(self.colors['text_shadow']))
+                painter.drawText(QRect(1, 1, game_width, header_height), 
+                                Qt.AlignmentFlag.AlignCenter, header_text)
+                
+                # Draw actual text
+                painter.setPen(QPen(self.colors['highlight']))
+                painter.drawText(header_rect, Qt.AlignmentFlag.AlignCenter, header_text)
+                
+                # Add size info under header
+                size_rect = QRect(0, header_height, game_width, 20)
+                font.setPointSize(9)
+                font.setBold(False)
+                painter.setFont(font)
+                
+                detail_text = f"Selection size: {self.box_height}×{self.box_width} pixels • Center the target on the bobber"
+                painter.drawText(size_rect, Qt.AlignmentFlag.AlignCenter, detail_text)
+                
+                # Draw elegant position indicator at bottom
                 # Convert to absolute screen coordinates
                 abs_left = self.client_left + left
                 abs_top = self.client_top + top
-                coord_text = f"position: ({abs_left},{abs_top}) • size: {self.box_width}×{self.box_height}"
                 
-                # Draw background for text at bottom
-                text_rect = QRect(0, game_height - 30, game_width, 25)
-                painter.fillRect(text_rect, QColor(0, 0, 0, 150))
+                # Create bottom status bar with dark background
+                status_height = 26
+                status_rect = QRect(0, game_height - status_height, game_width, status_height)
+                painter.fillRect(status_rect, self.colors['header_bg'])
                 
-                # Display information at the bottom center
-                painter.setPen(QPen(self.colors['text_bright']))
-                font = painter.font()
-                font.setPointSize(10)
+                # Format position text
+                coord_text = f"Position: ({abs_left},{abs_top}) • Size: {self.box_width}×{self.box_height}"
+                
+                # Draw text with shadow
                 font.setBold(True)
+                font.setPointSize(9)
                 painter.setFont(font)
-                painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, coord_text)
+                painter.setPen(QPen(self.colors['text_shadow']))
+                painter.drawText(QRect(1, game_height - status_height + 1, game_width, status_height), 
+                                Qt.AlignmentFlag.AlignCenter, coord_text)
                 
-                # Draw instructions panel
-                instructions = "POSITION OVER FISHING BOBBER • CLICK TO SELECT • ESC TO CANCEL"
-                instructions_rect = QRect(0, 30, game_width, 30)
+                painter.setPen(QPen(self.colors['text']))
+                painter.drawText(status_rect, Qt.AlignmentFlag.AlignCenter, coord_text)
                 
-                # Draw background for instructions
-                bg_rect = instructions_rect.adjusted(-10, -5, 10, 5)
-                painter.fillRect(bg_rect, QColor(0, 0, 0, 150))
-                painter.setPen(QPen(self.colors['accent']))
-                painter.drawRect(bg_rect)
-                
-                # Draw text
-                painter.setPen(QPen(self.colors['text_bright']))
-                font = painter.font()
-                font.setPointSize(11)
-                font.setBold(True)
-                painter.setFont(font)
-                painter.drawText(instructions_rect, Qt.AlignmentFlag.AlignCenter, instructions)
-                
-                # Add second line of instructions
-                detail_text = f"Fixed box size: {self.box_height}×{self.box_width} pixels (height × width) • Center the green target on the bobber"
-                detail_rect = QRect(0, 55, game_width, 20)
-                font.setPointSize(10)
-                font.setBold(False)
-                painter.setFont(font)
-                painter.drawText(detail_rect, Qt.AlignmentFlag.AlignCenter, detail_text)
-                
-                # Draw preview box in corner if available
+                # Draw preview box with elegant styling
                 if self.preview_pixmap:
-                    preview_size = 150  # Preview size
+                    preview_size = 160  # Preview size
+                    preview_margin = 12
                     
-                    # Draw preview background and border
-                    preview_rect = QRect(
-                        game_width - preview_size - 10, 
-                        10, 
+                    # Create rounded preview container with QRectF instead of QRect
+                    preview_rect = QRectF(
+                        game_width - preview_size - preview_margin, 
+                        header_height + 10, 
                         preview_size, 
-                        preview_size
+                        preview_size * 0.75
                     )
                     
-                    # Draw background for preview
-                    painter.fillRect(preview_rect, QColor(0, 0, 0, 150))
+                    # Draw background with rounded corners
+                    path = QPainterPath()
+                    radius = 8
+                    path.addRoundedRect(preview_rect, radius, radius)
+                    painter.setPen(QPen(self.colors['preview_border'], 1))
+                    painter.fillPath(path, self.colors['header_bg'])
+                    painter.drawPath(path)
                     
-                    # Draw border
-                    painter.setPen(QPen(self.colors['accent'], 2))
-                    painter.drawRect(preview_rect)
-                    
-                    # Draw preview label
+                    # Draw preview title with accent color
                     label_rect = QRect(
-                        game_width - preview_size - 10,
-                        10,
+                        game_width - preview_size - preview_margin,
+                        header_height + 10,
                         preview_size,
-                        20
+                        24
                     )
-                    painter.setPen(QPen(self.colors['text_bright']))
+                    
+                    font.setPointSize(9)
+                    painter.setFont(font)
+                    painter.setPen(QPen(self.colors['accent']))
                     painter.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, "LIVE PREVIEW")
                     
-                    # Calculate scaled preview image
+                    # Calculate scaled preview image with proper margins
+                    content_rect = QRectF(
+                        preview_rect.left() + 8,
+                        preview_rect.top() + 28,
+                        preview_rect.width() - 16,
+                        preview_rect.height() - 36
+                    )
+                    
                     scaled_pixmap = self.preview_pixmap.scaled(
-                        preview_size - 10, 
-                        preview_size - 30, 
+                        int(content_rect.width()), 
+                        int(content_rect.height()), 
                         Qt.AspectRatioMode.KeepAspectRatio, 
                         Qt.TransformationMode.SmoothTransformation
                     )
                     
+                    # Center the preview image in the content area
+                    x_offset = int((content_rect.width() - scaled_pixmap.width()) // 2)
+                    
                     # Draw the preview image
                     painter.drawPixmap(
-                        game_width - scaled_pixmap.width() - 15,
-                        35,
+                        int(content_rect.left() + x_offset),
+                        int(content_rect.top()),
                         scaled_pixmap
                     )
             
             def mousePressEvent(self, event):
                 """Handle mouse click to finalize selection"""
                 if event.button() == Qt.MouseButton.LeftButton:
+                    # Stop all timers
+                    self.cursor_timer.stop()
+                    if hasattr(self, 'preview_timer') and self.preview_timer.isActive():
+                        self.preview_timer.stop()
+                    if hasattr(self, 'pulse_timer') and self.pulse_timer.isActive():
+                        self.pulse_timer.stop()
+                    
+                    # Get final cursor position
                     # Calculate region coordinates centered on mouse position
                     left = self.current_x - self.box_width // 2
                     top = self.current_y - self.box_height // 2
@@ -1763,10 +2152,6 @@ class SimpleAutoFisherGUI(QMainWindow):
                         bottom = game_height
                         top = bottom - self.box_height
                     
-                    # Stop the timers
-                    self.cursor_timer.stop()
-                    self.preview_timer.stop()
-                    
                     # Convert to absolute screen coordinates
                     abs_left = self.client_left + left
                     abs_top = self.client_top + top
@@ -1774,18 +2159,25 @@ class SimpleAutoFisherGUI(QMainWindow):
                     abs_bottom = abs_top + self.box_height
                     
                     # Close selection window and return the selected region
-                    self.parent().close()
+                    print(f"Selection completed at: {abs_left},{abs_top} to {abs_right},{abs_bottom}")
                     self.parent().selected_region = (abs_left, abs_top, abs_right, abs_bottom)
                     self.parent().selection_complete = True
+                    self.parent().close()
             
             def keyPressEvent(self, event):
                 """Handle key press to cancel selection"""
                 if event.key() == Qt.Key.Key_Escape:
+                    # Stop all timers
                     self.cursor_timer.stop()
-                    self.preview_timer.stop()
-                    self.parent().close()
+                    if hasattr(self, 'preview_timer') and self.preview_timer.isActive():
+                        self.preview_timer.stop()
+                    if hasattr(self, 'pulse_timer') and self.pulse_timer.isActive():
+                        self.pulse_timer.stop()
+                        
+                    # Cancel selection
                     self.parent().selected_region = None
                     self.parent().selection_complete = False
+                    self.parent().close()
         
         # Set up selection window properties
         selection_window.selection_complete = False
@@ -1897,6 +2289,10 @@ class SimpleAutoFisherGUI(QMainWindow):
         fps = 0
         if hasattr(self.detector, 'performance') and "avg_processing_time" in self.detector.performance:
             fps = int(1.0 / max(0.01, self.detector.performance["avg_processing_time"]))
+            
+            # Update monitor FPS display
+            if hasattr(self, 'monitor_fps'):
+                self.monitor_fps.setText(f"{fps}")
             
         # Update stats labels
         stats_data = {
@@ -2042,9 +2438,17 @@ class SimpleAutoFisherGUI(QMainWindow):
                     threshold=self.detector.THRESHOLD if hasattr(self.detector, 'THRESHOLD') else 0.05
                 )
                 
+            # Update status indicators
+            if hasattr(self, 'monitor_threshold') and hasattr(self.detector, 'THRESHOLD'):
+                self.monitor_threshold.setText(f"{self.detector.THRESHOLD:.3f}")
+                
+            if hasattr(self, 'monitor_fps') and hasattr(self.detector, 'performance'):
+                fps = int(1.0 / max(0.01, self.detector.performance["avg_processing_time"]))
+                self.monitor_fps.setText(f"{fps}")
+                
         except Exception as e:
             self.log(f"Error updating visualization: {e}")
-        
+            
     def increment_detection_count(self):
         """Increment detection counter and update UI"""
         self.total_detections += 1
