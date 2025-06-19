@@ -73,40 +73,60 @@ class ActivityGraphCanvas(FigureCanvas):
         self.setMinimumHeight(60)
         
     def update(self, history=None, threshold=0.05):
-        """Update the activity timeline"""
-        if history and len(history) > 0:
-            # Normalize values to 0-1 range for clean display
-            max_val = max(history) if max(history) > 0 else 1
-            normalized_history = [min(h / max_val, 1.0) for h in history]
-            
-            # Pad with zeros if needed
-            if len(normalized_history) < 100:
-                normalized_history = [0] * (100 - len(normalized_history)) + normalized_history
-            elif len(normalized_history) > 100:
-                normalized_history = normalized_history[-100:]
-                
+        """Update the activity graph with new data"""
+        try:
+            if not history:
+                # If no data, just clear the graph and return
+                self.activity_line.set_ydata([0] * 100)
+                # Clear all collections
+                for collection in self.timeline_ax.collections:
+                    collection.remove()
+                self.threshold_line.set_ydata([threshold, threshold])
+                self.canvas.draw_idle()
+                return
+
+            # Process data for display
+            data = history[-100:] if len(history) > 100 else history
+            if len(data) < 100:
+                # Pad with zeros
+                data = [0] * (100 - len(data)) + data
+
             # Update the line data
-            self.activity_line.set_ydata(normalized_history)
+            self.activity_line.set_ydata(data)
+
+            # Update threshold line
+            self.threshold_line.set_ydata([threshold, threshold])
+
+            # Clear previous fills
+            # Clear all collections (fills) by removing them safely
+            for collection in list(self.timeline_ax.collections):
+                collection.remove()
+
+            # Add new fill
+            fill_data = data.copy()
+            for i in range(len(fill_data)):
+                if fill_data[i] > threshold:
+                    # Do nothing - keep the value above threshold
+                    pass
+                else:
+                    fill_data[i] = 0  # Set below-threshold values to 0
             
-            # Update the background fill for visual enhancement
-            x_data = np.arange(100)
-            self.timeline_ax.collections.clear()  # Clear previous fills
-            self.timeline_ax.fill_between(x_data, 0, normalized_history, color='#77DD77', alpha=0.15)
-            
-            # Update threshold line position (normalized)
-            threshold_value = min(threshold / max_val, 1.0)
-            self.threshold_line.set_ydata([threshold_value, threshold_value])
-            
-            # Update threshold annotation position and visibility
-            self.threshold_annotation.xy = (99, threshold_value)
-            self.threshold_annotation.set_visible(True)
-            
-            # Update title with current threshold value
-            current_value = history[-1] if history else 0
-            self.timeline_ax.set_title(f"ACTIVITY [{current_value:.2%}]", 
-                                     color='#77DD77', fontsize=9, fontweight='bold', pad=2)
-        
-        self.fig.canvas.draw_idle()
+            # Create the fill between activity line and zero baseline
+            x_data = range(len(fill_data))
+            self.timeline_ax.fill_between(
+                x_data, fill_data, 0, 
+                where=(fill_data > threshold),
+                interpolate=True, 
+                color=self.theme_colors.get('accent', '#77DD77'), 
+                alpha=0.3
+            )
+
+            # Redraw the canvas
+            self.canvas.draw_idle()
+        except Exception as e:
+            print(f"Error updating activity graph: {e}")
+            import traceback
+            traceback.print_exc()
 
 class MatplotlibCanvas(FigureCanvas):
     """Matplotlib canvas for displaying real-time monitoring data"""
