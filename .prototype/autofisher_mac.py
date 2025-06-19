@@ -1412,7 +1412,7 @@ class PixelChangeDetectorGUI:
         self.status_frame = ttk.Frame(viz_frame, style='Term.TFrame')
         self.status_frame.pack(fill=tk.X, side=tk.BOTTOM, padx=8, pady=4)
         
-        self.status_label = ttk.Label(self.status_frame, text="Status: Waiting", style='Status.TLabel')
+        self.status_label = ttk.Label(self.status_frame, text="Waiting", style='Status.TLabel')
         self.status_label.pack(side=tk.LEFT)
         
         self.count_label = ttk.Label(self.status_frame, text="Detections: 0", style='Status.TLabel')

@@ -1104,7 +1104,7 @@ class AutoFisherMainWindow(QMainWindow):
             self.preview_thread.start()
             
             # Update UI to show we're in preview mode
-            self.status_label.setText("Status: Live Preview")
+            self.status_label.setText("Live Preview")
             self.log("Live preview started. Click 'start' to begin detection.")
             
             return True
@@ -1181,7 +1181,7 @@ class AutoFisherMainWindow(QMainWindow):
             # Wait a bit for the thread to finish
             self.preview_thread.wait(1000)  # Wait up to 1 second for thread to finish
             self.log("Live preview stopped")
-            self.status_label.setText("Status: Ready")
+            self.status_label.setText("Ready")
             return True
         return False
         
