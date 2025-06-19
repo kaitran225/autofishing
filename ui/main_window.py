@@ -9,10 +9,11 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QPushButton, QGridLayout, QLineEdit, QCheckBox, QTextEdit, 
     QFrame, QSplitter, QGroupBox, QSlider, QSpinBox, QDoubleSpinBox,
-    QApplication, QScrollArea, QSizePolicy, QTextBrowser, QTabWidget
+    QApplication, QScrollArea, QSizePolicy, QTextBrowser, QTabWidget, QFileDialog,
+    QLabel, QComboBox
 )
-from PyQt6.QtCore import Qt, QTimer, QRect, QPoint
-from PyQt6.QtGui import QColor
+from PyQt6.QtCore import Qt, QTimer, QRect, QPoint, QThread, pyqtSignal
+from PyQt6.QtGui import QColor, QIcon, QPixmap, QImage
 import qtawesome as qta
 
 from core import PixelChangeDetector, FishingActionSequence
@@ -290,33 +291,6 @@ class AutoFisherMainWindow(QMainWindow):
         separator3.setFrameShadow(QFrame.Shadow.Sunken)
         separator3.setStyleSheet("background-color: transparent; max-width: 1px;")
         status_layout.addWidget(separator3)
-        
-        # # Add menu label
-        # sidebar_label = QLabel("Menu:")
-        # sidebar_label.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: {status_font_size}; font-weight: normal;")
-        # status_layout.addWidget(sidebar_label)
-        
-        # Add menu button
-        # menu_toggle = QPushButton()
-        # menu_toggle.setIcon(qta.icon('fa5s.bars', color='white', scale_factor=0.9))
-        # menu_toggle.setStyleSheet(f"""
-        #     QPushButton {{
-        #         background-color: transparent;
-        #         border: none;
-        #         padding: 1px;
-        #         min-width: 16px;
-        #         max-width: 16px;
-        #         min-height: 16px;
-        #         max-height: 16px;
-        #     }}
-        #     QPushButton:hover {{
-        #         background-color: {UI_WOOD_DARK};
-        #         border-radius: 2px;
-        #     }}
-        # """)
-        # menu_toggle.setToolTip("Show Settings Tab")
-        # menu_toggle.clicked.connect(lambda: self.tab_widget.setCurrentIndex(2))  # Switch to Settings tab
-        # status_layout.addWidget(menu_toggle)
         
         # Add stretch to push everything to the left
         status_layout.addStretch()

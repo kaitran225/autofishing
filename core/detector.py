@@ -10,6 +10,8 @@ import cv2
 from PyQt6.QtCore import QObject, pyqtSignal
 import keyboard
 import mss
+import pyautogui
+import logging
 
 from utils.constants import (
     DEFAULT_THRESHOLD, DEFAULT_DETECTION_COOLDOWN,
@@ -82,6 +84,21 @@ class PixelChangeDetector(QObject):
         
         # Log initialization
         self.log("PixelChangeDetector initialized")
+        
+        # Create a logger
+        self.logger = logging.getLogger("PixelChangeDetector")
+        self.logger.setLevel(logging.DEBUG)
+        
+        # Create console handler
+        ch = logging.StreamHandler()
+        ch.setLevel(logging.DEBUG)
+        
+        # Create formatter
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        ch.setFormatter(formatter)
+        
+        # Add handler to logger
+        self.logger.addHandler(ch)
     
     def log(self, message):
         """Log a message to the parent application or print to console"""
@@ -481,7 +498,7 @@ class PixelChangeDetector(QObject):
                     self.log("Captured recovery reference frame")
                 except:
                     pass 
-
+    
     def calculate_frame_difference(self, frame1, frame2):
         """
         Calculate the difference between two frames with minimal processing

@@ -235,4 +235,4 @@ class MatplotlibCanvas(FigureCanvas):
     def refresh(self):
         """Refresh the display with the last frame"""
         if self.last_frame is not None:
-            self.update_image(self.last_frame, self.last_diff) 
+            self.update_image(self.last_frame, self.last_diff)

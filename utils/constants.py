@@ -22,19 +22,20 @@ UI_LIGHT_TEXT = "#E8E8E0"  # Light text
 UI_SECONDARY_TEXT = "#A6A69B"  # Secondary text
 
 # Dark Matcha Green theme
-UI_ACCENT_COLOR = "#94B181"  # Matcha green accent
-UI_ACCENT_DARK = "#5D7356"  # Darker matcha green 
-UI_ACCENT_LIGHT = "#B7CBA8"  # Lighter matcha green
+UI_ACCENT_COLOR = "#A3D977"  # Matcha green accent
+UI_ACCENT_DARK = "#7BA357"  # Darker matcha green 
+UI_ACCENT_LIGHT = "#D1EBB8"  # Lighter matcha green
 
 # Dark Oak Wood accents
-UI_WOOD_DARK = "#483C32"  # Dark wood/oak color
-UI_WOOD_MEDIUM = "#6F5B3E"  # Medium wood tone
-UI_WOOD_LIGHT = "#9C826B"  # Light wood highlight
+UI_WOOD_DARK = "#181914"  # Dark wood/oak color
+UI_WOOD_MEDIUM = "#2A2C22"  # Medium wood tone
+UI_WOOD_LIGHT = "#6B6E58"  # Light wood highlight
 
 # Status colors
-UI_WARNING_COLOR = "#D97E6A"  # Reddish warning
-UI_ALERT_COLOR = "#E8B255"  # Amber alert
-UI_SUCCESS_COLOR = "#94B181"  # Success (matches accent)
+UI_WARNING_COLOR = "#FFC107"  # Amber warning
+UI_ALERT_COLOR = "#FF6B6B"  # Red alert
+UI_SUCCESS_COLOR = "#4CAF50"  # Green success
+UI_NORMAL_COLOR = "#F8F5E3"  # Warm off-white text
 
 # Game window detection strings
 GAME_WINDOW_NAMES = [
