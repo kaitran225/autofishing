@@ -273,19 +273,22 @@ class PixelChangeDetector(QObject):
         if hasattr(self, 'action_sequence'):
             self.action_sequence.is_executing = False
             
+        # Set both instance and thread control flags
         self.running = True
+        self.paused = False
         self.thread_control = {
             "running": True,
             "paused": False,
-            "stop_requested": False
+            "stop_requested": False,
+            "detection_thread": None,  # Will be set after thread creation
+            "warmup_period": True,     # Flag to indicate warmup period
+            "needs_reference": True    # Flag to indicate we need a new reference frame after warmup
         }
         self.change_history = []
         self.stats["session_start_time"] = time.time()
         
-        # Capture initial reference frame if none exists
-        if self.reference_frame is None:
-            self.capture_reference()
-            
+        # Initial reference frame for starting (will be replaced after warmup)
+        self.capture_reference()
         self.previous_frame = self.reference_frame
         
         # Start detection thread
@@ -295,32 +298,68 @@ class PixelChangeDetector(QObject):
         self.thread_control["detection_thread"] = self.detection_thread
         
         self.log("Detection thread started")
+        self.log("Warming up for 2 seconds...")
+        
+        # Schedule warmup period reset after 2 seconds
+        def reset_warmup():
+            time.sleep(2.0)  # 2 second warmup
+            if self.running and hasattr(self, 'thread_control'):
+                # We'll capture a fresh reference frame before enabling detection
+                self.thread_control["warmup_period"] = False
+                self.log("Warmup complete - capturing fresh reference frame...")
+                
+        # Start warmup thread
+        warmup_thread = threading.Thread(target=reset_warmup)
+        warmup_thread.daemon = True
+        warmup_thread.start()
+        
         return True
         
     def stop_detection(self):
-        """Stop detection cleanly with proper thread management"""
-        if not self.running:
-            return
-            
-        # Check if action sequence is currently running
-        if hasattr(self, 'action_sequence') and hasattr(self.action_sequence, 'is_executing') and self.action_sequence.is_executing:
-            self.log("Action sequence is currently executing - waiting for completion before stopping")
-            # Wait for action sequence to complete (max 10 seconds)
-            wait_time = 0
-            while self.action_sequence.is_executing and wait_time < 10:
-                time.sleep(0.5)
-                wait_time += 0.5
+        """Stop detection with proper resource cleanup"""
+        self.log("Stopping detection...")
         
-        # Signal thread to stop
-        self.thread_control["stop_requested"] = True
-        self.thread_control["running"] = False
+        # Set both instance and thread control flags
         self.running = False
+        self.paused = False
         
-        # Wait for thread to finish (with timeout)
-        if self.thread_control["detection_thread"] and self.thread_control["detection_thread"].is_alive():
-            self.log("Waiting for detection thread to stop...")
-            self.thread_control["detection_thread"].join(timeout=2.0)
-            
+        # Stop the action sequence if running
+        if hasattr(self, 'action_sequence') and self.action_sequence.is_executing:
+            self.log("Terminating action sequence...")
+            self.action_sequence.terminate()
+        
+        # Set thread control flags to ensure clean shutdown
+        if hasattr(self, 'thread_control'):
+            self.thread_control["running"] = False
+            self.thread_control["paused"] = False
+            self.thread_control["stop_requested"] = True
+            self.thread_control["warmup_period"] = False
+        
+        # Clean up MSS instance if it exists
+        if hasattr(self, 'mss_instance') and self.mss_instance:
+            try:
+                self.mss_instance.close()
+            except Exception:
+                pass
+            self.mss_instance = None
+        
+        # Wait for detection thread to terminate with a short timeout
+        if hasattr(self, 'detection_thread') and self.detection_thread and self.detection_thread.is_alive():
+            try:
+                # Don't try to join the current thread
+                if self.detection_thread != threading.current_thread():
+                    self.detection_thread.join(timeout=1.0)
+                    if self.detection_thread.is_alive():
+                        self.log("Warning: Detection thread didn't terminate within timeout")
+            except Exception:
+                pass
+        
+        # Clean up remaining resources
+        self.previous_frame = None
+        self.current_frame = None
+        self.diff_frame = None
+        # Keep reference_frame for next start
+        
         self.log("Detection stopped")
     
     def toggle_pause(self):
@@ -328,40 +367,68 @@ class PixelChangeDetector(QObject):
         if not self.running:
             return
             
+        # Toggle the paused state in both instance and thread control
         if self.thread_control["paused"]:
-            # Resume
+            # Resume detection
             self.thread_control["paused"] = False
             self.paused = False
             self.log("Detection resumed")
         else:
-            # Pause
+            # Pause detection
             self.thread_control["paused"] = True
             self.paused = True
             self.log("Detection paused")
     
     def _detection_loop(self):
-        """Main detection loop with ultra-fast response time"""
+        """Main detection loop with enhanced detection algorithm and safe resource handling"""
+        # Initialize counters and variables
         frame_counter = 0
         fps_counter = 0
         fps_timer = time.time()
         fps = 0
         
-        # For faster processing, reduce the interval
+        # For faster processing, maintain high frame rate
         self.capture_interval = 0.03  # ~33 FPS
         
-        # Set a much faster adaptive interval
+        # Set adaptive interval
         adaptive_interval = self.capture_interval
         
-        # Use a simpler approach for detection intensity
-        detection_confidence = 0
+        # Store mss instance as instance variable for safe cleanup
+        self.mss_instance = None
         
-        # Use MSS for screen capture
-        with mss.mss() as sct:
-            self.log("Starting ultra-fast detection loop")
+        try:
+            # Pre-define region parameters
+            if not self.region:
+                self.log("No region selected for detection")
+                return
+                
+            left, top, right, bottom = self.region
+            width = right - left
+            height = bottom - top
             
+            # Prepare MSS region format once
+            mss_region = {
+                "left": left,
+                "top": top,
+                "width": width,
+                "height": height
+            }
+            
+            # Create MSS instance with safe handling
+            self.mss_instance = mss.mss()
+            
+            self.log("Starting enhanced detection loop")
+            self.log("Using HSV color detection with multi-frame confidence building")
+            
+            # Main detection loop with proper exception handling
             while self.thread_control["running"] and not self.thread_control["stop_requested"]:
-                loop_start = time.time()
                 try:
+                    loop_start = time.time()
+                    
+                    # Check for stop request first thing in each loop
+                    if self.thread_control["stop_requested"]:
+                        break
+                        
                     # Skip processing if paused
                     if self.thread_control["paused"]:
                         time.sleep(0.01)
@@ -372,34 +439,17 @@ class PixelChangeDetector(QObject):
                         time.sleep(0.01)
                         continue
                     
-                    # Periodically update FPS counter (less frequently)
+                    # Periodically update FPS counter
                     fps_counter += 1
-                    if time.time() - fps_timer >= 2.0:  # Update less frequently
+                    if time.time() - fps_timer >= 2.0:
                         fps = fps_counter / 2.0
                         fps_counter = 0
                         fps_timer = time.time()
                         self.performance["fps"] = fps
                         self.log(f"Detection running at {fps:.1f} FPS")
                     
-                    # Ultra-fast screen capture using mss
-                    if not self.region:
-                        time.sleep(0.01)
-                        continue
-                        
-                    left, top, right, bottom = self.region
-                    width = right - left
-                    height = bottom - top
-                    
-                    # Convert region format to mss format
-                    mss_region = {
-                        "left": left,
-                        "top": top,
-                        "width": width,
-                        "height": height
-                    }
-                    
                     # Capture directly without any processing
-                    screenshot = sct.grab(mss_region)
+                    screenshot = self.mss_instance.grab(mss_region)
                     self.current_frame = np.array(screenshot)
                     
                     # Quick validation
@@ -415,7 +465,8 @@ class PixelChangeDetector(QObject):
                         self.capture_reference()
                         continue
                     
-                    # Calculate difference with ultra-fast algorithm
+                    # Calculate difference with enhanced HSV algorithm
+                    # This is the key improvement - uses the original autofisher's color-based detection
                     _, change_percent = self.calculate_frame_difference(self.current_frame, self.reference_frame)
                     
                     # Store in history less frequently
@@ -428,12 +479,48 @@ class PixelChangeDetector(QObject):
                     current_time = time.time()
                     cooldown_passed = (current_time - self.last_detection_time) > self.detection_cooldown
                     
-                    # Fast detection logic
-                    if change_percent > self.THRESHOLD and cooldown_passed:
-                        # Immediate detection with high confidence
+                    # Enhanced detection logic from original autofisher.py 
+                    # Using detection intensity that builds up over multiple frames
+                    if not hasattr(self, 'detection_intensity'):
+                        self.detection_intensity = 0
+                        
+                    # Check if we're in warmup period - skip detection if we are
+                    if self.thread_control.get("warmup_period", False):
+                        # During warmup, just gather data but don't trigger detections
+                        self.detection_intensity = 0  # Reset intensity during warmup
+                        continue
+                    
+                    # Check if we need a fresh reference frame after warmup
+                    if self.thread_control.get("needs_reference", False):
+                        # Capture a fresh reference frame now that warmup is complete
+                        self.reference_frame = self.current_frame.copy()
+                        if len(self.current_frame.shape) >= 3:
+                            self.reference_color_frame = self.color_frame.copy() if self.color_frame is not None else None
+                        self.change_history = []  # Clear history with new reference
+                        self.detection_intensity = 0  # Reset intensity
+                        self.thread_control["needs_reference"] = False  # Clear flag
+                        self.log("Fresh reference frame captured - detection active")
+                        continue  # Skip one frame after capturing reference
+                        
+                    # Implement a confidence system for detections
+                    if change_percent > self.THRESHOLD * 1.5:
+                        # Strong change - count as 2 points (exactly as in original)
+                        self.detection_intensity += 2
+                    elif change_percent > self.THRESHOLD:
+                        # Regular change - count as 1 point
+                        self.detection_intensity += 1
+                    else:
+                        # No change - decrease intensity
+                        self.detection_intensity = max(0, self.detection_intensity - 0.5)
+                    
+                    # Detect when intensity threshold reached and cooldown passed
+                    if self.detection_intensity >= 3 and cooldown_passed:
+                        # We have enough confidence in the detection
+                        confidence = min(10, int(self.detection_intensity * 10 / 6))  # Scale to 1-10
                         change_percent_display = round(change_percent * 100, 2)
-                        self.log(f"Major pixel change detected! Change: {change_percent_display}%")
+                        self.log(f"Major pixel change detected! Change: {change_percent_display}% (Confidence: {confidence}/10)")
                         self.last_detection_time = current_time
+                        self.detection_intensity = 0  # Reset intensity after detection
                         
                         # Update stats
                         self.stats["total_detections"] += 1
@@ -462,10 +549,25 @@ class PixelChangeDetector(QObject):
                     
                 except Exception as e:
                     self.log(f"Error in detection loop: {e}")
+                    # Don't break the loop on error, just slow down
                     time.sleep(0.05)
             
             # Thread is exiting
             self.log("Detection thread exiting")
+            self.running = False
+            
+        except Exception as e:
+            self.log(f"Critical error in detection thread: {e}")
+        finally:
+            # Always clean up resources to prevent crashes
+            try:
+                if self.mss_instance:
+                    self.mss_instance.close()
+                    self.mss_instance = None
+            except Exception as e:
+                self.log(f"Error closing MSS: {e}")
+            
+            # Make sure we reset state flags
             self.running = False
     
     def capture_screen(self):
@@ -525,7 +627,7 @@ class PixelChangeDetector(QObject):
     
     def calculate_frame_difference(self, frame1, frame2):
         """
-        Calculate the difference between two frames with ultra-fast algorithm
+        Calculate the difference between two frames with enhanced detection from original autofisher.py
         
         Args:
             frame1: Current frame
@@ -543,40 +645,65 @@ class PixelChangeDetector(QObject):
                 # Resize to match - this should be rare
                 frame2 = cv2.resize(frame2, (frame1.shape[1], frame1.shape[0]))
             
-            # Fast approach:
-            # 1. Downscale frames for faster processing
-            small_frame1 = cv2.resize(frame1, (0, 0), fx=0.5, fy=0.5)
-            small_frame2 = cv2.resize(frame2, (0, 0), fx=0.5, fy=0.5)
-            
-            # 2. Convert to grayscale if needed - faster than color processing
-            if len(small_frame1.shape) == 3:
-                gray1 = cv2.cvtColor(small_frame1, cv2.COLOR_BGR2GRAY)
-                gray2 = cv2.cvtColor(small_frame2, cv2.COLOR_BGR2GRAY)
-            else:
-                gray1 = small_frame1
-                gray2 = small_frame2
-            
-            # 3. Simple absolute difference - fastest approach
-            diff_frame = cv2.absdiff(gray1, gray2)
-            
-            # 4. Calculate percentage of pixels that changed significantly
-            # Using simplified thresholding with a fixed value
-            threshold = 30  # Higher threshold value for clearer changes
-            changed_pixels = np.sum(diff_frame > threshold)
-            total_pixels = diff_frame.size
-            change_percent = changed_pixels / total_pixels
-            
-            # 5. Store a visualization diff but don't waste time enhancing it
+            # For color images - use HSV for better fishing detection (from original)
             if len(frame1.shape) == 3:
-                # Get full resolution diff for visualization (but only if needed)
-                self.diff_frame = cv2.absdiff(
-                    cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY),
-                    cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
-                )
+                # Apply slight blur to reduce noise sensitivity
+                frame1_blurred = cv2.GaussianBlur(frame1, (5, 5), 0)
+                frame2_blurred = cv2.GaussianBlur(frame2, (5, 5), 0)
+                
+                # Convert to HSV for better color sensitivity - especially for pastel colors
+                # This was a key improvement in the original autofisher for detecting subtle changes
+                frame1_hsv = cv2.cvtColor(frame1_blurred, cv2.COLOR_BGR2HSV)
+                frame2_hsv = cv2.cvtColor(frame2_blurred, cv2.COLOR_BGR2HSV)
+                
+                # Calculate difference in HSV space with channel weighting from original
+                h_diff = cv2.absdiff(frame1_hsv[:,:,0], frame2_hsv[:,:,0])
+                s_diff = cv2.absdiff(frame1_hsv[:,:,1], frame2_hsv[:,:,1])
+                v_diff = cv2.absdiff(frame1_hsv[:,:,2], frame2_hsv[:,:,2])
+                
+                # Weight hue differences more heavily for pastel colors (from original)
+                h_weight = 2.0  # Increased weight for hue differences
+                s_weight = 1.0
+                v_weight = 1.0
+                
+                # Combine channels with weights
+                diff_frame = cv2.addWeighted(h_diff, h_weight, s_diff, s_weight, 0)
+                diff_frame = cv2.addWeighted(diff_frame, 1.0, v_diff, v_weight, 0)
+                
+                # Apply morphological operations to highlight larger changes
+                kernel = np.ones((3, 3), np.uint8)
+                dilated_diff = cv2.dilate(diff_frame, kernel, iterations=1)
+                
+                # Calculate percentage of pixels that changed significantly
+                threshold = 20  # Lower threshold for more sensitivity (from original)
+                changed_pixels = np.sum(dilated_diff > threshold)
+                total_pixels = diff_frame.shape[0] * diff_frame.shape[1]
+                change_percent = changed_pixels / total_pixels
+                
+                # For visualization, enhance the difference frame
+                enhanced_diff = cv2.convertScaleAbs(dilated_diff, alpha=1.5)
+                self.diff_frame = enhanced_diff
+                
+                return enhanced_diff, change_percent
+                
             else:
-                self.diff_frame = cv2.absdiff(frame1, frame2)
-            
-            return diff_frame, change_percent
+                # Fast grayscale approach for non-color frames
+                gray1 = cv2.GaussianBlur(frame1, (5, 5), 0)
+                gray2 = cv2.GaussianBlur(frame2, (5, 5), 0)
+                diff_frame = cv2.absdiff(gray1, gray2)
+                
+                # Apply morphological operations
+                kernel = np.ones((3, 3), np.uint8)
+                dilated_diff = cv2.dilate(diff_frame, kernel, iterations=1)
+                
+                # Calculate percentage of changed pixels
+                threshold = 20
+                changed_pixels = np.sum(dilated_diff > threshold)
+                total_pixels = diff_frame.size
+                change_percent = changed_pixels / total_pixels
+                
+                self.diff_frame = dilated_diff
+                return dilated_diff, change_percent
             
         except Exception as e:
             self.log(f"Error calculating frame difference: {e}")

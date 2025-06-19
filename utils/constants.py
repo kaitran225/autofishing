@@ -1,12 +1,12 @@
 # Constants and configurations for the AutoFisher application
 
 # Application version
-VERSION = "0.7.00"
-VERSION_NAME = "Ultra-Fast Detection Edition"
+VERSION = "0.8.00"
+VERSION_NAME = "Enhanced Detection Edition"
 
-# Default settings - Optimized for ultra-fast detection
-DEFAULT_THRESHOLD = 0.05  # Slightly more sensitive
-DEFAULT_DETECTION_COOLDOWN = 5.0  # Shorter cooldown
+# Default settings - Enhanced detection parameters
+DEFAULT_THRESHOLD = 0.045  # Slightly more sensitive than default
+DEFAULT_DETECTION_COOLDOWN = 5.0  # Original cooldown
 DEFAULT_FISHING_KEY = "f"
 DEFAULT_CAPTURE_INTERVAL = 0.03  # ~33 FPS for faster response
 

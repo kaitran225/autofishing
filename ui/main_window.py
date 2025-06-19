@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QApplication, QScrollArea, QSizePolicy, QTextBrowser, QTabWidget, QFileDialog,
     QLabel, QComboBox
 )
-from PyQt6.QtCore import Qt, QTimer, QRect, QPoint, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QRect, QPoint, QThread, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QColor, QIcon, QPixmap, QImage
 import qtawesome as qta
 
@@ -34,11 +34,23 @@ class AutoFisherMainWindow(QMainWindow):
     """Main window for the AutoFisher Qt application"""
     
     def __init__(self):
+        """Initialize the main window"""
         super().__init__()
         self.setWindowTitle(f"AutoFisher Qt v{VERSION} - {VERSION_NAME}")
         
         # Set fixed window size
         self.setFixedSize(380, 780)
+        
+        # Initialize instance variables
+        self.detector = None
+        self.live_preview_running = False
+        self.detection_running = False
+        self.start_time = None
+        self.detection_count = 0
+        self.vis_frame = None
+        self.selected_region = None
+        self.region_selector = None
+        self.vis_timer = None
         
         # Set application-wide theme
         self.setStyleSheet(f"""
@@ -155,6 +167,9 @@ class AutoFisherMainWindow(QMainWindow):
         
         # Create detector first so it's available for region selection
         self.detector = PixelChangeDetector(self)
+        
+        # Connect detector signals
+        self.detector.detection_signal.connect(self.increment_detection_count)
         
         # Initialize UI
         self.init_ui()
@@ -1009,17 +1024,6 @@ class AutoFisherMainWindow(QMainWindow):
             self.log("Region selection cancelled or failed")
             return False
             
-    def restore_window(self, was_maximized, geometry_before):
-        """Restore window after region selection"""
-        self.log("Restoring main window...")
-        if was_maximized:
-            self.showMaximized()
-        else:
-            self.showNormal()
-            self.setGeometry(geometry_before)
-            
-        self.log("Window restored")
-            
     def set_region(self, region):
         """Set the region to monitor"""
         if not region:
@@ -1186,68 +1190,70 @@ class AutoFisherMainWindow(QMainWindow):
         return False
         
     def start_detection(self):
-        """Start the detection process"""
-        # Stop any running preview first
-        self.stop_live_preview()
-        
-        # Continue with normal detection start
-        if not self.detector or not self.detector.region:
-            self.log("No region selected for detection")
-            return False
+        """Start detection with proper error handling"""
+        try:
+            if self.is_detector_running():
+                self.log("Detection already running")
+                return
+                
+            if not self.detector:
+                self.log("Detector not initialized")
+                return
+                
+            # Check if region is selected
+            if not self.detector.region:
+                self.log("No region selected. Please select a region first.")
+                return
             
-        # Apply current settings
-        self.apply_settings()
-        
-        # Start detection
-        if self.detector.start_detection():
-            self.log("Detection started")
-            self.detection_running = True
-            self.start_time = time.time()
-            self.total_detections = 0
+            # Start detection
+            success = self.detector.start_detection()
             
-            # Update UI state
-            self.start_button.setEnabled(False)
-            self.stop_button.setEnabled(True)
-            self.pause_button.setEnabled(True)
-            self.status_label.setText("Running - Monitoring for changes")
-            
-            # Start visualization timer
-            self.vis_timer.start()
-            
+            if success:
+                self.log("Detection started")
+                self.update_ui_elements(True)  # Update UI to show detection is running
+            else:
+                self.log("Failed to start detection")
+                
+        except Exception as e:
+            self.log(f"Error starting detection: {str(e)}")
+            # Make sure UI reflects detection is not running
+            self.update_ui_elements(False)
+    
     def stop_detection(self):
-        """Stop the detection process"""
-        if self.detector:
+        """Stop detection with proper UI updates"""
+        if not self.detector:
+            return
+        
+        try:
+            # Stop detection in the detector
             self.detector.stop_detection()
             
-        self.detection_running = False
-        
-        # Update UI state
-        self.start_button.setEnabled(True)
-        self.stop_button.setEnabled(False)
-        self.pause_button.setEnabled(False)
-        self.pause_button.setText("Pause")
-        self.status_label.setText("Stopped")
-        
-        # Stop visualization timer
-        self.vis_timer.stop()
-        
-        self.log("Detection stopped")
+            # Update UI immediately
+            self.update_ui_elements(False)
+            
+            self.log("Detection stopped")
+        except Exception as e:
+            self.log(f"Error stopping detection: {str(e)}")
+            # Make sure UI reflects detection is not running anyway
+            self.update_ui_elements(False)
         
     def toggle_pause(self):
         """Toggle pause state"""
         if not self.detector:
             return
             
-        if self.detector.paused:
-            self.detector.paused = False
-            self.pause_button.setText("Pause")
-            self.status_label.setText("Running - Monitoring for changes")
-            self.log("Detection resumed")
-        else:
-            self.detector.paused = True
+        # Use the detector's toggle_pause method instead of direct manipulation
+        self.detector.toggle_pause()
+        
+        # Update UI based on the detector's state
+        if self.detector.thread_control["paused"]:
             self.pause_button.setText("Resume")
             self.status_label.setText("Paused")
             self.log("Detection paused")
+        else:
+            self.pause_button.setText("Pause")
+            self.status_label.setText("Running - Monitoring for changes")
+            self.log("Detection resumed")
             
     def update_visualization(self):
         """Update the visualization display"""
@@ -1374,12 +1380,64 @@ class AutoFisherMainWindow(QMainWindow):
         else:
             self.monitor_status.setText("Idle")
 
+    def reset_detection_stats(self):
+        """Reset all detection statistics"""
+        self.detection_count = 0
+        self.start_time = time.time()
+        if self.detector:
+            # Reset detector statistics
+            self.detector.stats["total_detections"] = 0
+            self.detector.stats["session_start_time"] = time.time()
+            self.detector.stats["last_detection_time"] = 0
+            self.detector.stats["avg_detection_interval"] = 0
+    
     def closeEvent(self, event):
-        """Handle application close event"""
-        # Stop any running threads
-        self.stop_live_preview()
-        if hasattr(self, 'detector') and self.detector:
+        """Handle window close event"""
+        # Stop detection if running
+        if self.detector and self.detection_running:
+            self.log("Stopping detection before exit...")
             self.detector.stop_detection()
+            
+            # Wait a moment for threads to clean up
+            for _ in range(10):
+                QApplication.processEvents()
+                time.sleep(0.1)
         
-        # Call the parent class closeEvent
-        super().closeEvent(event)
+        # Accept the close event
+        event.accept()
+
+    def update_ui_elements(self, is_running):
+        """Update UI elements based on detection state"""
+        if is_running:
+            # Update state variables
+            self.detection_running = True
+            self.start_time = time.time()
+            
+            # Update UI controls
+            self.start_button.setEnabled(False)
+            self.stop_button.setEnabled(True)
+            self.pause_button.setEnabled(True)
+            self.pause_button.setText("Pause")  # Ensure button shows correct state
+            self.status_label.setText("Running - Monitoring for changes")
+            
+            # Start visualization timer
+            self.vis_timer.start()
+        else:
+            # Update state variables
+            self.detection_running = False
+            
+            # Update UI controls
+            self.start_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
+            self.pause_button.setEnabled(False)
+            self.pause_button.setText("Pause")  # Reset to default state
+            self.status_label.setText("Ready - Detection stopped")
+            
+            # Stop visualization timer
+            self.vis_timer.stop()
+    
+    def is_detector_running(self):
+        """Check if detector is currently running"""
+        if not self.detector:
+            return False
+        return self.detector.running
