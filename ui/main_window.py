@@ -17,7 +17,7 @@ import qtawesome as qta
 
 from core import PixelChangeDetector, FishingActionSequence
 from ui.visualization import MatplotlibCanvas, ActivityGraphCanvas
-from ui.selection import RegionSelectionOverlay
+from ui.selection import RegionSelectionOverlay, TkRegionSelector
 from ui.components import CollapsibleSidebar, PopupSection, CollapsibleSection, ActivityGraphSection
 from utils.constants import (
     VERSION, VERSION_NAME, 
@@ -1022,29 +1022,29 @@ class AutoFisherMainWindow(QMainWindow):
         # First find the Play Together window
         if not self.detector:
             self.detector = PixelChangeDetector(self)
-            
-        # Find the window
-        if not self.detector.find_play_together_process():
-            self.log("Cannot start region selection: Play Together window not found")
-            return False
-            
-        try:
-            # Create the selection overlay
-            # Use a generic full-screen approach
-            selection_overlay = RegionSelectionOverlay(None)
-            
-            # Connect to signals
-            selection_overlay.region_selected.connect(self.set_region)
-            selection_overlay.selection_canceled.connect(lambda: self.log("Selection canceled"))
-            
-            # Show the overlay
-            selection_overlay.showFullScreen()
-            
+        
+        # Using the new TkRegionSelector which follows the autofisher.py implementation
+        selector = TkRegionSelector(self, size)
+        
+        # Get selected region
+        region = selector.capture_preview_and_select()
+        if region:
+            self.set_region(region)
             return True
-            
-        except Exception as e:
-            self.log(f"Error starting region selection: {e}")
+        else:
+            self.log("Region selection cancelled or failed")
             return False
+            
+    def restore_window(self, was_maximized, geometry_before):
+        """Restore window after region selection"""
+        self.log("Restoring main window...")
+        if was_maximized:
+            self.showMaximized()
+        else:
+            self.showNormal()
+            self.setGeometry(geometry_before)
+            
+        self.log("Window restored")
             
     def set_region(self, region):
         """Handle region selection completion"""

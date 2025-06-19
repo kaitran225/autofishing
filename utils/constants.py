@@ -45,5 +45,17 @@ GAME_WINDOW_NAMES = [
     'playtogether.exe',
     'play together.exe',
     'play together game',
-    'playtogether game'
+    'playtogether game',
+    # Add more generic names
+    'play',
+    'together',
+    'game',
+    'fishing',
+    'fish',
+    'minecraft',  # In case it's Minecraft
+    'roblox',     # In case it's Roblox
+    'browser',    # In case it's in a browser
+    'chrome',
+    'firefox',
+    'edge'
 ] 

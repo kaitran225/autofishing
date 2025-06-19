@@ -145,22 +145,64 @@ def direct_key_press(key_char):
 def find_window_by_pattern(name_patterns):
     """Find a window by matching title patterns"""
     result = [None]
+    found_windows = []
     
     def enum_window_callback(hwnd, _):
         if win32gui.IsWindowVisible(hwnd):
             window_text = win32gui.GetWindowText(hwnd).lower()
             
-            # Skip autofisher window
-            if 'autofisher' in window_text:
+            # Skip empty titles and our own autofisher window
+            if not window_text or 'autofisher' in window_text:
                 return True
+            
+            # For debugging, store all visible window titles
+            if window_text:  # Only include windows with titles
+                found_windows.append((hwnd, window_text))
                 
-            # Check by window title
-            if any(pattern in window_text for pattern in name_patterns):
+            # Check by exact match first - highest priority
+            if any(window_text == pattern.lower() for pattern in name_patterns):
+                print(f"Found exact window match: '{window_text}' (hwnd: {hwnd})")
                 result[0] = hwnd
                 return False
+                
+            # Check by start/end patterns - medium priority
+            if any(window_text.startswith(pattern.lower()) or window_text.endswith(pattern.lower()) 
+                   for pattern in name_patterns if len(pattern) > 5):  # Only match longer patterns
+                print(f"Found partial window match: '{window_text}' (hwnd: {hwnd})")
+                # Store but continue looking for better match
+                if result[0] is None:
+                    result[0] = hwnd
+                    
+            # Check by contains pattern - lowest priority
+            if result[0] is None:
+                if any(pattern.lower() in window_text for pattern in name_patterns if len(pattern) > 6):
+                    print(f"Found window containing pattern: '{window_text}' (hwnd: {hwnd})")
+                    result[0] = hwnd
+                    
         return True
         
     win32gui.EnumWindows(enum_window_callback, None)
+    
+    # If no matching window found, print all visible windows for debugging
+    if result[0] is None:
+        print(f"No matching window found for patterns: {name_patterns}")
+        print("Visible windows:")
+        for hwnd, title in found_windows:
+            print(f"- {hwnd}: '{title}'")
+    else:
+        # Check if the window is still valid
+        try:
+            if win32gui.IsWindow(result[0]):
+                # Get window title for verification
+                window_text = win32gui.GetWindowText(result[0])
+                print(f"Selected window: '{window_text}' (hwnd: {result[0]})")
+            else:
+                print(f"Window {result[0]} is no longer valid")
+                result[0] = None
+        except Exception as e:
+            print(f"Error verifying window: {e}")
+            result[0] = None
+    
     return result[0]
 
 def is_fullscreen_app_active():
