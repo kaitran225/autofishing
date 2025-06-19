@@ -10,67 +10,59 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 class ActivityGraphCanvas(FigureCanvas):
-    """Timeline canvas for displaying real-time activity graph"""
+    """Canvas for displaying activity timeline"""
     
-    def __init__(self, parent=None, width=5, height=1, dpi=100, bg_color='#333333'):
-        # Create figure for the timeline with proper sizing
-        self.fig = Figure(figsize=(width, height), dpi=dpi, facecolor=bg_color)
-        self.fig.subplots_adjust(left=0.02, right=0.98, top=0.85, bottom=0.15)  # Maximize plot area
+    def __init__(self, parent=None, width=5, height=1.5, dpi=100):
+        # Create figure with specified dimensions
+        self.fig = plt.Figure(figsize=(width, height), dpi=dpi)
         
-        # Create a single subplot for the timeline
-        self.timeline_ax = self.fig.add_subplot(111)
-        self.timeline_ax.set_facecolor(bg_color)
+        # Define theme colors
+        self.theme_colors = {
+            'bg_dark': '#181914',         # Oak wood dark
+            'accent': '#A3D977',          # Matcha green
+            'green': '#A3D977',           # Matcha green
+            'text_bright': '#FFFFFF',     # White text
+            'text': '#F8F5E3',            # Warm off-white
+            'border': '#6B6E58',          # Border color
+        }
         
-        # Clean up axis ticks - only show y-axis on left with minimal ticks
-        self.timeline_ax.set_xticks([])
-        self.timeline_ax.set_yticks([0, 0.5, 1.0])
-        self.timeline_ax.set_yticklabels(['0', '', '1'], fontsize=8, color='#aaaaaa')
-        self.timeline_ax.tick_params(axis='y', colors='#999999', labelsize=7, length=2, pad=1)
+        # Set up the figure
+        self.fig.patch.set_facecolor(self.theme_colors['bg_dark'])
+        gs = plt.GridSpec(1, 1, figure=self.fig)
+        self.timeline_ax = self.fig.add_subplot(gs[0])
+        self.timeline_ax.set_facecolor(self.theme_colors['bg_dark'])
         
-        # Add subtle grid with low opacity
-        self.timeline_ax.grid(True, linestyle=':', alpha=0.2, color='#999999')
-        
-        # Clean up spines (borders)
-        for spine in ['top', 'right', 'bottom', 'left']:
-            self.timeline_ax.spines[spine].set_visible(False)
-        
-        # Initialize timeline data
-        x_data = np.arange(100)
-        y_data = np.zeros(100)  # Start with zeros
-        
-        # Add a subtle background area fill
-        self.timeline_ax.fill_between(x_data, 0, 0, color='#77DD77', alpha=0.05)
-        
-        # Add the main activity line with a slight gradient effect
-        self.activity_line, = self.timeline_ax.plot(x_data, y_data, color='#77DD77', 
-                                                   linewidth=1.5, alpha=0.9)
-        
-        # Add threshold line with better visibility
-        self.threshold_line = self.timeline_ax.axhline(y=0.05, color='#FF6961', 
-                                                      linestyle='--', alpha=0.7, linewidth=1)
-        
-        # Add annotations for clarity
-        self.threshold_annotation = self.timeline_ax.annotate(
-            'threshold', xy=(99, 0.05), xytext=(92, 0.1),
-            textcoords='data', color='#FF6961', fontsize=7, alpha=0.8,
-            bbox=dict(boxstyle='round,pad=0.1', fc=bg_color, alpha=0.7, ec='none')
-        )
-        self.threshold_annotation.set_visible(False)  # Start hidden
-        
-        # Set axis limits
-        self.timeline_ax.set_ylim(0, 1.05)  # Slight padding at top
+        # Set up the timeline
         self.timeline_ax.set_xlim(0, 99)
+        self.timeline_ax.set_ylim(0, 1)
+        self.timeline_ax.set_xticks([])
+        self.timeline_ax.set_yticks([])
         
-        # Add title to timeline with threshold value - more compact
-        self.timeline_ax.set_title("ACTIVITY", color='#77DD77', 
-                                  fontsize=9, fontweight='bold', pad=2)
+        # Remove spines
+        for spine in self.timeline_ax.spines.values():
+            spine.set_visible(False)
+            
+        # Create baseline
+        self.timeline_ax.axhline(y=0.5, color=self.theme_colors['border'], linestyle='-', alpha=0.3, linewidth=0.5)
         
-        # Initialize the figure canvas
-        super(ActivityGraphCanvas, self).__init__(self.fig)
-        self.setParent(parent)
+        # Create activity line
+        x_data = np.arange(100)
+        y_data = np.ones(100) * 0.5
+        self.activity_line, = self.timeline_ax.plot(x_data, y_data, color=self.theme_colors['accent'], linewidth=1)
         
-        # Set minimum height
-        self.setMinimumHeight(60)
+        # Create threshold line
+        self.threshold_line = self.timeline_ax.axhline(y=0.05, color='#FF6B6B', linestyle='--', alpha=0.5, linewidth=0.5)
+        
+        # Create threshold annotation
+        self.threshold_annotation = self.timeline_ax.annotate(
+            "threshold", xy=(99, 0.05), xytext=(5, 0), textcoords="offset points",
+            ha="right", va="center", fontsize=7, color='#FF6B6B', alpha=0.7,
+            bbox=dict(boxstyle="round,pad=0.1", fc=self.theme_colors['bg_dark'], ec="none", alpha=0.7)
+        )
+        self.threshold_annotation.set_visible(False)
+        
+        # Initialize the canvas
+        super().__init__(self.fig)
         
     def update(self, history=None, threshold=0.05):
         """Update the activity graph with new data"""
@@ -80,9 +72,12 @@ class ActivityGraphCanvas(FigureCanvas):
                 self.activity_line.set_ydata([0] * 100)
                 # Clear all collections
                 for collection in self.timeline_ax.collections:
-                    collection.remove()
+                    try:
+                        collection.remove()
+                    except Exception as e:
+                        pass  # Silently ignore removal errors
                 self.threshold_line.set_ydata([threshold, threshold])
-                self.canvas.draw_idle()
+                self.draw_idle()  # Use self directly as we are a FigureCanvas
                 return
 
             # Process data for display
@@ -100,109 +95,144 @@ class ActivityGraphCanvas(FigureCanvas):
             # Clear previous fills
             # Clear all collections (fills) by removing them safely
             for collection in list(self.timeline_ax.collections):
-                collection.remove()
+                try:
+                    collection.remove()
+                except Exception as e:
+                    pass  # Silently ignore removal errors
 
             # Add new fill
             fill_data = data.copy()
-            for i in range(len(fill_data)):
-                if fill_data[i] > threshold:
-                    # Do nothing - keep the value above threshold
-                    pass
-                else:
-                    fill_data[i] = 0  # Set below-threshold values to 0
             
-            # Create the fill between activity line and zero baseline
+            # Create mask for values above threshold
             x_data = range(len(fill_data))
-            self.timeline_ax.fill_between(
-                x_data, fill_data, 0, 
-                where=(fill_data > threshold),
-                interpolate=True, 
-                color=self.theme_colors.get('accent', '#77DD77'), 
-                alpha=0.3
-            )
+            mask = []
+            for val in fill_data:
+                mask.append(val > threshold)
+                
+            # Create the fill between activity line and zero baseline
+            try:
+                self.timeline_ax.fill_between(
+                    x_data, fill_data, 0, 
+                    where=mask,  # Use the pre-computed mask instead
+                    interpolate=True, 
+                    color=self.theme_colors.get('accent', '#77DD77'), 
+                    alpha=0.3
+                )
+            except Exception as e:
+                print(f"Error creating fill: {e}")
 
             # Redraw the canvas
-            self.canvas.draw_idle()
+            self.draw_idle()  # Use self directly as we are a FigureCanvas
         except Exception as e:
             print(f"Error updating activity graph: {e}")
             import traceback
             traceback.print_exc()
 
 class MatplotlibCanvas(FigureCanvas):
-    """Matplotlib canvas for displaying real-time monitoring data"""
+    """Matplotlib canvas for visualizing frames"""
     
-    def __init__(self, parent=None, width=5, height=3.33, dpi=100, bg_color='#333333'):
-        # Create figure with correct aspect ratio (1.5:1 width to height)
-        self.fig = Figure(figsize=(width, height), dpi=dpi, facecolor=bg_color)
+    def __init__(self, parent=None, width=5, height=4, dpi=100):
+        """Initialize the canvas with figure and axes"""
+        self.fig = plt.Figure(figsize=(width, height), dpi=dpi)
+        self.axes = self.fig.add_subplot(111)
+        super().__init__(self.fig)
         
-        # Maximize the plot area by removing margins
-        self.fig.subplots_adjust(left=0, right=1, top=1, bottom=0, wspace=0, hspace=0)
+        # Set background color to match the application theme
+        self.fig.patch.set_facecolor('#181914')  # Dark background
+        self.axes.set_facecolor('#181914')
         
-        # Main image display
-        self.current_ax = self.fig.add_subplot(111)
-        self.current_ax.set_facecolor(bg_color)
-        self.current_ax.axis('off')
+        # Remove axis ticks and labels
+        self.axes.set_xticks([])
+        self.axes.set_yticks([])
         
-        # Initialize empty image with correct aspect ratio (1.5:1)
-        empty_img = np.zeros((100, 150, 3), dtype=np.uint8)  # 150x100 = 1.5:1 ratio
-        self.current_image = self.current_ax.imshow(empty_img, aspect='auto', interpolation='none')
-        self.diff_overlay = self.current_ax.imshow(np.zeros((100, 150, 4), dtype=np.uint8), 
-                                                  alpha=0.5, interpolation='none')
+        # Create placeholders for images
+        self.main_image = None
+        self.diff_overlay = None
         
-        # Add rectangle border around image - for the full frame
-        rect = plt.Rectangle((0, 0), 1, 1, fill=False, ec='#666', linewidth=1.5, 
-                            transform=self.current_ax.transAxes, clip_on=False)
-        self.current_ax.add_patch(rect)
+        # Store the last frame for refreshing
+        self.last_frame = None
+        self.last_diff = None
         
-        # Initialize the figure canvas
-        super(MatplotlibCanvas, self).__init__(self.fig)
-        self.setParent(parent)
+        # Set up the figure layout
+        self.fig.tight_layout(pad=0)
         
-        # Add placeholder text
-        self.placeholder_text = self.fig.text(0.5, 0.45, "Awaiting data...", color='#999', 
-                                             ha='center', va='center', fontsize=10)
-        
-        # Set min/fixed size to maintain aspect ratio
-        self.setMinimumSize(300, 200)
-        
-    def resizeEvent(self, event):
-        """Handle resize events to maintain proper aspect ratio"""
-        super().resizeEvent(event)
-        # Don't constrain to equal aspect ratio to allow filling available space
-        self.current_ax.figure.canvas.draw_idle()
-
-    def update_image(self, frame=None, diff_frame=None):
-        """Update the displayed image maintaining aspect ratio"""
-        if self.placeholder_text:
-            self.placeholder_text.remove()
-            self.placeholder_text = None
+    def update_image(self, frame, diff_frame=None):
+        """Update the image display with a new frame"""
+        try:
+            # Store the frame for refreshing
+            self.last_frame = frame
             
-        if frame is not None:
-            # Keep the original frame dimensions to fill the space
-            self.current_image.set_data(frame)
+            # Clear previous images
+            self.axes.clear()
+            self.axes.set_xticks([])
+            self.axes.set_yticks([])
             
-        if diff_frame is not None:
-            # Create a colored diff frame with alpha channel
-            diff_display = cv2.convertScaleAbs(diff_frame, alpha=3)
-            diff_colored = cv2.applyColorMap(diff_display, cv2.COLORMAP_INFERNO)
-            colored_diff = cv2.cvtColor(diff_colored, cv2.COLOR_BGR2RGB)
+            # Display the raw image without filtering
+            # Make sure we're showing RGB data (convert if needed)
+            if len(frame.shape) == 3 and frame.shape[2] == 4:  # RGBA
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2RGB)
+                self.main_image = self.axes.imshow(rgb_frame, interpolation='none')
+            elif len(frame.shape) == 2:  # Grayscale
+                self.main_image = self.axes.imshow(frame, interpolation='none', cmap='gray')
+            else:  # Already RGB
+                self.main_image = self.axes.imshow(frame, interpolation='none')
             
-            colored_diff_alpha = np.zeros((colored_diff.shape[0], colored_diff.shape[1], 4), dtype=np.uint8)
-            colored_diff_alpha[..., :3] = colored_diff
+            # If we have a difference frame, overlay it
+            if diff_frame is not None:
+                self.update_diff(diff_frame)
             
-            # Set alpha based on difference intensity
-            alpha_threshold = 30
-            for i in range(diff_display.shape[0]):
-                for j in range(diff_display.shape[1]):
-                    if diff_display[i, j] > alpha_threshold:
-                        # Scale alpha with intensity
-                        safe_value = min(127, diff_display[i, j])
-                        colored_diff_alpha[i, j, 3] = min(255, int(safe_value * 2))
-                    else:
-                        colored_diff_alpha[i, j, 3] = 0
+            # Redraw the canvas
+            self.draw_idle()
+        except Exception as e:
+            print(f"Error updating image: {e}")
+            import traceback
+            traceback.print_exc()
             
-            self.diff_overlay.set_data(colored_diff_alpha)
-        
-        # Use 'auto' aspect ratio to fill the available space
-        self.current_ax.set_aspect('auto')
-        self.current_ax.figure.canvas.draw_idle() 
+    def update_diff(self, diff_frame):
+        """Update the difference overlay"""
+        if diff_frame is None:
+            return
+            
+        try:
+            # Store the diff frame
+            self.last_diff = diff_frame
+            
+            # If we're starting with just a diff frame, create a black background
+            if self.main_image is None and self.last_frame is not None:
+                self.update_image(self.last_frame)
+                
+            # For raw visualization, just show the difference directly with minimal processing
+            # No need to remove previous overlay since we cleared the axes in update_image
+            
+            # Create a simple overlay that shows raw differences
+            # Normalize the difference values for visibility
+            if len(diff_frame.shape) == 2:  # Grayscale diff
+                # Create a colored version for better visibility
+                colored_diff = cv2.applyColorMap(diff_frame, cv2.COLORMAP_JET)
+                colored_diff = cv2.cvtColor(colored_diff, cv2.COLOR_BGR2RGB)
+                
+                # Create the new overlay with partial transparency
+                self.diff_overlay = self.axes.imshow(
+                    colored_diff, 
+                    interpolation='none',
+                    alpha=0.3,  # Lower alpha for less filtering effect
+                )
+            else:
+                # Already colored diff
+                self.diff_overlay = self.axes.imshow(
+                    diff_frame,
+                    interpolation='none',
+                    alpha=0.3,  # Lower alpha for less filtering effect
+                )
+            
+            # Redraw the canvas
+            self.draw_idle()
+        except Exception as e:
+            print(f"Error updating diff overlay: {e}")
+            import traceback
+            traceback.print_exc()
+            
+    def refresh(self):
+        """Refresh the display with the last frame"""
+        if self.last_frame is not None:
+            self.update_image(self.last_frame, self.last_diff) 

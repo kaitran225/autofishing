@@ -1047,21 +1047,30 @@ class AutoFisherMainWindow(QMainWindow):
         self.log("Window restored")
             
     def set_region(self, region):
-        """Handle region selection completion"""
-        # Store region in detector
+        """Set the region to monitor"""
+        if not region:
+            self.log("No region selected")
+            return False
+            
+        if not self.detector:
+            self.detector = PixelChangeDetector(self)
+            
+        # Set the region in the detector
         self.detector.region = region
         
-        # Update region info display
+        # Get region dimensions
         left, top, right, bottom = region
         width = right - left
         height = bottom - top
-        aspect_ratio = width / height if height > 0 else 0
         
+        self.log(f"Region selected: ({left},{top}) to ({right},{bottom}), size: {width}×{height}")
+        
+        # Update UI
         self.region_info_label.setText(
             f"Selected Region:\n"
             f"Position: ({left}, {top}) to ({right}, {bottom})\n"
             f"Size: {width}×{height} pixels\n"
-            f"Aspect Ratio: {aspect_ratio:.2f}"
+            f"Aspect Ratio: {width / height if height > 0 else 0:.2f}"
         )
         
         # Update UI state
@@ -1072,6 +1081,223 @@ class AutoFisherMainWindow(QMainWindow):
             
             self.log(f"Region selection completed at: {left},{top} to {right},{bottom}")
             
+        # Start live preview automatically
+        self.start_live_preview()
+        
+        return True
+        
+    def start_live_preview(self):
+        """Start a live preview of the selected region"""
+        if not self.detector or not self.detector.region:
+            self.log("No region selected for preview")
+            return False
+            
+        self.log("Starting live preview of selected region...")
+        
+        # Create preview thread if it doesn't exist
+        if not hasattr(self, 'preview_thread') or not self.preview_thread.isRunning():
+            from PyQt6.QtCore import QThread, pyqtSignal
+            
+            # Create a worker thread for preview
+            class PreviewThread(QThread):
+                preview_ready = pyqtSignal(object)
+                
+                def __init__(self, detector, parent=None):
+                    super().__init__(parent)
+                    self.detector = detector
+                    self.running = True
+                    
+                def run(self):
+                    import time
+                    while self.running:
+                        try:
+                            # Capture frame from selected region
+                            frame = self.detector.capture_screen()
+                            if frame is not None:
+                                # Emit signal with the frame
+                                self.preview_ready.emit(frame)
+                            time.sleep(0.1)  # 10 FPS preview
+                        except Exception as e:
+                            print(f"Preview error: {e}")
+                            time.sleep(0.5)
+                            
+                def stop(self):
+                    self.running = False
+                    
+            # Create and start the thread
+            self.preview_thread = PreviewThread(self.detector, self)
+            self.preview_thread.preview_ready.connect(self.update_preview)
+            self.preview_thread.start()
+            
+            # Update UI to show we're in preview mode
+            self.status_label.setText("Status: Live Preview")
+            self.log("Live preview started. Click 'start' to begin detection.")
+            
+            return True
+        else:
+            self.log("Preview already running")
+            return False
+            
+    def update_preview(self, frame):
+        """Update the visualization with the preview frame"""
+        if frame is not None:
+            # Update the visualization with the current frame - use raw frame without modifications
+            if hasattr(self, 'viz_canvas'):
+                # Store the raw frame in the detector for reference
+                if self.detector:
+                    self.detector.color_frame = frame
+                
+                # Display the raw frame
+                self.viz_canvas.update_image(frame, None)
+            
+            # If we have a detector with difference calculation capability, use it
+            if self.detector and hasattr(self.detector, 'reference_frame') and self.detector.reference_frame is not None:
+                try:
+                    # Calculate difference from reference frame
+                    diff_frame, change_percent = self.detector.calculate_frame_difference(frame, self.detector.reference_frame)
+                    
+                    # Store the diff frame in the detector
+                    self.detector.diff_frame = diff_frame
+                    
+                    # Update the visualization with the difference frame
+                    if hasattr(self, 'viz_canvas'):
+                        self.viz_canvas.update_diff(diff_frame)
+                    
+                    # Add to activity history
+                    if hasattr(self.detector, 'change_history'):
+                        self.detector.change_history.append(change_percent)
+                        if len(self.detector.change_history) > 1000:
+                            self.detector.change_history = self.detector.change_history[-1000:]
+                            
+                    # Update activity graph
+                    if hasattr(self, 'activity_graph_canvas'):
+                        self.activity_graph_canvas.update(self.detector.change_history, self.detector.THRESHOLD)
+                        
+                    # Show current change percentage and debug info
+                    debug_info = (
+                        f"Status: Live Preview | "
+                        f"Change: {change_percent:.4f} | "
+                        f"Threshold: {self.detector.THRESHOLD:.4f} | "
+                        f"Frame Size: {frame.shape[1]}x{frame.shape[0]}"
+                    )
+                    self.status_label.setText(debug_info)
+                    
+                    # Check for threshold crossing for debugging
+                    if change_percent > self.detector.THRESHOLD:
+                        self.log(f"Threshold crossed: {change_percent:.4f} > {self.detector.THRESHOLD:.4f}")
+                    
+                except Exception as e:
+                    print(f"Error in preview update: {e}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                # No reference frame yet, capture one
+                if self.detector:
+                    self.log("Capturing initial reference frame...")
+                    self.detector.reference_frame = frame.copy()
+                    if hasattr(frame, 'copy'):
+                        self.detector.reference_color_frame = frame.copy()
+                    self.log("Initial reference frame captured")
+        
+    def stop_live_preview(self):
+        """Stop the live preview"""
+        if hasattr(self, 'preview_thread') and self.preview_thread.isRunning():
+            self.preview_thread.stop()
+            self.log("Stopping live preview...")
+            # Wait a bit for the thread to finish
+            self.preview_thread.wait(1000)  # Wait up to 1 second for thread to finish
+            self.log("Live preview stopped")
+            self.status_label.setText("Status: Ready")
+            return True
+        return False
+        
+    def start_detection(self):
+        """Start the detection process"""
+        # Stop any running preview first
+        self.stop_live_preview()
+        
+        # Continue with normal detection start
+        if not self.detector or not self.detector.region:
+            self.log("No region selected for detection")
+            return False
+            
+        # Apply current settings
+        self.apply_settings()
+        
+        # Start detection
+        if self.detector.start_detection():
+            self.log("Detection started")
+            self.detection_running = True
+            self.start_time = time.time()
+            self.total_detections = 0
+            
+            # Update UI state
+            self.start_button.setEnabled(False)
+            self.stop_button.setEnabled(True)
+            self.pause_button.setEnabled(True)
+            self.status_label.setText("Running - Monitoring for changes")
+            
+            # Start visualization timer
+            self.vis_timer.start()
+            
+    def stop_detection(self):
+        """Stop the detection process"""
+        if self.detector:
+            self.detector.stop_detection()
+            
+        self.detection_running = False
+        
+        # Update UI state
+        self.start_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
+        self.pause_button.setEnabled(False)
+        self.pause_button.setText("Pause")
+        self.status_label.setText("Stopped")
+        
+        # Stop visualization timer
+        self.vis_timer.stop()
+        
+        self.log("Detection stopped")
+        
+    def toggle_pause(self):
+        """Toggle pause state"""
+        if not self.detector:
+            return
+            
+        if self.detector.paused:
+            self.detector.paused = False
+            self.pause_button.setText("Pause")
+            self.status_label.setText("Running - Monitoring for changes")
+            self.log("Detection resumed")
+        else:
+            self.detector.paused = True
+            self.pause_button.setText("Resume")
+            self.status_label.setText("Paused")
+            self.log("Detection paused")
+            
+    def update_visualization(self):
+        """Update the visualization display"""
+        if not self.detector:
+            return
+            
+        # Update the image display if we have frames
+        if hasattr(self.detector, 'color_frame') and self.detector.color_frame is not None:
+            self.viz_canvas.update_image(self.detector.color_frame, self.detector.diff_frame)
+            
+        # Update the activity graph in its own tab
+        if hasattr(self.detector, 'change_history') and self.detector.change_history:
+            self.activity_graph_canvas.update(self.detector.change_history, self.detector.THRESHOLD)
+            
+    def increment_detection_count(self):
+        """Increment detection count when signal is received"""
+        self.total_detections += 1
+        
+        # Update UI immediately
+        self.detections_label.setText(str(self.total_detections))
+        
+        # Log the detection
+        self.log(f"Detection #{self.total_detections} triggered!")
+        
     def update_statistics(self):
         """Update statistics labels"""
         # Only update if detector exists
@@ -1173,90 +1399,13 @@ class AutoFisherMainWindow(QMainWindow):
                 self.monitor_status.setText("Running")
         else:
             self.monitor_status.setText("Idle")
-            
-    def start_detection(self):
-        """Start the detection process"""
-        if not self.detector:
-            self.log("Detector not initialized")
-            return
-            
-        if not self.detector.region:
-            self.log("Please select a region first")
-            return
-            
-        # Apply current settings
-        self.apply_settings()
-        
-        # Start detection
-        if self.detector.start_detection():
-            self.log("Detection started")
-            self.detection_running = True
-            self.start_time = time.time()
-            self.total_detections = 0
-            
-            # Update UI state
-            self.start_button.setEnabled(False)
-            self.stop_button.setEnabled(True)
-            self.pause_button.setEnabled(True)
-            self.status_label.setText("Running - Monitoring for changes")
-            
-            # Start visualization timer
-            self.vis_timer.start()
-            
-    def stop_detection(self):
-        """Stop the detection process"""
-        if self.detector:
+
+    def closeEvent(self, event):
+        """Handle application close event"""
+        # Stop any running threads
+        self.stop_live_preview()
+        if hasattr(self, 'detector') and self.detector:
             self.detector.stop_detection()
-            
-        self.detection_running = False
         
-        # Update UI state
-        self.start_button.setEnabled(True)
-        self.stop_button.setEnabled(False)
-        self.pause_button.setEnabled(False)
-        self.pause_button.setText("Pause")
-        self.status_label.setText("Stopped")
-        
-        # Stop visualization timer
-        self.vis_timer.stop()
-        
-        self.log("Detection stopped")
-        
-    def toggle_pause(self):
-        """Toggle pause state"""
-        if not self.detector:
-            return
-            
-        if self.detector.paused:
-            self.detector.paused = False
-            self.pause_button.setText("Pause")
-            self.status_label.setText("Running - Monitoring for changes")
-            self.log("Detection resumed")
-        else:
-            self.detector.paused = True
-            self.pause_button.setText("Resume")
-            self.status_label.setText("Paused")
-            self.log("Detection paused")
-            
-    def update_visualization(self):
-        """Update the visualization display"""
-        if not self.detector:
-            return
-            
-        # Update the image display if we have frames
-        if hasattr(self.detector, 'color_frame') and self.detector.color_frame is not None:
-            self.viz_canvas.update_image(self.detector.color_frame, self.detector.diff_frame)
-            
-        # Update the activity graph in its own tab
-        if hasattr(self.detector, 'change_history') and self.detector.change_history:
-            self.activity_graph_canvas.update(self.detector.change_history, self.detector.THRESHOLD)
-            
-    def increment_detection_count(self):
-        """Increment detection count when signal is received"""
-        self.total_detections += 1
-        
-        # Update UI immediately
-        self.detections_label.setText(str(self.total_detections))
-        
-        # Log the detection
-        self.log(f"Detection #{self.total_detections} triggered!")
+        # Call the parent class closeEvent
+        super().closeEvent(event)

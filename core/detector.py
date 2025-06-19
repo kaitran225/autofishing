@@ -9,6 +9,7 @@ import numpy as np
 import cv2
 from PyQt6.QtCore import QObject, pyqtSignal
 import keyboard
+import mss
 
 from utils.constants import (
     DEFAULT_THRESHOLD, DEFAULT_DETECTION_COOLDOWN,
@@ -146,12 +147,64 @@ class PixelChangeDetector(QObject):
             return False
     
     def capture_screen(self):
-        """Capture the current screen region"""
-        frame, color_frame = capture_screen_region(self.region)
-        if frame is not None:
-            self.color_frame = color_frame
-            return frame
-        return None
+        """
+        Capture the screen region with minimal processing for raw preview
+        
+        Returns:
+            numpy.ndarray: The captured image in RGB format
+        """
+        try:
+            if not self.region:
+                print("No region selected. Please select a region first.")
+                return None
+                
+            # Validate region size
+            left, top, right, bottom = self.region
+            width = right - left
+            height = bottom - top
+            
+            if width < 10 or height < 10:
+                print("Invalid region size detected. Please select a new region.")
+                return None
+                
+            # Use mss library which has better performance and multi-monitor support
+            with mss.mss() as sct:
+                # Convert region format to mss format (left, top, width, height)
+                mss_region = {
+                    "left": left,
+                    "top": top,
+                    "width": width,
+                    "height": height
+                }
+                
+                # Capture the region
+                screenshot = sct.grab(mss_region)
+                
+                # Convert to numpy array - sct.grab returns BGRA
+                frame = np.array(screenshot)
+                
+            # Validate frame
+            if frame.size == 0:
+                print("Error: Captured frame is empty")
+                self.consecutive_failures += 1
+                return None
+                
+            # Store color frame for visualization (convert BGRA to RGB)
+            if len(frame.shape) >= 3:
+                self.color_frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2RGB)
+                # Return the raw RGB frame
+                return self.color_frame
+            else:
+                self.color_frame = None
+                # Return the raw frame as is
+                return frame
+            
+        except Exception as e:
+            print(f"Error capturing screen: {e}")
+            import traceback
+            traceback.print_exc()
+            self.consecutive_failures += 1
+            return None
     
     def validate_region(self):
         """Validate the selected region with a preview capture"""
@@ -229,7 +282,7 @@ class PixelChangeDetector(QObject):
                     continue
                 
                 # Calculate difference
-                self.diff_frame, change_percent = calculate_frame_difference(
+                self.diff_frame, change_percent = self.calculate_frame_difference(
                     self.current_frame, compare_frame
                 )
                 
@@ -428,3 +481,61 @@ class PixelChangeDetector(QObject):
                     self.log("Captured recovery reference frame")
                 except:
                     pass 
+
+    def calculate_frame_difference(self, frame1, frame2):
+        """
+        Calculate the difference between two frames with minimal processing
+        
+        Args:
+            frame1: First frame
+            frame2: Second frame
+            
+        Returns:
+            tuple: (diff_frame, change_percent)
+        """
+        if frame1 is None or frame2 is None:
+            return None, 0
+            
+        try:
+            # Ensure frames have same dimensions
+            if frame1.shape != frame2.shape:
+                # Resize to match
+                frame2 = cv2.resize(frame2, (frame1.shape[1], frame1.shape[0]))
+            
+            # Apply slight blur to reduce noise sensitivity
+            frame1_blurred = cv2.GaussianBlur(frame1, (5, 5), 0)
+            frame2_blurred = cv2.GaussianBlur(frame2, (5, 5), 0)
+            
+            # For color images - use direct absolute difference
+            if len(frame1.shape) == 3:
+                # Calculate absolute difference directly
+                diff_frame = cv2.absdiff(frame1_blurred, frame2_blurred)
+                
+                # Convert to grayscale for threshold calculation
+                diff_gray = cv2.cvtColor(diff_frame, cv2.COLOR_RGB2GRAY)
+                
+                # Calculate percentage of pixels that changed significantly
+                threshold = 20  # Lower threshold for more sensitivity
+                changed_pixels = np.sum(diff_gray > threshold)
+                total_pixels = diff_gray.shape[0] * diff_gray.shape[1]
+                change_percent = changed_pixels / total_pixels
+                
+                # Return the raw difference frame and change percentage
+                return diff_frame, change_percent
+            else:
+                # For grayscale images
+                diff_frame = cv2.absdiff(frame1_blurred, frame2_blurred)
+                
+                # Calculate percentage of changed pixels
+                threshold = 20
+                changed_pixels = np.sum(diff_frame > threshold)
+                total_pixels = diff_frame.shape[0] * diff_frame.shape[1]
+                change_percent = changed_pixels / total_pixels
+                
+                return diff_frame, change_percent
+                
+        except Exception as e:
+            print(f"Error calculating frame difference: {e}")
+            import traceback
+            traceback.print_exc()
+            return None, 0 
