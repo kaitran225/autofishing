@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AutoFisher Qt - Automatic Fishing Bot for Play Together
-Main application entry point
+Ultra-Fast Detection Edition - Optimized for instant response
 """
 import sys
 from PyQt6.QtWidgets import QApplication
@@ -19,6 +19,7 @@ def main():
     
     # Log startup information
     print(f"Starting AutoFisher Qt v{VERSION} - {VERSION_NAME}")
+    print("Ultra-Fast Detection enabled: Optimized for instant fish response")
     
     # Run the application
     sys.exit(app.exec())
