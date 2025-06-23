@@ -60,7 +60,7 @@ class PixelChangeDetector(QObject):
         
         # Noise reduction parameters
         self.apply_blur = True
-        self.blur_kernel_size = 5  # Increased from 3 for better noise reduction
+        self.blur_kernel_size = 3
         
         # Performance optimization - faster capture rate
         self.capture_interval = 0.01  # 10ms between captures (100fps) - decreased from 0.05
@@ -84,14 +84,6 @@ class PixelChangeDetector(QObject):
             {"action": "press_f", "delay": 0.0},    # Cast fishing line again and wait 1 second
             {"action": "wait", "delay": 2.0}        # Final step - capture reference frame happens after sequence
         ]
-        
-        # False positive prevention - add detection consistency tracking
-        self.detection_confidence = 0.0
-        self.confidence_threshold = 3.0  # Require multiple consistent detections
-        self.confidence_decay = 0.5      # How quickly confidence decays
-        self.min_consistent_frames = 2   # Minimum frames showing change
-        self.frames_with_change = 0      # Counter for frames showing change
-        self.last_frame_changes = []     # Track recent change percentages (for trend analysis)
         
     def log(self, message):
         """Log a message"""
@@ -134,41 +126,35 @@ class PixelChangeDetector(QObject):
             width = right - left
             height = bottom - top
             
-            # Validate region size
-            if width < 10 or height < 10:
-                self.log("Invalid region size detected. Please check region selection.")
-                return None
-                
-            # Using mss for better performance
+            # Using reused mss context manager for better performance
             monitor = {"top": top, "left": left, "width": width, "height": height}
             screenshot = self.sct.grab(monitor)
             
-            # Convert to numpy array - maintains color information
+            # Use numpy array with zero copy when possible
             frame = np.array(screenshot, dtype=np.uint8)
             
-            # Log first capture for debugging
-            if not hasattr(self, 'first_capture_logged'):
-                self.log(f"First capture from region: ({left},{top}) to ({right},{bottom}), size: {width}x{height}")
-                self.first_capture_logged = True
+            # Store color frame for visualization
+            self.color_frame = frame.copy()
             
-            # Validate frame
-            if frame.size == 0:
-                self.log("Error: Captured frame is empty")
-                self.consecutive_failures += 1
-                return None
+            # Convert to grayscale for processing - more efficient conversion
+            if len(frame.shape) > 2:
+                if frame.shape[2] == 4:  # BGRA format from mss
+                    # Faster grayscale conversion using weighted sum
+                    frame = np.dot(frame[..., :3], [0.114, 0.587, 0.299])
+                else:
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 
-            # Store color frame for visualization (convert BGRA to RGB)
-            if len(frame.shape) >= 3:
-                self.color_frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2RGB)
-            else:
-                self.color_frame = None
-                
-            # Keep the original frame with color information for HSV-based processing
-            # Don't convert to grayscale anymore
+                # Ensure uint8 type
+                frame = frame.astype(np.uint8)
+            
+            # Apply Gaussian blur to reduce noise if enabled - use small kernel for speed
+            if self.apply_blur and self.blur_kernel_size > 0:
+                frame = cv2.GaussianBlur(frame, (self.blur_kernel_size, self.blur_kernel_size), 0)
             
             # Update health check variables
             self.last_successful_capture = time.time()
             self.consecutive_failures = 0
+            
             return frame
                 
         except Exception as e:
@@ -177,62 +163,48 @@ class PixelChangeDetector(QObject):
             return None
             
     def calculate_frame_difference(self, frame1, frame2):
-        """Calculate the difference between two frames with improved color sensitivity"""
+        """Calculate the difference between two frames with improved noise handling and performance"""
         if frame1 is None or frame2 is None:
             return None, 0
             
         # Ensure frames have same dimensions
         if frame1.shape != frame2.shape:
-            # Resize to match
-            frame2 = cv2.resize(frame2, (frame1.shape[1], frame1.shape[0]))
-        
-        # Apply slight blur to reduce noise sensitivity
-        frame1_blurred = cv2.GaussianBlur(frame1, (5, 5), 0)
-        frame2_blurred = cv2.GaussianBlur(frame2, (5, 5), 0)
-        
-        # For grayscale images
-        if len(frame1.shape) < 3:
-            # Calculate absolute difference
-            diff_frame = cv2.absdiff(frame1_blurred, frame2_blurred)
-        else:
-            # For color images - convert to HSV for better color sensitivity
-            frame1_hsv = cv2.cvtColor(frame1_blurred, cv2.COLOR_BGR2HSV)
-            frame2_hsv = cv2.cvtColor(frame2_blurred, cv2.COLOR_BGR2HSV)
+            # Resize to match - use faster INTER_NEAREST for performance
+            frame2 = cv2.resize(frame2, (frame1.shape[1], frame1.shape[0]), interpolation=cv2.INTER_NEAREST)
             
-            # Calculate difference in HSV space (better for detecting pastel colors)
-            h_diff = cv2.absdiff(frame1_hsv[:,:,0], frame2_hsv[:,:,0])
-            s_diff = cv2.absdiff(frame1_hsv[:,:,1], frame2_hsv[:,:,1])
-            v_diff = cv2.absdiff(frame1_hsv[:,:,2], frame2_hsv[:,:,2])
+        # Ensure both frames are grayscale for accurate comparison
+        if len(frame1.shape) == 3 and len(frame2.shape) == 2:
+            # Convert frame1 to grayscale
+            frame1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
+        elif len(frame1.shape) == 2 and len(frame2.shape) == 3:
+            # Convert frame2 to grayscale
+            frame2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
+        elif len(frame1.shape) == 3 and len(frame2.shape) == 3:
+            # Convert both to grayscale
+            frame1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
+            frame2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
             
-            # Weight hue differences more heavily for pastel colors
-            h_weight = 2.0  # Increased weight for hue differences
-            s_weight = 1.0
-            v_weight = 1.0
-            
-            # Combine channels with weights
-            diff_frame = cv2.addWeighted(h_diff, h_weight, s_diff, s_weight, 0)
-            diff_frame = cv2.addWeighted(diff_frame, 1.0, v_diff, v_weight, 0)
+        # Calculate absolute difference
+        diff_frame = cv2.absdiff(frame1, frame2)
         
-        # Calculate percentage of pixels that changed significantly
-        # Apply adaptive thresholding based on frame characteristics
-        threshold = 20  # Lower threshold for more sensitivity
+        # Apply threshold to create binary difference mask - helps ignore minor noise
+        threshold_value = 30  # Threshold for significant change
+        _, thresholded_diff = cv2.threshold(diff_frame, threshold_value, 255, cv2.THRESH_BINARY)
         
-        # Apply morphological operations to highlight larger changes
-        kernel = np.ones((3, 3), np.uint8)
-        dilated_diff = cv2.dilate(diff_frame, kernel, iterations=1)
+        # Optional: use morphological operations to reduce noise further
+        # Using smaller kernel and simpler operation for better performance
+        kernel = np.ones((2, 2), np.uint8)
+        thresholded_diff = cv2.morphologyEx(thresholded_diff, cv2.MORPH_OPEN, kernel)
         
-        # Count significant pixel changes
-        changed_pixels = np.sum(dilated_diff > threshold)
-        total_pixels = frame1.shape[0] * frame1.shape[1]
-        change_percent = changed_pixels / total_pixels
+        # Calculate percentage efficiently by counting non-zero pixels
+        non_zero_pixels = cv2.countNonZero(thresholded_diff)
+        total_pixels = frame1.size  # More efficient than shape[0] * shape[1]
+        change_percent = non_zero_pixels / total_pixels
         
-        # For visualization, enhance the difference frame
-        enhanced_diff = cv2.convertScaleAbs(dilated_diff, alpha=1.5)
+        # Store the thresholded difference for visualization
+        self.diff_frame = thresholded_diff
         
-        # Store the enhanced difference for visualization
-        self.diff_frame = enhanced_diff
-        
-        return enhanced_diff, change_percent
+        return thresholded_diff, change_percent
         
     def capture_reference(self):
         """Capture a reference frame"""
@@ -303,34 +275,13 @@ class PixelChangeDetector(QObject):
         
         # Add health check timing variable
         self._last_health_check = time.time()
-        # Frame counter for advanced metrics
-        frame_counter = 0
-        fps_counter = 0
-        fps_timer = time.time()
-        fps = 0
-        
-        # Initialize benchmark timer for performance monitoring
-        processing_times = []
-        
-        self.log("Detection loop started with improved algorithm")
         
         while self.is_running and not self.stop_requested:
-            loop_start = time.time()
             try:
                 # Skip if paused
                 if self.is_paused:
                     time.sleep(local_interval * 2)
                     continue
-                
-                # Update FPS counter
-                fps_counter += 1
-                if time.time() - fps_timer >= 1.0:
-                    fps = fps_counter
-                    fps_counter = 0
-                    fps_timer = time.time()
-                    # Log FPS every 5 seconds
-                    if frame_counter % (fps * 5) == 0:
-                        self.log(f"Processing at {fps} FPS")
                 
                 # Perform health check every 5 minutes
                 current_time = time.time()
@@ -358,7 +309,7 @@ class PixelChangeDetector(QObject):
                     time.sleep(local_interval)
                     continue
                 
-                # Calculate difference using the improved HSV-based algorithm
+                # Calculate difference
                 self.diff_frame, change_percent = self.calculate_frame_difference(
                     self.current_frame, compare_frame
                 )
@@ -374,11 +325,10 @@ class PixelChangeDetector(QObject):
                     self.frame_updated.emit()
                     self._last_ui_update = current_time
                 
-                # Check for detection with cooldown - with improved logging
+                # Check for detection with cooldown
                 if (change_percent > local_threshold and 
                         (current_time - self.last_detection_time) > self.detection_cooldown):
-                    change_percent_formatted = round(change_percent * 100, 2)
-                    self.log(f"Change detected! {change_percent_formatted}% (threshold: {local_threshold*100}%)")
+                    self.log(f"Change detected! {change_percent:.2%}")
                     self.last_detection_time = current_time
                     
                     # Start the action sequence
@@ -395,19 +345,8 @@ class PixelChangeDetector(QObject):
                 # Store current frame as previous for next comparison
                 self.previous_frame = self.current_frame
                 
-                # Track performance metrics
-                frame_counter += 1
-                loop_time = time.time() - loop_start
-                processing_times.append(loop_time)
-                
-                # Report processing performance occasionally
-                if len(processing_times) >= 100:
-                    avg_time = sum(processing_times) / len(processing_times)
-                    self.log(f"Avg processing time: {avg_time*1000:.1f}ms ({1/avg_time:.1f} FPS)")
-                    processing_times = []
-                
                 # Control capture rate - faster loop for better responsiveness
-                time.sleep(max(0, local_interval - loop_time))
+                time.sleep(local_interval)
                 
             except Exception as e:
                 self.log(f"Error in detection loop: {e}")
