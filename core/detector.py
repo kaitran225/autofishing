@@ -12,54 +12,114 @@ import datetime
 import mss
 import mss.tools
 import psutil
+import win32gui
+import copy
+from typing import Dict, List, Tuple, Optional
+import imutils
 
 from utils.constants import (
     DEFAULT_THRESHOLD, DEFAULT_DETECTION_COOLDOWN,
     DEFAULT_FISHING_KEY, DEFAULT_CAPTURE_INTERVAL,
-    GAME_WINDOW_NAMES
+    GAME_WINDOW_NAMES, DEFAULT_DETECTION_ZONES,
+    ERROR_HANDLING_CONFIG, PERFORMANCE_CONFIG, UI_CONFIG
 )
-from utils.win32_utils import find_window_by_pattern, is_fullscreen_app_active, force_focus_window
+from utils.win32_utils import find_window_by_pattern, is_fullscreen_app_active, force_focus_window, focus_window_tiered, find_window_by_title_substring
 from utils.input import send_key_press, send_esc
 from core.processing import capture_screen_region, calculate_frame_difference, enhance_visualization
 from core.action_sequence import FishingActionSequence
 
-class PixelChangeDetector(QObject):
-    """Core detector for pixel changes in the game window with high reliability"""
+class DetectionZone:
+    """Represents a single detection zone with its own configuration and state"""
+    
+    def __init__(self, zone_id: str, config: dict, region: Optional[Tuple[int, int, int, int]] = None):
+        self.zone_id = zone_id
+        self.name = config.get("name", zone_id)
+        self.description = config.get("description", "")
+        self.enabled = config.get("enabled", True)
+        self.sensitivity = config.get("sensitivity", 1.0)
+        self.threshold = config.get("threshold", 0.045)
+        self.cooldown = config.get("cooldown", 5.0)
+        self.priority = config.get("priority", 1)
+        
+        # Zone state
+        self.region = region  # (left, top, right, bottom)
+        self.reference_frame = None
+        self.current_frame = None
+        self.last_detection_time = 0
+        self.detection_count = 0
+        self.false_positive_count = 0
+        
+        # Performance tracking
+        self.avg_processing_time = 0.05
+        self.processing_samples = 0
+        
+        # Error tracking
+        self.consecutive_failures = 0
+        self.last_successful_capture = 0
+        
+    def update_config(self, config: dict):
+        """Update zone configuration"""
+        for key, value in config.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+                
+    def is_ready_for_detection(self, current_time: float) -> bool:
+        """Check if zone is ready for detection (cooldown passed)"""
+        return current_time - self.last_detection_time >= self.cooldown
+        
+    def record_detection(self, current_time: float, was_false_positive: bool = False):
+        """Record a detection event"""
+        self.last_detection_time = current_time
+        self.detection_count += 1
+        if was_false_positive:
+            self.false_positive_count += 1
+            
+    def get_accuracy(self) -> float:
+        """Calculate detection accuracy"""
+        if self.detection_count == 0:
+            return 0.0
+        return (self.detection_count - self.false_positive_count) / self.detection_count
+        
+    def reset_stats(self):
+        """Reset zone statistics"""
+        self.detection_count = 0
+        self.false_positive_count = 0
+        self.consecutive_failures = 0
+
+class MultiZoneDetector(QObject):
+    """Enhanced detector with multi-zone detection, error handling, and performance optimizations"""
     
     # Define signals
-    detection_signal = pyqtSignal()
+    detection_signal = pyqtSignal(str)  # Emits zone_id
+    zone_status_signal = pyqtSignal(str, str)  # Emits zone_id, status
+    performance_signal = pyqtSignal(dict)  # Emits performance metrics
+    error_signal = pyqtSignal(str, str)  # Emits error_type, error_message
     
     def __init__(self, parent=None):
         super().__init__()
-        # Store parent for callbacks
         self.parent = parent
         
         # Initialize logging
         self.log_history = []
         
-        # Initialize variables
-        self.region = None
-        self.reference_frame = None
-        self.reference_color_frame = None
-        self.previous_frame = None
-        self.current_frame = None
-        self.color_frame = None
-        self.diff_frame = None
+        # Multi-zone detection
+        self.zones: Dict[str, DetectionZone] = {}
+        self.initialize_zones()
         
         # Play Together window handling
         self.play_together_window = None
         
-        # Detection parameters
-        self.THRESHOLD = DEFAULT_THRESHOLD
-        self.detection_cooldown = DEFAULT_DETECTION_COOLDOWN
-        self.last_detection_time = 0
-        self.change_history = []
-        self.fishing_key = DEFAULT_FISHING_KEY
+        # Error handling and recovery
+        self.error_config = ERROR_HANDLING_CONFIG
+        self.retry_count = 0
+        self.last_error_time = 0
+        self.auto_recovery_enabled = self.error_config["auto_recovery_enabled"]
         
-        # Options - always enabled for max reliability
-        self.high_performance_mode = True
-        self.respect_fullscreen = True
-        self.direct_control = True
+        # Performance optimization
+        self.performance_config = PERFORMANCE_CONFIG
+        self.adaptive_interval = DEFAULT_CAPTURE_INTERVAL
+        self.frame_history = []
+        self.last_memory_cleanup = time.time()
         
         # Thread handling
         self.thread_control = {
@@ -70,32 +130,6 @@ class PixelChangeDetector(QObject):
         }
         self.running = False
         self.paused = False
-        self.capture_interval = DEFAULT_CAPTURE_INTERVAL
-        self.detection_thread = None
-        
-        # Initialize stats
-        self.stats = {
-            "total_detections": 0,
-            "false_positives": 0,
-            "session_start_time": time.time(),
-            "last_detection_time": 0,
-            "avg_detection_interval": 0
-        }
-        
-        # Health check variables
-        self.last_successful_capture = 0
-        self.consecutive_failures = 0
-        self.max_consecutive_failures = 5
-        self.health_check_interval = 5  # seconds
-        self.last_health_check = 0
-        
-        # Performance metrics
-        self.performance = {
-            "avg_processing_time": 0.05,
-            "processing_samples": 0,
-            "fps": 0,
-            "cpu_usage": 0
-        }
         
         # Create action sequence handler
         self.action_sequence = FishingActionSequence(self)
@@ -103,17 +137,70 @@ class PixelChangeDetector(QObject):
         # Find Play Together window
         self.find_play_together_process()
         
-        self.log("PixelChangeDetector initialized")
-    
+        self.log("MultiZoneDetector initialized with enhanced features")
+        
+    def initialize_zones(self):
+        """Initialize all detection zones with default configurations"""
+        for zone_id, config in DEFAULT_DETECTION_ZONES.items():
+            self.zones[zone_id] = DetectionZone(zone_id, config)
+        self.log(f"Initialized {len(self.zones)} detection zones")
+        
+    def set_zone_region(self, zone_id: str, region: Tuple[int, int, int, int]):
+        """Set the region for a specific detection zone"""
+        if zone_id in self.zones:
+            self.zones[zone_id].region = region
+            self.log(f"Set region for {zone_id}: {region}")
+        else:
+            self.log(f"Warning: Zone {zone_id} not found")
+            
+    def enable_zone(self, zone_id: str, enabled: bool = True):
+        """Enable or disable a detection zone"""
+        if zone_id in self.zones:
+            self.zones[zone_id].enabled = enabled
+            status = "enabled" if enabled else "disabled"
+            self.log(f"Zone {zone_id} {status}")
+            self.zone_status_signal.emit(zone_id, status)
+        else:
+            self.log(f"Warning: Zone {zone_id} not found")
+            
+    def update_zone_config(self, zone_id: str, config: dict):
+        """Update configuration for a specific zone"""
+        if zone_id in self.zones:
+            self.zones[zone_id].update_config(config)
+            self.log(f"Updated config for zone {zone_id}")
+        else:
+            self.log(f"Warning: Zone {zone_id} not found")
+            
+    def get_zone_stats(self) -> Dict[str, dict]:
+        """Get statistics for all zones"""
+        stats = {}
+        for zone_id, zone in self.zones.items():
+            stats[zone_id] = {
+                "name": zone.name,
+                "enabled": zone.enabled,
+                "detection_count": zone.detection_count,
+                "false_positive_count": zone.false_positive_count,
+                "accuracy": zone.get_accuracy(),
+                "avg_processing_time": zone.avg_processing_time,
+                "consecutive_failures": zone.consecutive_failures
+            }
+        return stats
+        
+    def reset_all_zone_stats(self):
+        """Reset statistics for all zones"""
+        for zone in self.zones.values():
+            zone.reset_stats()
+        self.log("Reset statistics for all zones")
+        
     def log(self, message):
-        """Log a message to the parent application or print to console"""
+        """Enhanced logging with error handling"""
         try:
             # Send to parent's log queue if available
             if self.parent:
                 self.parent.log(message)
             else:
                 # Otherwise print to console
-                print(f"[Detector] {message}")
+                print(f"[MultiZoneDetector] {message}")
                 
             # Add to local log history
             timestamp = time.strftime("%H:%M:%S", time.localtime())
@@ -124,34 +211,104 @@ class PixelChangeDetector(QObject):
             # Emergency fallback
             print(f"[ERROR] Failed to log message: {e}")
             print(f"[DEBUG] Original message: {message}")
-    
-    def find_play_together_process(self):
-        """Find Play Together window handle"""
-        self.play_together_window = find_window_by_pattern(GAME_WINDOW_NAMES)
+            
+    def handle_error(self, error_type: str, error_message: str, zone_id: str = None):
+        """Enhanced error handling with recovery mechanisms"""
+        current_time = time.time()
         
-        if self.play_together_window:
-            self.log(f"Found Play Together window: {self.play_together_window}")
-            return True
+        # Log the error
+        self.log(f"Error ({error_type}): {error_message}")
+        if zone_id:
+            self.log(f"Zone affected: {zone_id}")
+            
+        # Emit error signal
+        self.error_signal.emit(error_type, error_message)
+        
+        # Update error tracking
+        self.last_error_time = current_time
+        self.retry_count += 1
+        
+        # Zone-specific error handling
+        if zone_id and zone_id in self.zones:
+            zone = self.zones[zone_id]
+            zone.consecutive_failures += 1
+            
+            # Disable zone if too many consecutive failures
+            if zone.consecutive_failures >= self.error_config["max_consecutive_failures"]:
+                self.log(f"Disabling zone {zone_id} due to consecutive failures")
+                zone.enabled = False
+                self.zone_status_signal.emit(zone_id, "disabled")
+                
+        # Auto-recovery logic
+        if self.auto_recovery_enabled and self.retry_count <= self.error_config["max_retries"]:
+            self.log(f"Attempting auto-recovery (attempt {self.retry_count})")
+            time.sleep(self.error_config["retry_delay"])
         else:
-            self.log("No Play Together window found. Please make sure the game is running.")
-            return False
+            self.log("Max retries reached, stopping detection")
+            self.stop_detection()
+            
+    def find_play_together_process(self):
+        """Find the Play Together window handle by robust title search"""
+        try:
+            hwnd = find_window_by_title_substring(GAME_WINDOW_NAMES)
+            if hwnd:
+                self.play_together_window = hwnd
+                self.log(f"Found Play Together window: Handle {hwnd}")
+            else:
+                self.play_together_window = None
+                self.log("Play Together window not found")
+        except Exception as e:
+            self.log(f"Error finding Play Together window: {e}")
+            
+    def get_game_window_handle(self):
+        """Get the Play Together window handle for overlay positioning"""
+        try:
+            import win32gui
+            
+            # If we already have a handle, validate it first
+            if self.play_together_window:
+                if win32gui.IsWindow(self.play_together_window):
+                    return self.play_together_window
+                else:
+                    # Handle is no longer valid
+                    self.play_together_window = None
+            
+            # Try to find it again
+            self.find_play_together_process()
+            
+            # Validate the found handle
+            if self.play_together_window and win32gui.IsWindow(self.play_together_window):
+                return self.play_together_window
+            else:
+                return None
+                
+        except Exception as e:
+            self.log(f"Error getting game window handle: {e}")
+            return None
             
     def focus_play_together_window(self):
-        """Focus the Play Together window with high reliability"""
-        if not self.play_together_window:
-            self.find_play_together_process()
-            if not self.play_together_window:
-                self.log("Cannot focus window: Play Together window not found")
-                return False
+        """Focus the Play Together window using tiered approach with error handling"""
+        if not self.play_together_window and not self.find_play_together_process():
+            return False
                 
-        # Try to focus the window using the enhanced method
-        result = force_focus_window(self.play_together_window)
-        if result:
-            self.log("Successfully focused Play Together window")
-        else:
-            self.log("Failed to focus Play Together window")
+        try:
+            if not win32gui.IsWindow(self.play_together_window):
+                if not self.find_play_together_process():
+                    return False
+                
+            # Use tiered focus approach
+            result = focus_window_tiered(self.play_together_window)
             
-        return result
+            if result:
+                self.log("Successfully focused Play Together window")
+            else:
+                self.log("Failed to focus Play Together window")
+                
+            return result
+            
+        except Exception as e:
+            self.handle_error("window_focus", f"Error focusing window: {e}")
+            return False
     
     def capture_reference(self):
         """Capture a reference frame for comparison with high reliability"""
@@ -260,316 +417,66 @@ class PixelChangeDetector(QObject):
         return True
     
     def start_detection(self):
-        """Start detection thread with robust thread control"""
-        if not self.find_play_together_process():
-            self.log("Cannot start detection: Play Together window not found")
-            return False
+        """Start multi-zone detection with enhanced error handling"""
+        if self.running:
+            self.log("Detection already running")
+            return
             
-        if not self.region:
-            self.log("No region selected. Please select a region first.")
-            return False
+        if not self.play_together_window:
+            self.find_play_together_process()
+            if not self.play_together_window:
+                self.log("Cannot start detection: Play Together window not found")
+                return
+                
+        # Check if any zones are configured
+        enabled_zones = [z for z in self.zones.values() if z.enabled and z.region]
+        if not enabled_zones:
+            self.log("Cannot start detection: No enabled zones with regions configured")
+            return
             
-        # Reset the action sequence execution flag
-        if hasattr(self, 'action_sequence'):
-            self.action_sequence.is_executing = False
-            
-        # Set both instance and thread control flags
-        self.running = True
-        self.paused = False
-        self.thread_control = {
-            "running": True,
-            "paused": False,
-            "stop_requested": False,
-            "detection_thread": None,  # Will be set after thread creation
-            "warmup_period": True,     # Flag to indicate warmup period
-            "needs_reference": True    # Flag to indicate we need a new reference frame after warmup
-        }
-        self.change_history = []
-        self.stats["session_start_time"] = time.time()
+        self.log(f"Starting detection with {len(enabled_zones)} enabled zones")
         
-        # Initial reference frame for starting (will be replaced after warmup)
-        self.capture_reference()
-        self.previous_frame = self.reference_frame
+        # Reset error tracking
+        self.retry_count = 0
+        self.last_error_time = 0
         
         # Start detection thread
-        self.detection_thread = threading.Thread(target=self._detection_loop)
-        self.detection_thread.daemon = True
+        self.thread_control["running"] = True
+        self.thread_control["stop_requested"] = False
+        self.running = True
+        
+        self.detection_thread = threading.Thread(target=self._detection_loop, daemon=True)
         self.detection_thread.start()
-        self.thread_control["detection_thread"] = self.detection_thread
         
-        self.log("Detection thread started")
-        self.log("Warming up for 2 seconds...")
-        
-        # Schedule warmup period reset after 2 seconds
-        def reset_warmup():
-            time.sleep(2.0)  # 2 second warmup
-            if self.running and hasattr(self, 'thread_control'):
-                # We'll capture a fresh reference frame before enabling detection
-                self.thread_control["warmup_period"] = False
-                self.log("Warmup complete - capturing fresh reference frame...")
-                
-        # Start warmup thread
-        warmup_thread = threading.Thread(target=reset_warmup)
-        warmup_thread.daemon = True
-        warmup_thread.start()
-        
-        return True
+        self.log("Detection started successfully")
         
     def stop_detection(self):
-        """Stop detection with proper resource cleanup"""
+        """Stop detection with proper cleanup"""
         self.log("Stopping detection...")
         
-        # Set both instance and thread control flags
+        self.thread_control["stop_requested"] = True
+        self.thread_control["running"] = False
         self.running = False
-        self.paused = False
         
-        # Stop the action sequence if running
-        if hasattr(self, 'action_sequence') and self.action_sequence.is_executing:
-            self.log("Terminating action sequence...")
-            self.action_sequence.terminate()
-        
-        # Set thread control flags to ensure clean shutdown
-        if hasattr(self, 'thread_control'):
-            self.thread_control["running"] = False
-            self.thread_control["paused"] = False
-            self.thread_control["stop_requested"] = True
-            self.thread_control["warmup_period"] = False
-        
-        # Clean up MSS instance if it exists
-        if hasattr(self, 'mss_instance') and self.mss_instance:
-            try:
-                self.mss_instance.close()
-            except Exception:
-                pass
-            self.mss_instance = None
-        
-        # Wait for detection thread to terminate with a short timeout
-        if hasattr(self, 'detection_thread') and self.detection_thread and self.detection_thread.is_alive():
-            try:
-                # Don't try to join the current thread
-                if self.detection_thread != threading.current_thread():
-                    self.detection_thread.join(timeout=1.0)
-                    if self.detection_thread.is_alive():
-                        self.log("Warning: Detection thread didn't terminate within timeout")
-            except Exception:
-                pass
-        
-        # Clean up remaining resources
-        self.previous_frame = None
-        self.current_frame = None
-        self.diff_frame = None
-        # Keep reference_frame for next start
+        if self.detection_thread and self.detection_thread.is_alive():
+            self.detection_thread.join(timeout=2.0)
+            
+        # Cleanup resources
+        self._cleanup_resources()
         
         self.log("Detection stopped")
-    
+        
     def toggle_pause(self):
         """Pause or resume detection"""
         if not self.running:
             return
             
-        # Toggle the paused state in both instance and thread control
-        if self.thread_control["paused"]:
-            # Resume detection
-            self.thread_control["paused"] = False
-            self.paused = False
-            self.log("Detection resumed")
-        else:
-            # Pause detection
-            self.thread_control["paused"] = True
-            self.paused = True
-            self.log("Detection paused")
-    
-    def _detection_loop(self):
-        """Main detection loop with enhanced detection algorithm and safe resource handling"""
-        # Initialize counters and variables
-        frame_counter = 0
-        fps_counter = 0
-        fps_timer = time.time()
-        fps = 0
+        self.thread_control["paused"] = not self.thread_control["paused"]
+        self.paused = self.thread_control["paused"]
         
-        # For faster processing, maintain high frame rate
-        self.capture_interval = 0.03  # ~33 FPS
+        status = "paused" if self.paused else "resumed"
+        self.log(f"Detection {status}")
         
-        # Set adaptive interval
-        adaptive_interval = self.capture_interval
-        
-        # Store mss instance as instance variable for safe cleanup
-        self.mss_instance = None
-        
-        try:
-            # Pre-define region parameters
-            if not self.region:
-                self.log("No region selected for detection")
-                return
-                
-            left, top, right, bottom = self.region
-            width = right - left
-            height = bottom - top
-            
-            # Prepare MSS region format once
-            mss_region = {
-                "left": left,
-                "top": top,
-                "width": width,
-                "height": height
-            }
-            
-            # Create MSS instance with safe handling
-            self.mss_instance = mss.mss()
-            
-            self.log("Starting enhanced detection loop")
-            self.log("Using HSV color detection with multi-frame confidence building")
-            
-            # Main detection loop with proper exception handling
-            while self.thread_control["running"] and not self.thread_control["stop_requested"]:
-                try:
-                    loop_start = time.time()
-                    
-                    # Check for stop request first thing in each loop
-                    if self.thread_control["stop_requested"]:
-                        break
-                        
-                    # Skip processing if paused
-                    if self.thread_control["paused"]:
-                        time.sleep(0.01)
-                        continue
-                    
-                    # Skip processing if action sequence is running
-                    if hasattr(self, 'action_sequence') and self.action_sequence.is_executing:
-                        time.sleep(0.01)
-                        continue
-                    
-                    # Periodically update FPS counter
-                    fps_counter += 1
-                    if time.time() - fps_timer >= 2.0:
-                        fps = fps_counter / 2.0
-                        fps_counter = 0
-                        fps_timer = time.time()
-                        self.performance["fps"] = fps
-                        self.log(f"Detection running at {fps:.1f} FPS")
-                    
-                    # Capture directly without any processing
-                    screenshot = self.mss_instance.grab(mss_region)
-                    self.current_frame = np.array(screenshot)
-                    
-                    # Quick validation
-                    if self.current_frame.size == 0:
-                        continue
-                        
-                    # Store color frame only periodically (for UI)
-                    if frame_counter % 5 == 0 and len(self.current_frame.shape) >= 3:
-                        self.color_frame = cv2.cvtColor(self.current_frame, cv2.COLOR_BGRA2RGB)
-                    
-                    # Use reference frame for comparison
-                    if self.reference_frame is None:
-                        self.capture_reference()
-                        continue
-                    
-                    # Calculate difference with enhanced HSV algorithm
-                    # This is the key improvement - uses the original autofisher's color-based detection
-                    _, change_percent = self.calculate_frame_difference(self.current_frame, self.reference_frame)
-                    
-                    # Store in history less frequently
-                    if frame_counter % 3 == 0:
-                        self.change_history.append(change_percent)
-                        if len(self.change_history) > 200:  # Keep a smaller history
-                            self.change_history = self.change_history[-200:]
-                    
-                    # Time-based cooldown check
-                    current_time = time.time()
-                    cooldown_passed = (current_time - self.last_detection_time) > self.detection_cooldown
-                    
-                    # Enhanced detection logic from original autofisher.py 
-                    # Using detection intensity that builds up over multiple frames
-                    if not hasattr(self, 'detection_intensity'):
-                        self.detection_intensity = 0
-                        
-                    # Check if we're in warmup period - skip detection if we are
-                    if self.thread_control.get("warmup_period", False):
-                        # During warmup, just gather data but don't trigger detections
-                        self.detection_intensity = 0  # Reset intensity during warmup
-                        continue
-                    
-                    # Check if we need a fresh reference frame after warmup
-                    if self.thread_control.get("needs_reference", False):
-                        # Capture a fresh reference frame now that warmup is complete
-                        self.reference_frame = self.current_frame.copy()
-                        if len(self.current_frame.shape) >= 3:
-                            self.reference_color_frame = self.color_frame.copy() if self.color_frame is not None else None
-                        self.change_history = []  # Clear history with new reference
-                        self.detection_intensity = 0  # Reset intensity
-                        self.thread_control["needs_reference"] = False  # Clear flag
-                        self.log("Fresh reference frame captured - detection active")
-                        continue  # Skip one frame after capturing reference
-                        
-                    # Implement a confidence system for detections
-                    if change_percent > self.THRESHOLD * 1.5:
-                        # Strong change - count as 2 points (exactly as in original)
-                        self.detection_intensity += 2
-                    elif change_percent > self.THRESHOLD:
-                        # Regular change - count as 1 point
-                        self.detection_intensity += 1
-                    else:
-                        # No change - decrease intensity
-                        self.detection_intensity = max(0, self.detection_intensity - 0.5)
-                    
-                    # Detect when intensity threshold reached and cooldown passed
-                    if self.detection_intensity >= 3 and cooldown_passed:
-                        # We have enough confidence in the detection
-                        confidence = min(10, int(self.detection_intensity * 10 / 6))  # Scale to 1-10
-                        change_percent_display = round(change_percent * 100, 2)
-                        self.log(f"Major pixel change detected! Change: {change_percent_display}% (Confidence: {confidence}/10)")
-                        self.last_detection_time = current_time
-                        self.detection_intensity = 0  # Reset intensity after detection
-                        
-                        # Update stats
-                        self.stats["total_detections"] += 1
-                        if self.stats["last_detection_time"] > 0:
-                            interval = current_time - self.stats["last_detection_time"]
-                            self.stats["avg_detection_interval"] = interval if self.stats["avg_detection_interval"] == 0 else (
-                                0.7 * self.stats["avg_detection_interval"] + 0.3 * interval
-                            )
-                        self.stats["last_detection_time"] = current_time
-                        
-                        # Emit detection signal for UI
-                        self.detection_signal.emit()
-                        
-                        # Execute action sequence immediately
-                        if self.action_sequence:
-                            self.action_sequence.execute()
-                    
-                    # Update performance metrics
-                    frame_counter += 1
-                    loop_time = time.time() - loop_start
-                    
-                    # Ultra-minimal sleep interval
-                    sleep_time = max(0.005, adaptive_interval - loop_time)
-                    if sleep_time > 0:
-                        time.sleep(sleep_time)
-                    
-                except Exception as e:
-                    self.log(f"Error in detection loop: {e}")
-                    # Don't break the loop on error, just slow down
-                    time.sleep(0.05)
-            
-            # Thread is exiting
-            self.log("Detection thread exiting")
-            self.running = False
-            
-        except Exception as e:
-            self.log(f"Critical error in detection thread: {e}")
-        finally:
-            # Always clean up resources to prevent crashes
-            try:
-                if self.mss_instance:
-                    self.mss_instance.close()
-                    self.mss_instance = None
-            except Exception as e:
-                self.log(f"Error closing MSS: {e}")
-            
-            # Make sure we reset state flags
-            self.running = False
-    
     def capture_screen(self):
         """
         Capture the screen region for UI preview
@@ -708,3 +615,516 @@ class PixelChangeDetector(QObject):
         except Exception as e:
             self.log(f"Error calculating frame difference: {e}")
             return None, 0 
+
+    def capture_zone_frame(self, zone_id: str) -> Optional[np.ndarray]:
+        """Capture frame for a specific detection zone with error handling"""
+        if zone_id not in self.zones:
+            return None
+            
+        zone = self.zones[zone_id]
+        if not zone.region:
+            return None
+            
+        try:
+            left, top, right, bottom = zone.region
+            width = right - left
+            height = bottom - top
+            
+            if width < 10 or height < 10:
+                self.handle_error("invalid_region", f"Zone {zone_id} has invalid region size", zone_id)
+                return None
+                
+            # Use MSS for better performance
+            with mss.mss() as sct:
+                mss_region = {
+                    "left": left,
+                    "top": top,
+                    "width": width,
+                    "height": height
+                }
+                
+                screenshot = sct.grab(mss_region)
+                frame = np.array(screenshot)
+                
+                if frame.size == 0:
+                    self.handle_error("empty_frame", f"Zone {zone_id} captured empty frame", zone_id)
+                    return None
+                    
+                # Convert BGRA to BGR for OpenCV
+                if len(frame.shape) >= 3:
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+                    
+                zone.last_successful_capture = time.time()
+                zone.consecutive_failures = 0
+                return frame
+                
+        except Exception as e:
+            self.handle_error("capture_error", f"Failed to capture zone {zone_id}: {e}", zone_id)
+            return None
+            
+    def detect_shadow_movement(self, frame1: np.ndarray, frame2: np.ndarray) -> Tuple[float, int]:
+        """
+        Detect fish shadow movement using techniques from the prototype
+        Returns: (change_percent, shadow_size)
+        """
+        try:
+            if frame1 is None or frame2 is None:
+                return 0.0, 0
+                
+            # Ensure frames have same dimensions
+            if frame1.shape != frame2.shape:
+                frame2 = cv2.resize(frame2, (frame1.shape[1], frame1.shape[0]))
+                
+            # Convert to grayscale for shadow detection
+            gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
+            gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
+            
+            # Calculate average brightness to determine threshold (from prototype)
+            avg1 = cv2.mean(gray1)[0]
+            avg2 = cv2.mean(gray2)[0]
+            avg = (avg1 + avg2) / 2
+            
+            # Adaptive thresholding based on brightness (from prototype)
+            if avg > 140 and avg < 155:
+                threshold_val = 90
+            elif avg >= 155:
+                threshold_val = 100
+            elif avg > 57 and avg < 90:
+                threshold_val = 50
+            elif avg > 90 and avg < 140:
+                threshold_val = 65
+            else:
+                threshold_val = 30
+                
+            # Create binary images
+            _, thresh1 = cv2.threshold(gray1, threshold_val, 255, cv2.THRESH_BINARY_INV)
+            _, thresh2 = cv2.threshold(gray2, threshold_val, 255, cv2.THRESH_BINARY_INV)
+            
+            # Edge detection and morphological operations (from prototype)
+            edged1 = cv2.Canny(thresh1, 10, 100)
+            edged1 = cv2.dilate(edged1, None, iterations=1)
+            edged1 = cv2.erode(edged1, None, iterations=1)
+            
+            edged2 = cv2.Canny(thresh2, 10, 100)
+            edged2 = cv2.dilate(edged2, None, iterations=1)
+            edged2 = cv2.erode(edged2, None, iterations=1)
+            
+            # Find contours
+            cnts1 = cv2.findContours(edged1.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            cnts1 = imutils.grab_contours(cnts1)
+            cnts1 = [x for x in cnts1 if cv2.contourArea(x) > 300]
+            
+            cnts2 = cv2.findContours(edged2.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            cnts2 = imutils.grab_contours(cnts2)
+            cnts2 = [x for x in cnts2 if cv2.contourArea(x) > 300]
+            
+            # Calculate shadow size and movement
+            size1 = self._get_shadow_size(cnts1)
+            size2 = self._get_shadow_size(cnts2)
+            
+            # Calculate change percentage
+            diff = cv2.absdiff(edged1, edged2)
+            change_percent = np.sum(diff > 0) / diff.size
+            
+            return change_percent, max(size1, size2)
+            
+        except Exception as e:
+            self.log(f"Error in shadow detection: {e}")
+            return 0.0, 0
+            
+    def _get_shadow_size(self, contours) -> int:
+        """Determine shadow size based on contour area (from prototype)"""
+        if not contours:
+            return 0
+            
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if 300 < area < 420:
+                return 1
+            elif 700 < area < 1100:
+                return 2
+            elif 1300 < area < 2100:
+                return 3
+            elif area > 2100:
+                return 4
+        return 0
+        
+    def detect_text_changes(self, frame1: np.ndarray, frame2: np.ndarray) -> float:
+        """Detect text changes for fish name detection zone"""
+        try:
+            if frame1 is None or frame2 is None:
+                return 0.0
+                
+            # Ensure frames have same dimensions
+            if frame1.shape != frame2.shape:
+                frame2 = cv2.resize(frame2, (frame1.shape[1], frame1.shape[0]))
+                
+            # Convert to grayscale for text detection
+            gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
+            gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
+            
+            # Apply slight blur to reduce noise
+            gray1 = cv2.GaussianBlur(gray1, (3, 3), 0)
+            gray2 = cv2.GaussianBlur(gray2, (3, 3), 0)
+            
+            # Calculate difference with higher sensitivity for text
+            diff = cv2.absdiff(gray1, gray2)
+            
+            # Apply threshold to highlight text changes
+            _, thresh = cv2.threshold(diff, 30, 255, cv2.THRESH_BINARY)
+            
+            # Calculate change percentage
+            change_percent = np.sum(thresh > 0) / thresh.size
+            
+            return change_percent
+            
+        except Exception as e:
+            self.log(f"Error in text detection: {e}")
+            return 0.0
+            
+    def detect_rod_movement(self, frame1: np.ndarray, frame2: np.ndarray) -> float:
+        """Detect fishing rod movement/state changes"""
+        try:
+            if frame1 is None or frame2 is None:
+                return 0.0
+                
+            # Ensure frames have same dimensions
+            if frame1.shape != frame2.shape:
+                frame2 = cv2.resize(frame2, (frame1.shape[1], frame1.shape[0]))
+                
+            # Convert to HSV for better color-based detection
+            hsv1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2HSV)
+            hsv2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2HSV)
+            
+            # Focus on saturation and value channels for rod detection
+            s_diff = cv2.absdiff(hsv1[:,:,1], hsv2[:,:,1])
+            v_diff = cv2.absdiff(hsv1[:,:,2], hsv2[:,:,2])
+            
+            # Combine differences with weights
+            diff = cv2.addWeighted(s_diff, 0.6, v_diff, 0.4, 0)
+            
+            # Apply morphological operations to reduce noise
+            kernel = np.ones((3, 3), np.uint8)
+            diff = cv2.morphologyEx(diff, cv2.MORPH_OPEN, kernel)
+            
+            # Calculate change percentage
+            change_percent = np.sum(diff > 20) / diff.size
+            
+            return change_percent
+            
+        except Exception as e:
+            self.log(f"Error in rod detection: {e}")
+            return 0.0
+            
+    def process_zone(self, zone_id: str, current_time: float) -> bool:
+        """Process a single detection zone and return True if detection occurred"""
+        zone = self.zones[zone_id]
+        
+        if not zone.enabled or not zone.region:
+            return False
+            
+        if not zone.is_ready_for_detection(current_time):
+            return False
+            
+        # Capture current frame
+        current_frame = self.capture_zone_frame(zone_id)
+        if current_frame is None:
+            return False
+            
+        # Set reference frame if not set
+        if zone.reference_frame is None:
+            zone.reference_frame = current_frame.copy()
+            return False
+            
+        # Process based on zone type
+        start_time = time.time()
+        detection_occurred = False
+        
+        try:
+            if zone_id == "bounce_shadow":
+                # Shadow detection with size analysis
+                change_percent, shadow_size = self.detect_shadow_movement(
+                    zone.reference_frame, current_frame
+                )
+                threshold = zone.threshold * zone.sensitivity
+                detection_occurred = change_percent > threshold and shadow_size > 0
+                
+            elif zone_id == "fish_name":
+                # Text change detection
+                change_percent = self.detect_text_changes(
+                    zone.reference_frame, current_frame
+                )
+                threshold = zone.threshold * zone.sensitivity
+                detection_occurred = change_percent > threshold
+                
+            elif zone_id == "fishing_rod":
+                # Rod movement detection
+                change_percent = self.detect_rod_movement(
+                    zone.reference_frame, current_frame
+                )
+                threshold = zone.threshold * zone.sensitivity
+                detection_occurred = change_percent > threshold
+                
+            else:  # main_fishing or default
+                # Standard frame difference detection
+                diff_frame, change_percent = calculate_frame_difference(
+                    zone.reference_frame, current_frame, 
+                    fast_mode=self.performance_config["enable_fast_mode"]
+                )
+                threshold = zone.threshold * zone.sensitivity
+                detection_occurred = change_percent > threshold
+                
+            # Update performance metrics
+            processing_time = time.time() - start_time
+            zone.avg_processing_time = (
+                (zone.avg_processing_time * zone.processing_samples + processing_time) /
+                (zone.processing_samples + 1)
+            )
+            zone.processing_samples += 1
+            
+            # Record detection
+            if detection_occurred:
+                zone.record_detection(current_time)
+                self.log(f"Detection in {zone_id}: {change_percent:.4f} > {threshold:.4f}")
+                
+            # Update current frame
+            zone.current_frame = current_frame.copy()
+            
+        except Exception as e:
+            self.handle_error("zone_processing", f"Error processing zone {zone_id}: {e}", zone_id)
+            return False
+            
+        return detection_occurred
+        
+    def _cleanup_resources(self):
+        """Clean up resources to prevent memory leaks"""
+        try:
+            # Clear frame history
+            self.frame_history.clear()
+            
+            # Clear zone frames
+            for zone in self.zones.values():
+                zone.reference_frame = None
+                zone.current_frame = None
+                
+            # Force garbage collection
+            import gc
+            gc.collect()
+            
+        except Exception as e:
+            self.log(f"Error during cleanup: {e}")
+            
+    def _detection_loop(self):
+        """Main detection loop with multi-zone processing and error handling"""
+        self.log("Detection loop started")
+        
+        try:
+            # Initialize MSS instance
+            mss_instance = mss.mss()
+            
+            # Performance tracking
+            frame_counter = 0
+            last_performance_update = time.time()
+            
+            while self.thread_control["running"] and not self.thread_control["stop_requested"]:
+                try:
+                    loop_start = time.time()
+                    current_time = time.time()
+                    
+                    # Check for fullscreen apps
+                    if is_fullscreen_app_active():
+                        time.sleep(0.1)
+                        continue
+                        
+                    # Process each enabled zone
+                    detections = []
+                    for zone_id, zone in self.zones.items():
+                        if zone.enabled and zone.region:
+                            if self.process_zone(zone_id, current_time):
+                                detections.append(zone_id)
+                                
+                    # Handle detections
+                    if detections:
+                        # Prioritize detections by zone priority
+                        detections.sort(key=lambda z: self.zones[z].priority)
+                        primary_detection = detections[0]
+                        
+                        self.log(f"Detection triggered by {primary_detection}")
+                        self.detection_signal.emit(primary_detection)
+                        
+                        # Execute action sequence
+                        if self.action_sequence:
+                            self.action_sequence.execute()
+                            
+                    # Update performance metrics
+                    frame_counter += 1
+                    if current_time - last_performance_update >= 1.0:
+                        fps = frame_counter / (current_time - last_performance_update)
+                        self.performance_signal.emit({
+                            "fps": fps,
+                            "frame_counter": frame_counter,
+                            "active_zones": len([z for z in self.zones.values() if z.enabled])
+                        })
+                        frame_counter = 0
+                        last_performance_update = current_time
+                        
+                    # Adaptive interval adjustment
+                    if self.performance_config["adaptive_capture_interval"]:
+                        self._adjust_capture_interval()
+                        
+                    # Memory cleanup
+                    if current_time - self.last_memory_cleanup >= self.performance_config["memory_cleanup_interval"]:
+                        self._cleanup_resources()
+                        self.last_memory_cleanup = current_time
+                        
+                    # Sleep with adaptive timing
+                    loop_time = time.time() - loop_start
+                    sleep_time = max(0.001, self.adaptive_interval - loop_time)
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+                        
+                except Exception as e:
+                    self.handle_error("detection_loop", f"Error in detection loop: {e}")
+                    time.sleep(0.1)  # Brief pause before retry
+                    
+        except Exception as e:
+            self.handle_error("critical_error", f"Critical error in detection thread: {e}")
+        finally:
+            # Cleanup
+            try:
+                if 'mss_instance' in locals():
+                    mss_instance.close()
+            except Exception as e:
+                self.log(f"Error closing MSS: {e}")
+                
+            self.running = False
+            self.log("Detection loop ended")
+            
+    def _adjust_capture_interval(self):
+        """Adjust capture interval based on system performance"""
+        try:
+            # Get CPU usage
+            cpu_percent = psutil.cpu_percent(interval=0.1)
+            
+            # Adjust interval based on CPU usage
+            if cpu_percent > 80:
+                self.adaptive_interval = min(
+                    self.adaptive_interval * 1.1,
+                    self.performance_config["max_capture_interval"]
+                )
+            elif cpu_percent < 50:
+                self.adaptive_interval = max(
+                    self.adaptive_interval * 0.9,
+                    self.performance_config["min_capture_interval"]
+                )
+                
+        except Exception as e:
+            self.log(f"Error adjusting capture interval: {e}")
+            
+    def get_performance_metrics(self) -> dict:
+        """Get comprehensive performance metrics"""
+        try:
+            cpu_percent = psutil.cpu_percent(interval=0.1)
+            memory = psutil.virtual_memory()
+            
+            zone_stats = self.get_zone_stats()
+            total_detections = sum(stats["detection_count"] for stats in zone_stats.values())
+            total_accuracy = sum(stats["accuracy"] for stats in zone_stats.values()) / len(zone_stats) if zone_stats else 0
+            
+            return {
+                "cpu_usage": cpu_percent,
+                "memory_usage": memory.percent,
+                "adaptive_interval": self.adaptive_interval,
+                "total_detections": total_detections,
+                "average_accuracy": total_accuracy,
+                "active_zones": len([z for z in self.zones.values() if z.enabled]),
+                "zone_stats": zone_stats,
+                "error_count": self.retry_count,
+                "last_error_time": self.last_error_time
+            }
+        except Exception as e:
+            self.log(f"Error getting performance metrics: {e}")
+            return {}
+
+# Keep the original PixelChangeDetector for backward compatibility
+class PixelChangeDetector(QObject):
+    """Core detector for pixel changes in the game window with high reliability"""
+    
+    # Define signals
+    detection_signal = pyqtSignal()
+    
+    def __init__(self, parent=None):
+        super().__init__()
+        # Store parent for callbacks
+        self.parent = parent
+        
+        # Initialize logging
+        self.log_history = []
+        
+        # Initialize variables
+        self.region = None
+        self.reference_frame = None
+        self.reference_color_frame = None
+        self.previous_frame = None
+        self.current_frame = None
+        self.color_frame = None
+        self.diff_frame = None
+        
+        # Play Together window handling
+        self.play_together_window = None
+        
+        # Detection parameters
+        self.THRESHOLD = DEFAULT_THRESHOLD
+        self.detection_cooldown = DEFAULT_DETECTION_COOLDOWN
+        self.last_detection_time = 0
+        self.change_history = []
+        self.fishing_key = DEFAULT_FISHING_KEY
+        
+        # Options - always enabled for max reliability
+        self.high_performance_mode = True
+        self.respect_fullscreen = True
+        self.direct_control = True
+        
+        # Thread handling
+        self.thread_control = {
+            "detection_thread": None,
+            "running": False,
+            "paused": False,
+            "stop_requested": False
+        }
+        self.running = False
+        self.paused = False
+        self.capture_interval = DEFAULT_CAPTURE_INTERVAL
+        self.detection_thread = None
+        
+        # Initialize stats
+        self.stats = {
+            "total_detections": 0,
+            "false_positives": 0,
+            "session_start_time": time.time(),
+            "last_detection_time": 0,
+            "avg_detection_interval": 0
+        }
+        
+        # Health check variables
+        self.last_successful_capture = 0
+        self.consecutive_failures = 0
+        self.max_consecutive_failures = 5
+        self.health_check_interval = 5  # seconds
+        self.last_health_check = 0
+        
+        # Performance metrics
+        self.performance = {
+            "avg_processing_time": 0.05,
+            "processing_samples": 0,
+            "fps": 0,
+            "cpu_usage": 0
+        }
+        
+        # Create action sequence handler
+        self.action_sequence = FishingActionSequence(self)
+        
+        # Find Play Together window
+        self.find_play_together_process()
+        
+        self.log("PixelChangeDetector initialized") 

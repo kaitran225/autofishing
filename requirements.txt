@@ -7,4 +7,5 @@ mss>=6.1.0
 Pillow>=9.0.0
 pywin32>=304; platform_system=="Windows"
 psutil>=5.9.0
-qtawesome>=1.2.2 
+qtawesome>=1.2.2
+imutils>=0.5.4 

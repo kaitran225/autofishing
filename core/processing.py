@@ -65,14 +65,15 @@ def capture_screen_region(region):
         traceback.print_exc()
         return None, None
 
-def calculate_frame_difference(frame1, frame2):
+def calculate_frame_difference(frame1, frame2, fast_mode=False):
     """
     Calculate the difference between two frames with optimized sensitivity
-    for fishing detection
+    for fishing detection. If fast_mode is True, use a simpler, more responsive algorithm.
     
     Args:
         frame1: First frame (current)
         frame2: Second frame (reference)
+        fast_mode: If True, use a fast, simple difference calculation (prototype style)
         
     Returns:
         tuple: (diff_frame, change_percent)
@@ -85,62 +86,82 @@ def calculate_frame_difference(frame1, frame2):
         if frame1.shape != frame2.shape:
             frame2 = cv2.resize(frame2, (frame1.shape[1], frame1.shape[0]))
         
-        # Apply slight blur to reduce noise sensitivity
-        frame1_blurred = cv2.GaussianBlur(frame1, (5, 5), 0)
-        frame2_blurred = cv2.GaussianBlur(frame2, (5, 5), 0)
-        
-        # For color images - use HSV for better fishing detection
-        if len(frame1.shape) == 3:
-            # Convert to HSV for better color sensitivity
-            frame1_hsv = cv2.cvtColor(frame1_blurred, cv2.COLOR_BGR2HSV)
-            frame2_hsv = cv2.cvtColor(frame2_blurred, cv2.COLOR_BGR2HSV)
-            
-            # Calculate difference in HSV space
-            h_diff = cv2.absdiff(frame1_hsv[:,:,0], frame2_hsv[:,:,0])
-            s_diff = cv2.absdiff(frame1_hsv[:,:,1], frame2_hsv[:,:,1])
-            v_diff = cv2.absdiff(frame1_hsv[:,:,2], frame2_hsv[:,:,2])
-            
-            # Weight hue differences more heavily for pastel colors
-            h_weight = 2.0  # Increased weight for hue differences
-            s_weight = 1.0
-            v_weight = 1.0
-            
-            # Combine channels with weights
-            diff_frame = cv2.addWeighted(h_diff, h_weight, s_diff, s_weight, 0)
-            diff_frame = cv2.addWeighted(diff_frame, 1.0, v_diff, v_weight, 0)
-            
-            # Apply morphological operations to highlight larger changes
-            kernel = np.ones((3, 3), np.uint8)
-            dilated_diff = cv2.dilate(diff_frame, kernel, iterations=1)
-            
-            # Calculate percentage of pixels that changed significantly
-            threshold = 20  # Lower threshold for more sensitivity
-            changed_pixels = np.sum(dilated_diff > threshold)
-            total_pixels = frame1.shape[0] * frame1.shape[1]
-            change_percent = changed_pixels / total_pixels
-            
-            # For visualization, enhance the difference frame
-            enhanced_diff = cv2.convertScaleAbs(dilated_diff, alpha=1.5)
-            
-            return enhanced_diff, change_percent
-        else:
-            # For grayscale images
-            diff_frame = cv2.absdiff(frame1_blurred, frame2_blurred)
-            
-            # Apply morphological operations
-            kernel = np.ones((3, 3), np.uint8)
-            dilated_diff = cv2.dilate(diff_frame, kernel, iterations=1)
-            
-            # Calculate percentage of changed pixels
+        if fast_mode:
+            # Fast path: simple HSV or grayscale diff, no blur, no morph
+            if len(frame1.shape) == 3:
+                frame1_hsv = cv2.cvtColor(frame1, cv2.COLOR_BGR2HSV)
+                frame2_hsv = cv2.cvtColor(frame2, cv2.COLOR_BGR2HSV)
+                # Calculate difference in HSV space and convert to grayscale properly
+                h_diff = cv2.absdiff(frame1_hsv[:,:,0], frame2_hsv[:,:,0])
+                s_diff = cv2.absdiff(frame1_hsv[:,:,1], frame2_hsv[:,:,1])
+                v_diff = cv2.absdiff(frame1_hsv[:,:,2], frame2_hsv[:,:,2])
+                # Combine channels (simple average for fast mode)
+                diff_gray = (h_diff.astype(np.float32) + s_diff.astype(np.float32) + v_diff.astype(np.float32)) / 3.0
+                diff_gray = diff_gray.astype(np.uint8)
+            else:
+                diff_gray = cv2.absdiff(frame1, frame2)
             threshold = 20
-            changed_pixels = np.sum(dilated_diff > threshold)
-            total_pixels = frame1.shape[0] * frame1.shape[1]
+            changed_pixels = np.sum(diff_gray > threshold)
+            total_pixels = diff_gray.shape[0] * diff_gray.shape[1]
             change_percent = changed_pixels / total_pixels
+            return diff_gray, change_percent
+        else:
+            # Apply slight blur to reduce noise sensitivity
+            frame1_blurred = cv2.GaussianBlur(frame1, (5, 5), 0)
+            frame2_blurred = cv2.GaussianBlur(frame2, (5, 5), 0)
             
-            # Enhance for visualization
-            enhanced_diff = cv2.convertScaleAbs(dilated_diff, alpha=2.0)
-            
-            return enhanced_diff, change_percent
+            # For color images - use HSV for better fishing detection
+            if len(frame1.shape) == 3:
+                # Convert to HSV for better color sensitivity
+                frame1_hsv = cv2.cvtColor(frame1_blurred, cv2.COLOR_BGR2HSV)
+                frame2_hsv = cv2.cvtColor(frame2_blurred, cv2.COLOR_BGR2HSV)
+                
+                # Calculate difference in HSV space
+                h_diff = cv2.absdiff(frame1_hsv[:,:,0], frame2_hsv[:,:,0])
+                s_diff = cv2.absdiff(frame1_hsv[:,:,1], frame2_hsv[:,:,1])
+                v_diff = cv2.absdiff(frame1_hsv[:,:,2], frame2_hsv[:,:,2])
+                
+                # Weight hue differences more heavily for pastel colors
+                h_weight = 2.0  # Increased weight for hue differences
+                s_weight = 1.0
+                v_weight = 1.0
+                
+                # Combine channels with weights
+                diff_frame = cv2.addWeighted(h_diff, h_weight, s_diff, s_weight, 0)
+                diff_frame = cv2.addWeighted(diff_frame, 1.0, v_diff, v_weight, 0)
+                
+                # Apply morphological operations to highlight larger changes
+                kernel = np.ones((3, 3), np.uint8)
+                dilated_diff = cv2.dilate(diff_frame, kernel, iterations=1)
+                
+                # Calculate percentage of pixels that changed significantly
+                threshold = 20  # Lower threshold for more sensitivity
+                changed_pixels = np.sum(dilated_diff > threshold)
+                total_pixels = frame1.shape[0] * frame1.shape[1]
+                change_percent = changed_pixels / total_pixels
+                
+                # For visualization, enhance the difference frame
+                enhanced_diff = cv2.convertScaleAbs(dilated_diff, alpha=1.5)
+                
+                return enhanced_diff, change_percent
+            else:
+                # For grayscale images
+                diff_frame = cv2.absdiff(frame1_blurred, frame2_blurred)
+                
+                # Apply morphological operations
+                kernel = np.ones((3, 3), np.uint8)
+                dilated_diff = cv2.dilate(diff_frame, kernel, iterations=1)
+                
+                # Calculate percentage of changed pixels
+                threshold = 20
+                changed_pixels = np.sum(dilated_diff > threshold)
+                total_pixels = frame1.shape[0] * frame1.shape[1]
+                change_percent = changed_pixels / total_pixels
+                
+                # Enhance for visualization
+                enhanced_diff = cv2.convertScaleAbs(dilated_diff, alpha=2.0)
+                
+                return enhanced_diff, change_percent
             
     except Exception as e:
         print(f"Error calculating frame difference: {e}")

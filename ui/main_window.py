@@ -10,13 +10,16 @@ from PyQt6.QtWidgets import (
     QPushButton, QGridLayout, QLineEdit, QCheckBox, QTextEdit, 
     QFrame, QSplitter, QGroupBox, QSlider, QSpinBox, QDoubleSpinBox,
     QApplication, QScrollArea, QSizePolicy, QTextBrowser, QTabWidget, QFileDialog,
-    QLabel, QComboBox
+    QLabel, QComboBox, QSystemTrayIcon, QMenu, QMessageBox
 )
 from PyQt6.QtCore import Qt, QTimer, QRect, QPoint, QThread, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QColor, QIcon, QPixmap, QImage
+from PyQt6.QtGui import QColor, QIcon, QPixmap, QImage, QAction
 import qtawesome as qta
+import cv2
+import numpy as np
 
-from core import PixelChangeDetector, FishingActionSequence
+from core.detector import MultiZoneDetector, DetectionZone
+from core.action_sequence import FishingActionSequence
 from ui.visualization import MatplotlibCanvas, ActivityGraphCanvas
 from ui.selection import RegionSelectionOverlay, TkRegionSelector
 from ui.components import CollapsibleSidebar, PopupSection, CollapsibleSection, ActivityGraphSection
@@ -27,8 +30,182 @@ from utils.constants import (
     UI_DARK_BG, UI_PANEL_BG, UI_LIGHT_TEXT, UI_SECONDARY_TEXT,
     UI_ACCENT_COLOR, UI_ACCENT_DARK, UI_ACCENT_LIGHT,
     UI_WOOD_DARK, UI_WOOD_MEDIUM, UI_WOOD_LIGHT,
-    UI_WARNING_COLOR, UI_ALERT_COLOR, UI_SUCCESS_COLOR
+    UI_WARNING_COLOR, UI_ALERT_COLOR, UI_SUCCESS_COLOR,
+    UI_SUCCESS_HOVER, UI_SUCCESS_ACTIVE,
+    UI_ERROR_COLOR, UI_ERROR_HOVER, UI_ERROR_ACTIVE,
+    UI_ACCENT_HOVER, UI_ACCENT_ACTIVE
 )
+
+class OverlayWindow(QWidget):
+    """Small overlay window that follows the game window"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint | 
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setFixedSize(50, 50)
+        
+        # Create layout
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # Create status indicator with restore button functionality
+        self.status_label = QLabel("●")
+        self.status_label.setStyleSheet(f"""
+            QLabel {{
+                color: {UI_ACCENT_COLOR};
+                font-size: 24pt;
+                font-weight: bold;
+                background-color: {UI_DARK_BG};
+                border: 2px solid {UI_ACCENT_COLOR};
+                border-radius: 25px;
+                padding: 0px;
+            }}
+        """)
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        layout.addWidget(self.status_label)
+        
+        # Detection count
+        self.count_label = QLabel("0")
+        self.count_label.setStyleSheet(f"""
+            QLabel {{
+                color: {UI_LIGHT_TEXT};
+                font-size: 8pt;
+                font-weight: bold;
+                background-color: transparent;
+            }}
+        """)
+        self.count_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.count_label)
+        
+        # Mouse tracking for drag
+        self.setMouseTracking(True)
+        self.dragging = False
+        self.drag_offset = QPoint()
+        
+        # Tooltip for user guidance
+        self.setToolTip("Double-click to restore main window\nDrag to move overlay")
+        
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.dragging = True
+            self.drag_offset = event.pos()
+            
+    def mouseMoveEvent(self, event):
+        if self.dragging:
+            new_pos = self.mapToParent(event.pos() - self.drag_offset)
+            self.move(new_pos)
+            
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.dragging = False
+            
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            # Emit signal to restore main window
+            if hasattr(self.parent(), 'restore_from_overlay'):
+                self.parent().restore_from_overlay()
+                
+    def update_status(self, is_running, detection_count):
+        """Update overlay status"""
+        if is_running:
+            self.status_label.setStyleSheet(f"""
+                QLabel {{
+                    color: {UI_SUCCESS_COLOR};
+                    font-size: 24pt;
+                    font-weight: bold;
+                    background-color: {UI_DARK_BG};
+                    border: 2px solid {UI_SUCCESS_COLOR};
+                    border-radius: 25px;
+                    padding: 0px;
+                }}
+            """)
+        else:
+            self.status_label.setStyleSheet(f"""
+                QLabel {{
+                    color: {UI_SECONDARY_TEXT};
+                    font-size: 24pt;
+                    font-weight: bold;
+                    background-color: {UI_DARK_BG};
+                    border: 2px solid {UI_SECONDARY_TEXT};
+                    border-radius: 25px;
+                    padding: 0px;
+                }}
+            """)
+            
+        self.count_label.setText(str(detection_count))
+
+class GameWindowTracker(QThread):
+    """Thread to track game window position"""
+    position_changed = pyqtSignal(int, int, int, int)  # x, y, width, height
+    window_lost = pyqtSignal()  # Emitted when game window is lost
+    
+    def __init__(self, game_window_hwnd, parent=None):
+        super().__init__(parent)
+        self.game_window_hwnd = game_window_hwnd
+        self.running = True
+        self.last_rect = None
+        
+    def run(self):
+        import win32gui
+        import time
+        
+        # Validate handle before starting
+        if not self.game_window_hwnd:
+            self.window_lost.emit()
+            return
+            
+        try:
+            if not win32gui.IsWindow(self.game_window_hwnd):
+                self.window_lost.emit()
+                return
+        except Exception:
+            self.window_lost.emit()
+            return
+        
+        while self.running:
+            try:
+                # Check if window still exists
+                if not self.game_window_hwnd or not win32gui.IsWindow(self.game_window_hwnd):
+                    # Try to find the window again
+                    if hasattr(self.parent(), 'detector'):
+                        new_hwnd = self.parent().detector.get_game_window_handle()
+                        if new_hwnd:
+                            self.game_window_hwnd = new_hwnd
+                        else:
+                            # Window lost
+                            self.window_lost.emit()
+                            time.sleep(1.0)
+                            continue
+                    else:
+                        time.sleep(1.0)
+                        continue
+                
+                # Get current window position
+                rect = win32gui.GetWindowRect(self.game_window_hwnd)
+                if rect != self.last_rect:
+                    x, y, right, bottom = rect
+                    width = right - x
+                    height = bottom - y
+                    self.position_changed.emit(x, y, width, height)
+                    self.last_rect = rect
+                    
+                time.sleep(0.1)  # Check every 100ms
+                
+            except Exception as e:
+                # Only log if it's not a common "invalid handle" error
+                if "Invalid window handle" not in str(e):
+                    print(f"Game window tracking error: {e}")
+                time.sleep(1.0)
+                
+    def stop(self):
+        self.running = False
 
 class AutoFisherMainWindow(QMainWindow):
     """Main window for the AutoFisher Qt application"""
@@ -51,6 +228,16 @@ class AutoFisherMainWindow(QMainWindow):
         self.selected_region = None
         self.region_selector = None
         self.vis_timer = None
+        
+        # Overlay functionality
+        self.overlay_mode = False
+        self.overlay_window = None
+        self.game_tracker = None
+        self.original_geometry = None
+        
+        # System tray
+        self.system_tray = None
+        self.setup_system_tray()
         
         # Set application-wide theme
         self.setStyleSheet(f"""
@@ -165,11 +352,10 @@ class AutoFisherMainWindow(QMainWindow):
         # Create message queue for logging
         self.log_queue = queue.Queue()
         
-        # Create detector first so it's available for region selection
-        self.detector = PixelChangeDetector(self)
-        
-        # Connect detector signals
-        self.detector.detection_signal.connect(self.increment_detection_count)
+        # Create MultiZoneDetector for advanced detection
+        self.detector = MultiZoneDetector(self)
+        # Connect zone-based detection signal
+        self.detector.detection_signal.connect(self.handle_zone_detection)
         
         # Initialize UI
         self.init_ui()
@@ -207,6 +393,30 @@ class AutoFisherMainWindow(QMainWindow):
         # Status message
         self.log("AutoFisher Qt initialized")
         self.log("Select a region to begin")
+        
+        self.try_start_overlay_on_launch()
+    
+    def try_start_overlay_on_launch(self):
+        """Try up to 10 times to find the game window and start overlay. Exit if not found."""
+        import time
+        found = False
+        for attempt in range(10):
+            game_hwnd = self.detector.get_game_window_handle()
+            if game_hwnd:
+                found = True
+                break
+            time.sleep(0.5)
+        if found:
+            self.minimize_to_overlay()
+        else:
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("Game Not Found")
+            msg_box.setText("Play Together game window not found after 10 attempts!")
+            msg_box.setInformativeText("Please make sure the game is running and restart AutoFisher.")
+            msg_box.setIcon(QMessageBox.Icon.Warning)
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg_box.exec()
+            QApplication.quit()
     
     def init_ui(self):
         """Initialize the user interface"""
@@ -427,7 +637,7 @@ class AutoFisherMainWindow(QMainWindow):
         # Start button
         self.start_button = QPushButton()
         self.start_button.setIcon(qta.icon('fa5s.play', color='white', scale_factor=1.0))
-        self.start_button.clicked.connect(self.start_detection)
+        self.start_button.clicked.connect(self.toggle_detection)
         self.start_button.setStyleSheet(play_style)
         self.start_button.setEnabled(False)  # Initially disabled until region is selected
         self.start_button.setToolTip("Start Detection")
@@ -448,6 +658,14 @@ class AutoFisherMainWindow(QMainWindow):
         self.stop_button.setStyleSheet(stop_style)
         self.stop_button.setToolTip("Stop Detection")
         control_layout.addWidget(self.stop_button)
+        
+        # Minimize to overlay button
+        self.minimize_button = QPushButton()
+        self.minimize_button.setIcon(qta.icon('fa5s.compress', color='white', scale_factor=1.0))
+        self.minimize_button.clicked.connect(self.minimize_to_overlay)
+        self.minimize_button.setStyleSheet(tool_style)
+        self.minimize_button.setToolTip("Minimize to Overlay")
+        control_layout.addWidget(self.minimize_button)
         
         # Add spacer between main controls and tools
         control_layout.addSpacing(16)
@@ -843,12 +1061,223 @@ class AutoFisherMainWindow(QMainWindow):
         region_layout.addWidget(self.region_info_label)
         region_layout.addStretch()
         
+        # 6. Zone Management Tab
+        zones_tab = QWidget()
+        zones_layout = QVBoxLayout(zones_tab)
+        zones_layout.setContentsMargins(6, 6, 6, 6)
+        zones_layout.setSpacing(8)
+        
+        # Zone management header
+        zones_header = QLabel("Multi-Zone Detection Management")
+        zones_header.setStyleSheet(f"color: {UI_ACCENT_COLOR}; font-weight: bold; font-size: 10pt; padding: 4px;")
+        zones_layout.addWidget(zones_header)
+        
+        # Create zone controls for each detection zone
+        self.zone_controls = {}
+        zone_configs = {
+            "main_fishing": {"name": "Main Fishing Zone", "color": "#4CAF50", "description": "Primary fish bite detection"},
+            "fish_name": {"name": "Fish Name Zone", "color": "#2196F3", "description": "Fish name/catch notification detection"},
+            "fishing_rod": {"name": "Fishing Rod Zone", "color": "#FF9800", "description": "Fishing rod movement detection"},
+            "bounce_shadow": {"name": "Shadow Bounce Zone", "color": "#9C27B0", "description": "Fish shadow movement detection"}
+        }
+        
+        for zone_id, config in zone_configs.items():
+            # Create zone group
+            zone_group = QGroupBox(config["name"])
+            zone_group.setStyleSheet(f"""
+                QGroupBox {{
+                    border: 2px solid {config["color"]};
+                    border-radius: 6px;
+                    margin-top: 8px;
+                    padding-top: 8px;
+                    font-weight: bold;
+                    background-color: {UI_PANEL_BG};
+                }}
+                QGroupBox::title {{
+                    subcontrol-origin: margin;
+                    subcontrol-position: top center;
+                    padding: 0 8px;
+                    color: {config["color"]};
+                    font-size: 9pt;
+                }}
+            """)
+            
+            zone_layout = QVBoxLayout(zone_group)
+            zone_layout.setContentsMargins(8, 12, 8, 8)
+            zone_layout.setSpacing(6)
+            
+            # Zone description
+            desc_label = QLabel(config["description"])
+            desc_label.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 8pt; font-weight: normal;")
+            zone_layout.addWidget(desc_label)
+            
+            # Zone status and controls row
+            status_row = QHBoxLayout()
+            
+            # Zone status indicator
+            status_indicator = QLabel("●")
+            status_indicator.setStyleSheet(f"color: {config['color']}; font-size: 12pt; font-weight: bold;")
+            status_indicator.setFixedWidth(20)
+            status_row.addWidget(status_indicator)
+            
+            # Zone status text
+            status_text = QLabel("Disabled")
+            status_text.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 8pt;")
+            status_text.setFixedWidth(60)
+            status_row.addWidget(status_text)
+            
+            # Region info
+            region_info = QLabel("No region")
+            region_info.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 8pt;")
+            region_info.setFixedWidth(80)
+            status_row.addWidget(region_info)
+            
+            # Detection count
+            detection_count = QLabel("0 detections")
+            detection_count.setStyleSheet(f"color: {UI_ACCENT_COLOR}; font-size: 8pt; font-weight: bold;")
+            detection_count.setFixedWidth(70)
+            status_row.addWidget(detection_count)
+            
+            status_row.addStretch()
+            
+            # Enable/disable checkbox
+            enable_checkbox = QCheckBox("Enable")
+            enable_checkbox.setStyleSheet(f"""
+                QCheckBox {{
+                    color: {UI_LIGHT_TEXT};
+                    font-size: 8pt;
+                }}
+                QCheckBox::indicator {{
+                    width: 14px;
+                    height: 14px;
+                }}
+                QCheckBox::indicator:checked {{
+                    background-color: {config["color"]};
+                    border: 1px solid {config["color"]};
+                    border-radius: 2px;
+                }}
+            """)
+            enable_checkbox.setChecked(True)  # Default enabled
+            status_row.addWidget(enable_checkbox)
+            
+            zone_layout.addLayout(status_row)
+            
+            # Zone controls row
+            controls_row = QHBoxLayout()
+            
+            # Select region button
+            select_btn = QPushButton("Select Region")
+            select_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {config["color"]};
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    font-size: 8pt;
+                    font-weight: bold;
+                }}
+                QPushButton:hover {{
+                    background-color: {config["color"]}dd;
+                }}
+                QPushButton:pressed {{
+                    background-color: {config["color"]}aa;
+                }}
+            """)
+            controls_row.addWidget(select_btn)
+            
+            # Clear region button
+            clear_btn = QPushButton("Clear")
+            clear_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {UI_WOOD_DARK};
+                    color: {UI_LIGHT_TEXT};
+                    border: 1px solid {UI_WOOD_MEDIUM};
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    font-size: 8pt;
+                }}
+                QPushButton:hover {{
+                    background-color: {UI_WOOD_MEDIUM};
+                }}
+            """)
+            controls_row.addWidget(clear_btn)
+            
+            # Preview button
+            preview_btn = QPushButton("Preview")
+            preview_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {UI_ACCENT_DARK};
+                    color: {UI_LIGHT_TEXT};
+                    border: 1px solid {UI_ACCENT_COLOR};
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    font-size: 8pt;
+                }}
+                QPushButton:hover {{
+                    background-color: {UI_ACCENT_COLOR};
+                }}
+            """)
+            controls_row.addWidget(preview_btn)
+            
+            controls_row.addStretch()
+            
+            zone_layout.addLayout(controls_row)
+            
+            # Zone preview area (small)
+            preview_frame = QFrame()
+            preview_frame.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {UI_DARK_BG};
+                    border: 1px solid {UI_WOOD_DARK};
+                    border-radius: 4px;
+                }}
+            """)
+            preview_frame.setFixedHeight(60)
+            preview_layout = QVBoxLayout(preview_frame)
+            preview_layout.setContentsMargins(4, 4, 4, 4)
+            
+            preview_label = QLabel("No preview")
+            preview_label.setStyleSheet(f"color: {UI_SECONDARY_TEXT}; font-size: 8pt;")
+            preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            preview_layout.addWidget(preview_label)
+            
+            zone_layout.addWidget(preview_frame)
+            
+            # Store zone controls
+            self.zone_controls[zone_id] = {
+                "group": zone_group,
+                "status_indicator": status_indicator,
+                "status_text": status_text,
+                "region_info": region_info,
+                "detection_count": detection_count,
+                "enable_checkbox": enable_checkbox,
+                "select_btn": select_btn,
+                "clear_btn": clear_btn,
+                "preview_btn": preview_btn,
+                "preview_frame": preview_frame,
+                "preview_label": preview_label,
+                "color": config["color"]
+            }
+            
+            # Connect button signals
+            select_btn.clicked.connect(lambda checked, zid=zone_id: self.select_zone_region(zid))
+            clear_btn.clicked.connect(lambda checked, zid=zone_id: self.clear_zone_region(zid))
+            preview_btn.clicked.connect(lambda checked, zid=zone_id: self.toggle_zone_preview(zid))
+            enable_checkbox.stateChanged.connect(lambda state, zid=zone_id: self.toggle_zone_enable(zid, state))
+            
+            zones_layout.addWidget(zone_group)
+        
+        # Add stretch to push everything to the top
+        zones_layout.addStretch()
+        
         # Add all tabs to the tab widget
         self.tab_widget.addTab(console_tab, "Console")
         self.tab_widget.addTab(activity_tab, "Activity")
         self.tab_widget.addTab(settings_tab, "Settings")
         self.tab_widget.addTab(stats_tab, "Statistics")
         self.tab_widget.addTab(region_tab, "Info")
+        self.tab_widget.addTab(zones_tab, "Zones")
         
         # Add tab widget to bottom layout
         bottom_layout.addWidget(self.tab_widget)
@@ -1010,7 +1439,7 @@ class AutoFisherMainWindow(QMainWindow):
         
         # First find the Play Together window
         if not self.detector:
-            self.detector = PixelChangeDetector(self)
+            self.detector = MultiZoneDetector(self)
         
         # Using the new TkRegionSelector which follows the autofisher.py implementation
         selector = TkRegionSelector(self, size)
@@ -1031,7 +1460,7 @@ class AutoFisherMainWindow(QMainWindow):
             return False
             
         if not self.detector:
-            self.detector = PixelChangeDetector(self)
+            self.detector = MultiZoneDetector(self)
             
         # Set the region in the detector
         self.detector.region = region
@@ -1268,6 +1697,16 @@ class AutoFisherMainWindow(QMainWindow):
         if hasattr(self.detector, 'change_history') and self.detector.change_history:
             self.activity_graph_canvas.update(self.detector.change_history, self.detector.THRESHOLD)
             
+    def handle_zone_detection(self, zone_id):
+        """Handle detection event from a specific zone"""
+        self.increment_detection_count()
+        # Update zone detection count
+        if zone_id in self.zone_controls:
+            current_count = int(self.zone_controls[zone_id]["detection_count"].text().split()[0])
+            self.zone_controls[zone_id]["detection_count"].setText(f"{current_count + 1} detections")
+        # Optionally, update UI to highlight which zone triggered
+        print(f"Detection triggered by zone: {zone_id}")
+        
     def increment_detection_count(self):
         """Increment detection count when signal is received"""
         self.total_detections += 1
@@ -1334,7 +1773,8 @@ class AutoFisherMainWindow(QMainWindow):
                 self.monitor_fps.setText(f"{int(fps_value)}")
         else:
             # Estimate FPS based on high performance mode
-            estimated_fps = 10.0 if self.detector.high_performance_mode else 5.0
+            high_perf_mode = getattr(self.detector, 'high_performance_mode', True)
+            estimated_fps = 10.0 if high_perf_mode else 5.0
             self.fps_label.setText(f"~{estimated_fps:.1f}")
             
             # Also update the status bar FPS if it exists
@@ -1357,14 +1797,16 @@ class AutoFisherMainWindow(QMainWindow):
             self.latency_label.setText("N/A")
             
         # Update Current Settings
-        self.monitor_threshold.setText(f"{self.detector.THRESHOLD:.2f}")
-        self.monitor_cooldown.setText(f"{self.detector.detection_cooldown:.1f}s")
-        self.monitor_key.setText(self.detector.fishing_key)
-        self.monitor_mode.setText("High Perf" if self.detector.high_performance_mode else "Standard")
+        self.monitor_threshold.setText(f"{getattr(self.detector, 'THRESHOLD', 0.045):.2f}")
+        self.monitor_cooldown.setText(f"{getattr(self.detector, 'detection_cooldown', 5.0):.1f}s")
+        self.monitor_key.setText(getattr(self.detector, 'fishing_key', 'f'))
+        high_perf_mode = getattr(self.detector, 'high_performance_mode', True)
+        self.monitor_mode.setText("High Perf" if high_perf_mode else "Standard")
         
         # Update System Info
-        if self.detector.region:
-            left, top, right, bottom = self.detector.region
+        region = getattr(self.detector, 'region', None)
+        if region:
+            left, top, right, bottom = region
             width = right - left
             height = bottom - top
             self.region_size_label.setText(f"{width}×{height}")
@@ -1379,7 +1821,10 @@ class AutoFisherMainWindow(QMainWindow):
                 self.monitor_status.setText("Running")
         else:
             self.monitor_status.setText("Idle")
-
+            
+        # Update zone statistics
+        self.update_zone_statistics()
+    
     def reset_detection_stats(self):
         """Reset all detection statistics"""
         self.detection_count = 0
@@ -1441,3 +1886,547 @@ class AutoFisherMainWindow(QMainWindow):
         if not self.detector:
             return False
         return self.detector.running
+
+    def select_zone_region(self, zone_id):
+        """Select region for a specific zone"""
+        try:
+            # Get the size from the input field (use default if not available)
+            try:
+                size = int(self.size_entry.text())
+            except (ValueError, AttributeError):
+                size = 50  # Default size
+                
+            # First find the Play Together window
+            if not self.detector:
+                self.detector = MultiZoneDetector(self)
+                
+            # Using the new TkRegionSelector which follows the autofisher.py implementation
+            self.region_selector = TkRegionSelector(
+                size=size,
+                callback=lambda region: self.set_zone_region(zone_id, region)
+            )
+            
+            self.log(f"Selecting region for {zone_id} zone...")
+            
+        except Exception as e:
+            self.log(f"Error selecting zone region: {e}")
+            
+    def set_zone_region(self, zone_id, region):
+        """Set region for a specific zone"""
+        try:
+            if not self.detector:
+                self.detector = MultiZoneDetector(self)
+                
+            # Set the region in the detector
+            self.detector.set_zone_region(zone_id, region)
+            
+            # Update UI
+            if zone_id in self.zone_controls:
+                left, top, right, bottom = region
+                width = right - left
+                height = bottom - top
+                region_text = f"{width}x{height}"
+                self.zone_controls[zone_id]["region_info"].setText(region_text)
+                enabled = self.zone_controls[zone_id]["enable_checkbox"].isChecked()
+                if enabled:
+                    self.zone_controls[zone_id]["status_text"].setText("Ready")
+                    self.zone_controls[zone_id]["status_indicator"].setText("●")
+                else:
+                    self.zone_controls[zone_id]["status_text"].setText("Disabled")
+                    self.zone_controls[zone_id]["status_indicator"].setText("○")
+            self.log(f"Zone {zone_id} region set: {region}")
+        except Exception as e:
+            self.log(f"Error setting zone region: {e}")
+
+    def clear_zone_region(self, zone_id):
+        """Clear region for a specific zone"""
+        try:
+            if self.detector and zone_id in self.detector.zones:
+                self.detector.zones[zone_id].region = None
+            # Update UI
+            if zone_id in self.zone_controls:
+                self.zone_controls[zone_id]["region_info"].setText("No region")
+                enabled = self.zone_controls[zone_id]["enable_checkbox"].isChecked()
+                if enabled:
+                    self.zone_controls[zone_id]["status_text"].setText("Waiting")
+                    self.zone_controls[zone_id]["status_indicator"].setText("●")
+                else:
+                    self.zone_controls[zone_id]["status_text"].setText("Disabled")
+                    self.zone_controls[zone_id]["status_indicator"].setText("○")
+            self.log(f"Zone {zone_id} region cleared")
+        except Exception as e:
+            self.log(f"Error clearing zone region: {e}")
+
+    def toggle_zone_enable(self, zone_id, state):
+        """Enable or disable a zone"""
+        try:
+            if self.detector:
+                enabled = state == 2  # Qt.Checked = 2
+                self.detector.enable_zone(zone_id, enabled)
+                # Update UI
+                if zone_id in self.zone_controls:
+                    region = self.zone_controls[zone_id]["region_info"].text()
+                    if enabled:
+                        if region == "No region":
+                            self.zone_controls[zone_id]["status_text"].setText("Waiting")
+                            self.zone_controls[zone_id]["status_indicator"].setText("●")
+                        else:
+                            self.zone_controls[zone_id]["status_text"].setText("Ready")
+                            self.zone_controls[zone_id]["status_indicator"].setText("●")
+                    else:
+                        self.zone_controls[zone_id]["status_text"].setText("Disabled")
+                        self.zone_controls[zone_id]["status_indicator"].setText("○")
+            self.log(f"Zone {zone_id} {'enabled' if enabled else 'disabled'}")
+        except Exception as e:
+            self.log(f"Error toggling zone enable: {e}")
+
+    def toggle_zone_preview(self, zone_id):
+        """Toggle live preview for a specific zone"""
+        try:
+            if zone_id not in self.zone_controls:
+                return
+                
+            preview_btn = self.zone_controls[zone_id]["preview_btn"]
+            preview_label = self.zone_controls[zone_id]["preview_label"]
+            
+            if preview_btn.text() == "Preview":
+                # Start preview
+                preview_btn.setText("Stop")
+                preview_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: {UI_WARNING_COLOR};
+                        color: {UI_LIGHT_TEXT};
+                        border: 1px solid {UI_WARNING_COLOR};
+                        border-radius: 4px;
+                        padding: 4px 8px;
+                        font-size: 8pt;
+                    }}
+                    QPushButton:hover {{
+                        background-color: {UI_WARNING_COLOR}dd;
+                    }}
+                """)
+                
+                # Start preview thread for this zone
+                self.start_zone_preview(zone_id)
+                
+            else:
+                # Stop preview
+                preview_btn.setText("Preview")
+                preview_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: {UI_ACCENT_DARK};
+                        color: {UI_LIGHT_TEXT};
+                        border: 1px solid {UI_ACCENT_COLOR};
+                        border-radius: 4px;
+                        padding: 4px 8px;
+                        font-size: 8pt;
+                    }}
+                    QPushButton:hover {{
+                        background-color: {UI_ACCENT_COLOR};
+                    }}
+                """)
+                
+                preview_label.setText("No preview")
+                self.stop_zone_preview(zone_id)
+                
+        except Exception as e:
+            self.log(f"Error toggling zone preview: {e}")
+            
+    def start_zone_preview(self, zone_id):
+        """Start live preview for a specific zone"""
+        try:
+            if not self.detector or zone_id not in self.detector.zones:
+                return
+                
+            zone = self.detector.zones[zone_id]
+            if not zone.region:
+                self.log(f"Zone {zone_id} has no region set")
+                return
+                
+            # Create preview thread for this zone
+            class ZonePreviewThread(QThread):
+                preview_ready = pyqtSignal(str, object)  # zone_id, frame
+                
+                def __init__(self, detector, zone_id, parent=None):
+                    super().__init__(parent)
+                    self.detector = detector
+                    self.zone_id = zone_id
+                    self.running = False
+                    
+                def run(self):
+                    self.running = True
+                    while self.running:
+                        try:
+                            frame = self.detector.capture_zone_frame(self.zone_id)
+                            if frame is not None:
+                                self.preview_ready.emit(self.zone_id, frame)
+                            time.sleep(0.1)  # 10 FPS
+                        except Exception as e:
+                            print(f"Zone preview error: {e}")
+                            break
+                            
+                def stop(self):
+                    self.running = False
+                    
+            # Store the thread
+            if not hasattr(self, 'zone_preview_threads'):
+                self.zone_preview_threads = {}
+                
+            self.zone_preview_threads[zone_id] = ZonePreviewThread(self.detector, zone_id, self)
+            self.zone_preview_threads[zone_id].preview_ready.connect(self.update_zone_preview)
+            self.zone_preview_threads[zone_id].start()
+            
+        except Exception as e:
+            self.log(f"Error starting zone preview: {e}")
+            
+    def stop_zone_preview(self, zone_id):
+        """Stop live preview for a specific zone"""
+        try:
+            if hasattr(self, 'zone_preview_threads') and zone_id in self.zone_preview_threads:
+                self.zone_preview_threads[zone_id].stop()
+                self.zone_preview_threads[zone_id].wait(1000)  # Wait up to 1 second
+                del self.zone_preview_threads[zone_id]
+                
+        except Exception as e:
+            self.log(f"Error stopping zone preview: {e}")
+            
+    def update_zone_preview(self, zone_id, frame):
+        """Update preview for a specific zone"""
+        try:
+            if zone_id not in self.zone_controls:
+                return
+                
+            preview_label = self.zone_controls[zone_id]["preview_label"]
+            
+            # Convert frame to QPixmap for display
+            if frame is not None:
+                # Resize frame to fit preview area
+                height, width = frame.shape[:2]
+                preview_height = 50  # Match the fixed height of preview frame
+                preview_width = int(width * preview_height / height)
+                
+                # Resize frame
+                resized_frame = cv2.resize(frame, (preview_width, preview_height))
+                
+                # Convert BGR to RGB
+                rgb_frame = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
+                
+                # Convert to QImage
+                height, width, channel = rgb_frame.shape
+                bytes_per_line = 3 * width
+                q_image = QImage(rgb_frame.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
+                
+                # Convert to QPixmap
+                pixmap = QPixmap.fromImage(q_image)
+                
+                # Clear the preview frame and add the pixmap
+                preview_frame = self.zone_controls[zone_id]["preview_frame"]
+                preview_layout = preview_frame.layout()
+                
+                # Remove old preview label
+                preview_layout.removeWidget(preview_label)
+                preview_label.hide()
+                
+                # Create new preview label with pixmap
+                new_preview_label = QLabel()
+                new_preview_label.setPixmap(pixmap)
+                new_preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                new_preview_label.setStyleSheet("border: none;")
+                preview_layout.addWidget(new_preview_label)
+                
+                # Update the stored reference
+                self.zone_controls[zone_id]["preview_label"] = new_preview_label
+                
+        except Exception as e:
+            self.log(f"Error updating zone preview: {e}")
+            
+    def update_zone_statistics(self):
+        """Update zone statistics from detector"""
+        try:
+            if not self.detector:
+                return
+            zone_stats = self.detector.get_zone_stats()
+            for zone_id, stats in zone_stats.items():
+                if zone_id in self.zone_controls:
+                    # Update detection count
+                    count = stats.get("detection_count", 0)
+                    self.zone_controls[zone_id]["detection_count"].setText(f"{count} detections")
+                    # Update status
+                    enabled = stats.get("enabled", False)
+                    region = self.zone_controls[zone_id]["region_info"].text()
+                    if enabled:
+                        if region == "No region":
+                            status = "Waiting"
+                            indicator = "●"
+                        else:
+                            status = "Ready"
+                            indicator = "●"
+                    else:
+                        status = "Disabled"
+                        indicator = "○"
+                    self.zone_controls[zone_id]["status_text"].setText(status)
+                    self.zone_controls[zone_id]["status_indicator"].setText(indicator)
+                    # Update enable checkbox
+                    self.zone_controls[zone_id]["enable_checkbox"].setChecked(enabled)
+        except Exception as e:
+            self.log(f"Error updating zone statistics: {e}")
+            
+    def closeEvent(self, event):
+        """Handle application close event"""
+        try:
+            # Stop all zone previews
+            if hasattr(self, 'zone_preview_threads'):
+                for zone_id, thread in self.zone_preview_threads.items():
+                    thread.stop()
+                    thread.wait(1000)
+                    
+            # Stop detection if running
+            if self.detection_running:
+                self.stop_detection()
+                
+            # Stop live preview if running
+            if self.live_preview_running:
+                self.stop_live_preview()
+                
+            event.accept()
+            
+        except Exception as e:
+            self.log(f"Error during close: {e}")
+            event.accept()
+        
+    def setup_system_tray(self):
+        """Setup system tray icon and menu"""
+        if QSystemTrayIcon.isSystemTrayAvailable():
+            self.system_tray = QSystemTrayIcon(self)
+            self.system_tray.setIcon(qta.icon('fa5s.fish', color=UI_ACCENT_COLOR))
+            
+            # Create tray menu
+            tray_menu = QMenu()
+            
+            # Restore action
+            restore_action = QAction("Restore Main Window", self)
+            restore_action.triggered.connect(self.restore_from_overlay)
+            tray_menu.addAction(restore_action)
+            
+            # Minimize to overlay action
+            minimize_action = QAction("Minimize to Overlay", self)
+            minimize_action.triggered.connect(self.minimize_to_overlay)
+            tray_menu.addAction(minimize_action)
+            
+            tray_menu.addSeparator()
+            
+            # Start/Stop action
+            self.tray_start_stop_action = QAction("Start Detection", self)
+            self.tray_start_stop_action.triggered.connect(self.toggle_detection)
+            tray_menu.addAction(self.tray_start_stop_action)
+            
+            tray_menu.addSeparator()
+            
+            # Exit action
+            exit_action = QAction("Exit", self)
+            exit_action.triggered.connect(self.close)
+            tray_menu.addAction(exit_action)
+            
+            self.system_tray.setContextMenu(tray_menu)
+            
+            # Connect double-click to restore
+            self.system_tray.activated.connect(self.on_tray_activated)
+            
+            self.system_tray.show()
+            
+    def on_tray_activated(self, reason):
+        """Handle system tray activation"""
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            if self.overlay_mode:
+                self.restore_from_overlay()
+            else:
+                self.show()
+                self.raise_()
+                self.activateWindow()
+        
+    def minimize_to_overlay(self):
+        """Minimize the main window and show overlay"""
+        if self.overlay_mode:
+            return
+            
+        # First check if game window exists
+        game_hwnd = self.detector.get_game_window_handle()
+        if not game_hwnd:
+            # Show dialog informing user that no game window was found
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("Game Not Found")
+            msg_box.setText("Play Together game window not found!")
+            msg_box.setInformativeText("Please make sure the game is running before using overlay mode.")
+            msg_box.setIcon(QMessageBox.Icon.Warning)
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg_box.exec()
+            return
+            
+        # Store original geometry
+        self.original_geometry = self.geometry()
+        
+        # Create overlay window
+        self.overlay_window = OverlayWindow(self)
+        
+        # Start game window tracking
+        self.game_tracker = GameWindowTracker(game_hwnd, self)
+        self.game_tracker.position_changed.connect(self.update_overlay_position)
+        self.game_tracker.window_lost.connect(self.handle_game_window_lost)
+        self.game_tracker.start()
+        
+        # Get initial game window position
+        try:
+            import win32gui
+            if win32gui.IsWindow(game_hwnd):
+                rect = win32gui.GetWindowRect(game_hwnd)
+                x, y, right, bottom = rect
+                width = right - x
+                height = bottom - y
+                # Position overlay at top-left corner of game window
+                self.update_overlay_position(x, y, width, height)
+            else:
+                # Fallback position if window not found
+                self.overlay_window.move(10, 10)
+        except Exception as e:
+            print(f"Error getting game window position: {e}")
+            # Fallback position
+            self.overlay_window.move(10, 10)
+            
+        # Show overlay
+        self.overlay_window.show()
+        
+        # Hide main window
+        self.hide()
+        
+        # Update overlay status
+        self.overlay_window.update_status(self.detection_running, self.detection_count)
+        
+        # Update system tray
+        if self.system_tray:
+            self.tray_start_stop_action.setText("Stop Detection" if self.detection_running else "Start Detection")
+            
+        self.overlay_mode = True
+        
+        # Log the action
+        self.log("Minimized to overlay mode")
+        
+    def restore_from_overlay(self):
+        """Restore the main window from overlay"""
+        if not self.overlay_mode:
+            return
+            
+        # Stop game tracker
+        if self.game_tracker:
+            self.game_tracker.stop()
+            self.game_tracker.wait()
+            self.game_tracker = None
+            
+        # Hide overlay
+        if self.overlay_window:
+            self.overlay_window.hide()
+            self.overlay_window.deleteLater()
+            self.overlay_window = None
+            
+        # Show main window
+        if self.original_geometry:
+            self.setGeometry(self.original_geometry)
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        
+        # Update system tray
+        if self.system_tray:
+            self.tray_start_stop_action.setText("Start Detection" if not self.detection_running else "Stop Detection")
+            
+        self.overlay_mode = False
+        
+        # Log the action
+        self.log("Restored from overlay mode")
+        
+    def update_overlay_position(self, x, y, width, height):
+        """Update overlay position based on game window position"""
+        if self.overlay_window and self.overlay_mode:
+            # Position overlay at top-left corner of game window with small offset
+            overlay_x = x + 5  # 5px offset from left
+            overlay_y = y + 5  # 5px offset from top
+            
+            # Ensure overlay stays within screen bounds
+            screen = QApplication.primaryScreen().geometry()
+            if overlay_x < 0:
+                overlay_x = 5
+            if overlay_y < 0:
+                overlay_y = 5
+            if overlay_x + 50 > screen.width():
+                overlay_x = screen.width() - 55
+            if overlay_y + 50 > screen.height():
+                overlay_y = screen.height() - 55
+                
+            self.overlay_window.move(overlay_x, overlay_y)
+            
+    def handle_game_window_lost(self):
+        """Handle when the game window is closed"""
+        if self.overlay_mode:
+            # Show dialog asking user what to do
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("Game Window Closed")
+            msg_box.setText("The Play Together game window was closed!")
+            msg_box.setInformativeText("Would you like to restore the main AutoFisher window?")
+            msg_box.setIcon(QMessageBox.Icon.Information)
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
+            
+            result = msg_box.exec()
+            if result == QMessageBox.StandardButton.Yes:
+                self.restore_from_overlay()
+            else:
+                # Keep overlay but stop tracking
+                if self.game_tracker:
+                    self.game_tracker.stop()
+                    self.game_tracker.wait()
+                    self.game_tracker = None
+        
+    def toggle_detection(self):
+        """Toggle detection on/off"""
+        if self.detection_running:
+            self.stop_detection()
+        else:
+            self.start_detection()
+            
+        # Update overlay status
+        if self.overlay_window and self.overlay_mode:
+            self.overlay_window.update_status(self.detection_running, self.detection_count)
+            
+        # Update system tray
+        if self.system_tray:
+            self.tray_start_stop_action.setText("Stop Detection" if self.detection_running else "Start Detection")
+            
+    def handle_zone_detection(self, zone_id):
+        """Handle zone detection and update overlay"""
+        self.increment_detection_count()
+        
+        # Update overlay if in overlay mode
+        if self.overlay_window and self.overlay_mode:
+            self.overlay_window.update_status(self.detection_running, self.detection_count)
+            
+    def closeEvent(self, event):
+        """Handle application close event"""
+        # Stop detection if running
+        if self.detection_running:
+            self.stop_detection()
+            
+        # Stop game tracker
+        if self.game_tracker:
+            self.game_tracker.stop()
+            self.game_tracker.wait()
+            
+        # Hide overlay
+        if self.overlay_window:
+            self.overlay_window.hide()
+            self.overlay_window.deleteLater()
+            
+        # Hide system tray
+        if self.system_tray:
+            self.system_tray.hide()
+            
+        # Call parent close event
+        super().closeEvent(event)
