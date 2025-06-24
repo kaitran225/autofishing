@@ -90,6 +90,24 @@ UI_CONFIG = {
     }
 }
 
+# Fixed section sizes for window size calculation
+SECTION_SIZES = {
+    # Base sizes (minimum dimensions when collapsed)
+    "base_width": 300,
+    "base_height": 60,
+    
+    # Expandable sections heights
+    "settings_panel": 200,
+    "visualization_panel": 180,
+    "zones_panel": 220,
+    "statistics_panel": 120,
+    "logs_panel": 150,
+    
+    # Fixed margin and padding
+    "margins": 20,
+    "section_padding": 10
+}
+
 # UI Constants - Dark Matcha with Dark Oak Wood palette
 UI_DARK_BG = "#1A1D1A"  # Very dark green background
 UI_PANEL_BG = "#262A23"  # Dark panel background

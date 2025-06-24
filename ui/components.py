@@ -3,14 +3,25 @@ Custom UI components for the AutoFisher application
 """
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
-    QScrollArea, QFrame, QSizePolicy, QToolButton, QGridLayout
+    QScrollArea, QFrame, QSizePolicy, QToolButton, QGridLayout, QCheckBox, QSlider
 )
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QPropertyAnimation, QEasingCurve, QRect, QTimer
-from PyQt6.QtGui import QIcon, QFont, QColor, QPalette
+from PyQt6.QtGui import QIcon, QFont, QColor, QPalette, QPixmap, QImage
 import qtawesome as qta
+import numpy as np
+import time
+import matplotlib
+matplotlib.use('Qt5Agg')
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
+
 from utils.constants import (
     UI_DARK_BG, UI_PANEL_BG, UI_LIGHT_TEXT, UI_SECONDARY_TEXT,
-    UI_ACCENT_COLOR, UI_ACCENT_DARK, UI_WOOD_DARK, UI_WOOD_MEDIUM, UI_WOOD_LIGHT
+    UI_ACCENT_COLOR, UI_ACCENT_DARK, UI_ACCENT_LIGHT,
+    UI_WOOD_DARK, UI_WOOD_MEDIUM, UI_WOOD_LIGHT,
+    UI_SUCCESS_COLOR, UI_ERROR_COLOR, UI_WARNING_COLOR,
+    SECTION_SIZES
 )
 
 class CollapsibleSection(QWidget):
@@ -145,16 +156,36 @@ class CollapsibleSection(QWidget):
         if self.is_expanded:
             return
             
-        # Get proper height
-        self.content_widget.setMaximumHeight(1000)  # Temporarily allow full height
-        proper_height = self.content_widget.sizeHint().height()
-        self.content_widget.setMaximumHeight(0)  # Reset to 0 for animation
+        # Get proper height from SECTION_SIZES if possible, based on title
+        section_height = None
+        title_lower = self.title.lower()
         
+        if 'settings' in title_lower:
+            section_height = SECTION_SIZES.get('settings_panel')
+        elif 'visualization' in title_lower or 'activity' in title_lower:
+            section_height = SECTION_SIZES.get('visualization_panel')
+        elif 'zone' in title_lower:
+            section_height = SECTION_SIZES.get('zones_panel')
+        elif 'statistics' in title_lower or 'stats' in title_lower:
+            section_height = SECTION_SIZES.get('statistics_panel')
+        elif 'log' in title_lower:
+            section_height = SECTION_SIZES.get('logs_panel')
+        
+        # If we couldn't match a title, use the normal sizeHint approach
+        if section_height is None:
+            # Get proper height
+            self.content_widget.setMaximumHeight(1000)  # Temporarily allow full height
+            section_height = self.content_widget.sizeHint().height()
+            self.content_widget.setMaximumHeight(0)  # Reset to 0 for animation
+        else:
+            # Apply a consistent padding to the fixed height
+            section_height += SECTION_SIZES.get('section_padding', 10)
+            
         # Create animation
         self.animation = QPropertyAnimation(self.content_widget, b"maximumHeight")
         self.animation.setDuration(self.animation_duration)
         self.animation.setStartValue(0)
-        self.animation.setEndValue(proper_height)
+        self.animation.setEndValue(section_height)
         self.animation.setEasingCurve(QEasingCurve.Type.OutQuad)
         
         # Show the widget and start animation
