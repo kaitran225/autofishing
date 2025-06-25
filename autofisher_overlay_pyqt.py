@@ -53,7 +53,7 @@ class DraggableFrame(QFrame):
             self.on_drag_func(a0)
         super().mouseMoveEvent(a0)
 
-class BubbleChatOverlay(QMainWindow):
+class OverlayAutoFisher(QMainWindow):
     def __init__(self, parent=None):
         # Create main window
         super().__init__(parent)
@@ -149,10 +149,7 @@ class BubbleChatOverlay(QMainWindow):
         self.create_expanded_view()
         
         # Create minimized view (but don't show it yet)
-        self.create_minimized_view()
-        
-        # Log system information at startup
-        self.log_system_info()
+        self.create_minimized_view()     
     
     def create_expanded_view(self):
         """Create the expanded view with AutoFisher UI"""
@@ -710,7 +707,7 @@ class BubbleChatOverlay(QMainWindow):
                 color: {self.colors['text']};
             }}
         """)
-        self.log_pos_button.clicked.connect(self.log_current_position)
+
         button_layout2.addWidget(self.log_pos_button)
         
         control_layout.addWidget(button_frame2)
@@ -838,125 +835,6 @@ class BubbleChatOverlay(QMainWindow):
         
         minimized_layout.addWidget(self.minimized_content)
         self.main_layout.addWidget(self.minimized_frame)
-
-    def log_system_info(self):
-        """Log detailed system information at startup for debugging"""
-        try:
-            self.add_log("=== SYSTEM INFORMATION ===")
-            
-            # OS information
-            self.add_log(f"Platform: {sys.platform}")
-            
-            # Screen information
-            screens = QApplication.screens()
-            self.add_log(f"Number of screens: {len(screens)}")
-            
-            for i, screen in enumerate(screens):
-                geo = screen.geometry()
-                self.add_log(f"Screen {i}: {screen.name()}")
-                self.add_log(f"  Geometry: {geo.width()}x{geo.height()} at ({geo.x()},{geo.y()})")
-                self.add_log(f"  DPI ratio: {screen.devicePixelRatio():.2f}x")
-                self.add_log(f"  Physical DPI: {screen.physicalDotsPerInch():.2f}")
-                self.add_log(f"  Logical DPI: {screen.logicalDotsPerInch():.2f}")
-                
-            # Windows-specific information
-            if WINDOWS_SUPPORT:
-                try:
-                    # Use simpler Windows version check instead of DPI awareness
-                    windows_version = sys.getwindowsversion()
-                    self.add_log(f"Windows version: {windows_version.major}.{windows_version.minor}.{windows_version.build}")
-                except Exception as e:
-                    self.add_log(f"Error getting Windows version: {e}")
-            
-            self.add_log("=== END SYSTEM INFORMATION ===")
-        except Exception as e:
-            self.add_log(f"Error logging system information: {e}")
-    
-    def log_game_window_position(self):
-        """Log the current position of the game window and its client area"""
-        if not WINDOWS_SUPPORT or not self.game_window:
-            self.add_log("No game window found or Windows support not available")
-            return False
-            
-        try:
-            # Get window position and size (outer window rectangle)
-            window_rect = win32gui.GetWindowRect(self.game_window)
-            win_left, win_top, win_right, win_bottom = window_rect
-            win_width = win_right - win_left
-            win_height = win_bottom - win_top
-            
-            # Get the client area (actual game content area)
-            client_rect = win32gui.GetClientRect(self.game_window)
-            client_left, client_top, client_right, client_bottom = client_rect
-            
-            # Convert client coordinates to screen coordinates
-            client_left, client_top = win32gui.ClientToScreen(self.game_window, (client_left, client_top))
-            client_right, client_bottom = win32gui.ClientToScreen(self.game_window, (client_right, client_bottom))
-            
-            # Use client area dimensions for more accurate game content area
-            game_width = client_right - client_left
-            game_height = client_bottom - client_top
-            
-            # Get window title
-            window_title = win32gui.GetWindowText(self.game_window)
-            
-            self.add_log(f"Game window '{window_title}':")
-            self.add_log(f"  Window frame: {win_width}x{win_height} at ({win_left},{win_top})")
-            self.add_log(f"  Client area: {game_width}x{game_height} at ({client_left},{client_top})")
-            
-            # Calculate offsets
-            frame_offset_x = client_left - win_left
-            frame_offset_y = client_top - win_top
-            self.add_log(f"  Frame to client offsets: X={frame_offset_x}, Y={frame_offset_y}")
-            
-            # Calculate where overlay should be positioned
-            target_x = client_left + self.offset_x
-            target_y = client_top + self.offset_y
-            self.add_log(f"  Target overlay position: ({target_x},{target_y})")
-            
-            return True
-        except Exception as e:
-            self.add_log(f"Error getting game window position: {e}")
-            return False
-
-    def log_current_position(self):
-        """Log the current position and size of the overlay window"""
-        geometry = self.geometry()
-        self.add_log(f"Overlay position: {geometry.width()}x{geometry.height()} at ({geometry.x()},{geometry.y()})")
-        
-        # Log absolute position coordinates
-        abs_x, abs_y = self.x(), self.y()
-        frame_geometry = self.frameGeometry()
-        self.add_log(f"Actual position - X: {abs_x}, Y: {abs_y}")
-        self.add_log(f"Frame geometry: {frame_geometry.width()}x{frame_geometry.height()} at ({frame_geometry.x()},{frame_geometry.y()})")
-        
-        # Get detailed information about where the overlay is positioned
-        center_point = geometry.center()
-        overlay_screen = None
-        
-        # Find which screen contains the overlay
-        for i, screen in enumerate(QApplication.screens()):
-            screen_geo = screen.geometry()
-            if screen_geo.contains(center_point):
-                overlay_screen = screen
-                
-                self.add_log(f"Overlay is on monitor {i}: DPI {screen.devicePixelRatio():.2f}x")
-                self.add_log(f"  Screen size: {screen_geo.width()}x{screen_geo.height()} at ({screen_geo.x()},{screen_geo.y()})")
-                self.add_log(f"  Absolute coords within screen: X={abs_x-screen_geo.x()}, Y={abs_y-screen_geo.y()}")
-                
-                # Check if overlay is fully visible on this screen
-                if geometry.left() < screen_geo.left() or geometry.right() > screen_geo.right() or \
-                   geometry.top() < screen_geo.top() or geometry.bottom() > screen_geo.bottom():
-                    self.add_log("  WARNING: Overlay is partially off-screen!")
-                break
-                
-        if not overlay_screen:
-            self.add_log("WARNING: Overlay is not on any screen!")
-            
-        # Log game window position if available
-        if WINDOWS_SUPPORT and self.game_window:
-            self.add_log("--- Game Window Information ---")
-            self.log_game_window_position()
 
     def update_stats_display(self):
         """Update the stats display with dummy values"""
@@ -1243,39 +1121,15 @@ class BubbleChatOverlay(QMainWindow):
         # Try to use the most direct positioning method first - Win32 API
         if WINDOWS_SUPPORT:
             try:
+                our_hwnd = int(self.winId())
                 # Try direct Win32 API positioning first as it's most reliable
-                self.position_with_win32(win_left, win_top)
+                self.try_win32_move_window(our_hwnd,win_left, win_top)
                 self.add_log(f"Used Win32 API to position at ({win_left},{win_top})")
                 return
             except Exception as e:
                 self.add_log(f"Win32 API positioning failed: {e}")
         
-        # Fallback methods if Win32 API fails
-        
-        # Method 1: Direct move using absolute coordinates
-        self.add_log(f"Method 1: Direct move to ({win_left},{win_top})")
         self.move(win_left, win_top)
-        
-        # Verify the position after a short delay
-        QTimer.singleShot(100, self.verify_position)
-        
-        # Method 2: Use setGeometry to position explicitly
-        QTimer.singleShot(300, lambda: self.try_position_method_2(win_left, win_top))
-        
-    def try_position_method_2(self, x, y):
-        """Try positioning method 2 - using move() to prevent resizing"""
-        if not self.game_window:
-            return
-            
-        try:
-            # Use move() instead of setGeometry to prevent any size changes
-            self.add_log(f"Method 2: move() to ({x},{y})")
-            self.move(x, y)
-            
-            # Verify the position after a short delay
-            QTimer.singleShot(100, self.verify_position)
-        except Exception as e:
-            self.add_log(f"Error in method 2: {e}")
     
     def animate_to_position(self, target_x, target_y):
         """Directly move the window to a position (no animation for simplicity)"""
@@ -1344,7 +1198,6 @@ class BubbleChatOverlay(QMainWindow):
                 
             # Sleep to prevent high CPU usage
             time.sleep(0.1)
-    
     # Mouse event handlers for dragging
     def start_drag(self, event):
         """Begin dragging the window"""
@@ -1443,30 +1296,22 @@ class BubbleChatOverlay(QMainWindow):
         geometry = self.geometry()
         frame_geometry = self.frameGeometry()
         
-        # Log detailed position information
-        self.add_log(f"POSITION VERIFICATION:")
-        self.add_log(f"  x(), y(): ({actual_x},{actual_y})")
-        self.add_log(f"  geometry(): ({geometry.x()},{geometry.y()}) size {geometry.width()}x{geometry.height()}")
-        self.add_log(f"  frameGeometry(): ({frame_geometry.x()},{frame_geometry.y()}) size {frame_geometry.width()}x{frame_geometry.height()}")
-        
         # Check if we have a game window to compare against
         if hasattr(self, 'game_window') and self.game_window:
             try:
                 window_rect = win32gui.GetWindowRect(self.game_window)
                 win_left, win_top, win_right, win_bottom = window_rect
-                self.add_log(f"  Game window: ({win_left},{win_top}) size {win_right-win_left}x{win_bottom-win_top}")
                 
                 # Calculate differences
                 diff_x = actual_x - win_left
                 diff_y = actual_y - win_top
-                self.add_log(f"  Position difference: X={diff_x}, Y={diff_y}")
                 
                 # If difference is significant, try a more direct approach
                 if abs(diff_x) > 5 or abs(diff_y) > 5:
-                    self.add_log(f"  WARNING: Significant position mismatch!")
                     
                     # Try the most direct approach possible
                     QTimer.singleShot(0, lambda: self.try_final_fix(win_left, win_top))
+                    
             except Exception as e:
                 self.add_log(f"  Error comparing with game window: {e}")
         
@@ -1515,7 +1360,7 @@ class BubbleChatOverlay(QMainWindow):
                 )
                 self.add_log(f"Used Win32 SetWindowPos API: ({x},{y}) with NOSIZE flag")
                 
-                # Final verification
+                # # Final verification
                 QTimer.singleShot(100, self.verify_position)
             except Exception as e:
                 self.add_log(f"Error in SetWindowPos: {e}")
@@ -1584,7 +1429,7 @@ if __name__ == "__main__":
             f.write(f"  DPI ratio: {screen.devicePixelRatio()}\n")
     
     # Create and show the overlay
-    overlay = BubbleChatOverlay()
+    overlay = OverlayAutoFisher()
     overlay.show()
     
     # Start the event loop
