@@ -131,7 +131,7 @@ class OverlayAutoFisher(QMainWindow):
         self.create_widgets()
         
         self.hwnd = self.winId().__int__()
-        
+
         # Only start game window tracking on Windows
         if WINDOWS_SUPPORT:
             if self.find_game_window():
@@ -1095,13 +1095,13 @@ class OverlayAutoFisher(QMainWindow):
                             try:
                                 # Get our window handle (needs a bit of work in PyQt)
                                 window_rect = win32gui.GetWindowRect(self.game_window)
-                                win_left, win_top, win_right, win_bottom = window_rect
+                                win_left, win_top, _, _ = window_rect
 
                                 # Use SetWindowPos for most accurate positioning
                                 win32gui.SetWindowPos(
                                     self.hwnd, 
                                     0,  # No z-order change
-                                    win_left, win_top,  # X, Y position
+                                    win_left + 20, win_top + 40,  # X, Y position
                                     0, 0,  # Width, height (no change)
                                     win32con.SWP_NOSIZE | win32con.SWP_NOZORDER
                                 )
