@@ -986,7 +986,7 @@ class OverlayAutoFisher(QMainWindow):
                 # Center window on primary screen
                 x = screen_geometry.x() + (screen_geometry.width() - window_rect.width()) // 2
                 y = screen_geometry.y() + (screen_geometry.height() - window_rect.height()) // 2
-                self.animate_to_position(x, y)
+                self.move(x, y)
     
     def find_game_window(self):
         """Find the Play Together game window or any window if not found"""
@@ -1050,10 +1050,6 @@ class OverlayAutoFisher(QMainWindow):
             self.add_log(f"Error finding game window: {e}")
         
         return False    
-            
-    def animate_to_position(self, target_x, target_y):
-        """Directly move the window to a position (no animation for simplicity)"""
-        self.move(int(target_x), int(target_y))
     
     def moveEvent(self, event):
         """Handle move events for the window (including those from the tracking thread)"""
@@ -1080,53 +1076,47 @@ class OverlayAutoFisher(QMainWindow):
         """Loop that monitors game window position and updates overlay position"""
         if not WINDOWS_SUPPORT:
             return
-        
+
         while self.tracking_active:
             try:
-
-                actual_x = self.x()
-                actual_y = self.y()
+                # Update internal position tracking
+                actual_x, actual_y = self.x(), self.y()
                 self.last_move_target = (actual_x, actual_y)
-                
-                if  hasattr(self, 'game_window') and self.game_window:
-                    try:
-                        # Check if window still exists
-                        if win32gui.IsWindow(self.game_window):
-                            try:
-                                # Get our window handle (needs a bit of work in PyQt)
-                                window_rect = win32gui.GetWindowRect(self.game_window)
-                                win_left, win_top, _, _ = window_rect
 
-                                # Use SetWindowPos for most accurate positioning
-                                win32gui.SetWindowPos(
-                                    self.hwnd, 
-                                    0,  # No z-order change
-                                    win_left + 20, win_top + 40,  # X, Y position
-                                    0, 0,  # Width, height (no change)
-                                    win32con.SWP_NOSIZE | win32con.SWP_NOZORDER
-                                )
-                              
-                            except Exception as e:
-                                self.add_log(f"Error positioning relative to game: {e}")
-                                 # Fall back to default position
-                                self.position_default()
-                        else:
-                            # Window closed/changed, try to find it again
-                            self.game_window = None
-                    except Exception:
-                        # Error occurred, try to find window again
-                        self.game_window = None
-                else:
-                    # Try to find the game window if not found
+                # If game_window is not set or invalid, try to find it
+                if not hasattr(self, 'game_window') or not self.game_window:
                     self.find_game_window()
-                 # Store this position for next comparison
+                    time.sleep(0.015)
+                    continue
+
+                if not win32gui.IsWindow(self.game_window):
+                    self.game_window = None  # Window closed or changed
+                    time.sleep(0.015)
+                    continue
+
+                try:
+                    # Get window position
+                    win_left, win_top, _, _ = win32gui.GetWindowRect(self.game_window)
+
+                    # Move overlay window to track game window
+                    win32gui.SetWindowPos(
+                        self.hwnd,
+                        0,  # No z-order change
+                        win_left + 20, win_top + 40,  # Offset position
+                        0, 0,  # Size (unchanged)
+                        win32con.SWP_NOSIZE | win32con.SWP_NOZORDER
+                    )
+                except Exception as e:
+                    self.add_log(f"Error positioning relative to game: {e}")
+                    self.position_default()
+
             except Exception:
-                # Catch any errors to prevent thread crashes
+                # Prevent thread from crashing silently
                 pass
-                
-            # Sleep to prevent high CPU usage
-            time.sleep(0.1)
-    # Mouse event handlers for dragging
+
+            # Small sleep to reduce CPU usage
+            time.sleep(0.015)
+
     def start_drag(self, event):
         """Begin dragging the window"""
         if isinstance(event, QMouseEvent):
