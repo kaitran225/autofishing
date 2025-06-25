@@ -1263,17 +1263,14 @@ class BubbleChatOverlay(QMainWindow):
         QTimer.singleShot(300, lambda: self.try_position_method_2(win_left, win_top))
         
     def try_position_method_2(self, x, y):
-        """Try positioning method 2 - using setGeometry"""
+        """Try positioning method 2 - using move() to prevent resizing"""
         if not self.game_window:
             return
             
         try:
-            # Get current geometry
-            geo = self.geometry()
-            
-            # Update position while maintaining size
-            self.add_log(f"Method 2: setGeometry to ({x},{y})")
-            self.setGeometry(x, y, geo.width(), geo.height())
+            # Use move() instead of setGeometry to prevent any size changes
+            self.add_log(f"Method 2: move() to ({x},{y})")
+            self.move(x, y)
             
             # Verify the position after a short delay
             QTimer.singleShot(100, self.verify_position)
@@ -1330,8 +1327,8 @@ class BubbleChatOverlay(QMainWindow):
                                 # Store the target position for verification
                                 self.last_move_target = new_position
                                 
-                                # Use Win32 API for most reliable positioning at game window top-left
-                                QTimer.singleShot(0, lambda x=win_left, y=win_top: self.position_with_win32(x, y))
+                                # Use simple move to prevent any resizing
+                                QTimer.singleShot(0, lambda x=win_left, y=win_top: self.move(x, y))
                         else:
                             # Window closed/changed, try to find it again
                             self.game_window = None
@@ -1505,27 +1502,23 @@ class BubbleChatOverlay(QMainWindow):
                 self.move(x, y)
                 
     def try_win32_move_window(self, hwnd, x, y):
-        """Try using Win32 MoveWindow for positioning"""
+        """Try using Win32 MoveWindow for positioning without resizing"""
         if WINDOWS_SUPPORT:
             try:
-                # Get current size
-                geo = self.geometry()
-                width = geo.width()
-                height = geo.height()
-                
-                # Use MoveWindow which might handle DPI scaling differently
-                win32gui.MoveWindow(
+                # Use only SetWindowPos with NOSIZE flag to prevent resizing
+                win32gui.SetWindowPos(
                     hwnd,
-                    x, y,  # X, Y position 
-                    width, height,  # Width, height
-                    True  # Repaint
+                    0,  # No z-order change
+                    x, y,  # X, Y position
+                    0, 0,  # Width, height (no change)
+                    win32con.SWP_NOSIZE | win32con.SWP_NOZORDER  # Don't change size or z-order
                 )
-                self.add_log(f"Used Win32 MoveWindow API: ({x},{y}) size {width}x{height}")
+                self.add_log(f"Used Win32 SetWindowPos API: ({x},{y}) with NOSIZE flag")
                 
                 # Final verification
                 QTimer.singleShot(100, self.verify_position)
             except Exception as e:
-                self.add_log(f"Error in MoveWindow: {e}")
+                self.add_log(f"Error in SetWindowPos: {e}")
 
     def position_with_win32(self, x, y):
         """Position the window using Win32 API for most reliable positioning"""
@@ -1538,12 +1531,11 @@ class BubbleChatOverlay(QMainWindow):
             # Get our window handle
             our_hwnd = int(self.winId())
             
-            # Current size
-            geo = self.geometry()
-            width = geo.width()
-            height = geo.height()
+            # Save current size to ensure it doesn't change
+            self.saved_width = self.width()
+            self.saved_height = self.height()
             
-            # Try SetWindowPos first (most direct)
+            # Use only SetWindowPos with NOSIZE flag to prevent resizing
             win32gui.SetWindowPos(
                 our_hwnd,
                 0,  # No z-order change
@@ -1552,18 +1544,10 @@ class BubbleChatOverlay(QMainWindow):
                 win32con.SWP_NOSIZE | win32con.SWP_NOZORDER  # Don't change size or z-order
             )
             
-            # Also try MoveWindow which might handle DPI scaling differently
-            win32gui.MoveWindow(
-                our_hwnd,
-                x, y,  # X, Y position 
-                width, height,  # Width, height
-                True  # Repaint
-            )
-            
             # Store the target position for verification
             self.last_move_target = (x, y)
             
-            # Verify position in a moment
+            # Verify position in a moment (but not size)
             QTimer.singleShot(100, self.verify_position)
         except Exception as e:
             self.add_log(f"Error in position_with_win32: {e}")

@@ -939,3 +939,520 @@
 [22:29:37]   Game window: (841,172) size 1020x799
 [22:29:37]   Position difference: X=-741, Y=-72
 [22:29:37]   WARNING: Position mismatch! Should be at (841,172) but at (100,100)
+[22:32:14] AutoFisher initialized!
+[22:32:14] Overlay mode enabled - drag from title bar to move
+[22:32:14] === SYSTEM INFORMATION ===
+[22:32:14] Platform: win32
+[22:32:14] Number of screens: 2
+[22:32:14] Screen 0: VX2480-2K
+[22:32:14]   Geometry: 2048x1152 at (0,0)
+[22:32:14]   DPI ratio: 1.25x
+[22:32:14]   Physical DPI: 98.78
+[22:32:14]   Logical DPI: 96.00
+[22:32:14] Screen 1: VA2732-FHD
+[22:32:14]   Geometry: 1920x1080 at (282,-1080)
+[22:32:14]   DPI ratio: 1.00x
+[22:32:14]   Physical DPI: 81.60
+[22:32:14]   Logical DPI: 96.00
+[22:32:14] Windows version: 10.0.26100
+[22:32:14] === END SYSTEM INFORMATION ===
+[22:32:14] Found game window: 'PLAY TOGETHER'
+[22:32:14] WINDOW DETAILS - 'PLAY TOGETHER' (UnityWndClass):
+[22:32:14]   Frame: (1153,117) to (2173,916)
+[22:32:14]   Size: 1020x799
+[22:32:14]   Client: (1162,155) size 1002x752
+[22:32:14]   Borders: L=9, T=38, R=9, B=9
+[22:32:14] Used Win32 API to position at (1153,117)
+[22:32:14] Game window found - overlay positioned on game
+[22:32:14] POSITION VERIFICATION:
+[22:32:14]   x(), y(): (100,100)
+[22:32:14]   geometry(): (100,100) size 440x904
+[22:32:14]   frameGeometry(): (100,100) size 440x904
+[22:32:14]   Game window: (1153,117) size 1020x799
+[22:32:14]   Position difference: X=-1053, Y=-17
+[22:32:14]   WARNING: Position mismatch! Should be at (1153,117) but at (100,100)
+[22:32:21] AutoFisher initialized!
+[22:32:21] Overlay mode enabled - drag from title bar to move
+[22:32:21] === SYSTEM INFORMATION ===
+[22:32:21] Platform: win32
+[22:32:21] Number of screens: 2
+[22:32:21] Screen 0: VX2480-2K
+[22:32:21]   Geometry: 2048x1152 at (0,0)
+[22:32:21]   DPI ratio: 1.25x
+[22:32:21]   Physical DPI: 98.78
+[22:32:21]   Logical DPI: 96.00
+[22:32:21] Screen 1: VA2732-FHD
+[22:32:21]   Geometry: 1920x1080 at (282,-1080)
+[22:32:21]   DPI ratio: 1.00x
+[22:32:21]   Physical DPI: 81.60
+[22:32:21]   Logical DPI: 96.00
+[22:32:21] Windows version: 10.0.26100
+[22:32:21] === END SYSTEM INFORMATION ===
+[22:32:21] Found game window: 'PLAY TOGETHER'
+[22:32:21] WINDOW DETAILS - 'PLAY TOGETHER' (UnityWndClass):
+[22:32:21]   Frame: (1153,117) to (2173,916)
+[22:32:21]   Size: 1020x799
+[22:32:21]   Client: (1162,155) size 1002x752
+[22:32:21]   Borders: L=9, T=38, R=9, B=9
+[22:32:21] Used Win32 API to position at (1153,117)
+[22:32:21] Game window found - overlay positioned on game
+[22:32:21] POSITION VERIFICATION:
+[22:32:21]   x(), y(): (100,100)
+[22:32:21]   geometry(): (100,100) size 440x904
+[22:32:21]   frameGeometry(): (100,100) size 440x904
+[22:32:21]   Game window: (1153,117) size 1020x799
+[22:32:21]   Position difference: X=-1053, Y=-17
+[22:32:21]   WARNING: Significant position mismatch!
+[22:32:21] FINAL FIX: Forcing position to (1153,117)
+[22:32:21] Used Win32 API for direct positioning
+[22:32:21] Used Win32 MoveWindow API: (1153,117) size 440x904
+[22:32:22] POSITION VERIFICATION:
+[22:32:22]   x(), y(): (922,94)
+[22:32:22]   geometry(): (922,94) size 352x723
+[22:32:22]   frameGeometry(): (922,94) size 352x723
+[22:32:22]   Game window: (1153,117) size 1020x799
+[22:32:22]   Position difference: X=-231, Y=-23
+[22:32:22]   WARNING: Significant position mismatch!
+[22:32:22] FINAL FIX: Forcing position to (1153,117)
+[22:32:22] Used Win32 API for direct positioning
+[22:32:22] Used Win32 MoveWindow API: (1153,117) size 352x723
+[22:32:22] POSITION VERIFICATION:
+[22:32:22]   x(), y(): (922,94)
+[22:32:22]   geometry(): (922,94) size 282x578
+[22:32:22]   frameGeometry(): (922,94) size 282x578
+[22:32:22]   Game window: (1153,117) size 1020x799
+[22:32:22]   Position difference: X=-231, Y=-23
+[22:32:22]   WARNING: Significant position mismatch!
+[22:32:22] FINAL FIX: Forcing position to (1153,117)
+[22:32:22] Used Win32 API for direct positioning
+[22:32:22] Used Win32 MoveWindow API: (1153,117) size 282x578
+[22:32:22] POSITION VERIFICATION:
+[22:32:22]   x(), y(): (922,94)
+[22:32:22]   geometry(): (922,94) size 226x462
+[22:32:22]   frameGeometry(): (922,94) size 226x462
+[22:32:22]   Game window: (1153,117) size 1020x799
+[22:32:22]   Position difference: X=-231, Y=-23
+[22:32:22]   WARNING: Significant position mismatch!
+[22:32:22] FINAL FIX: Forcing position to (1153,117)
+[22:32:22] Used Win32 API for direct positioning
+[22:32:22] Used Win32 MoveWindow API: (1153,117) size 226x462
+[22:32:23] POSITION VERIFICATION:
+[22:32:23]   x(), y(): (922,94)
+[22:32:23]   geometry(): (922,94) size 181x370
+[22:32:23]   frameGeometry(): (922,94) size 181x370
+[22:32:23]   Game window: (1153,117) size 1020x799
+[22:32:23]   Position difference: X=-231, Y=-23
+[22:32:23]   WARNING: Significant position mismatch!
+[22:32:23] FINAL FIX: Forcing position to (1153,117)
+[22:32:23] Used Win32 API for direct positioning
+[22:32:23] Used Win32 MoveWindow API: (1153,117) size 181x370
+[22:32:23] POSITION VERIFICATION:
+[22:32:23]   x(), y(): (922,94)
+[22:32:23]   geometry(): (922,94) size 145x296
+[22:32:23]   frameGeometry(): (922,94) size 145x296
+[22:32:23]   Game window: (1153,117) size 1020x799
+[22:32:23]   Position difference: X=-231, Y=-23
+[22:32:23]   WARNING: Significant position mismatch!
+[22:32:23] FINAL FIX: Forcing position to (1153,117)
+[22:32:23] Used Win32 API for direct positioning
+[22:32:23] Used Win32 MoveWindow API: (1153,117) size 145x296
+[22:32:23] POSITION VERIFICATION:
+[22:32:23]   x(), y(): (922,94)
+[22:32:23]   geometry(): (922,94) size 116x237
+[22:32:23]   frameGeometry(): (922,94) size 116x237
+[22:32:23]   Game window: (1153,117) size 1020x799
+[22:32:23]   Position difference: X=-231, Y=-23
+[22:32:23]   WARNING: Significant position mismatch!
+[22:32:23] FINAL FIX: Forcing position to (1153,117)
+[22:32:23] Used Win32 API for direct positioning
+[22:32:23] Used Win32 MoveWindow API: (1153,117) size 116x237
+[22:32:23] POSITION VERIFICATION:
+[22:32:23]   x(), y(): (922,94)
+[22:32:23]   geometry(): (922,94) size 93x190
+[22:32:23]   frameGeometry(): (922,94) size 93x190
+[22:32:23]   Game window: (1153,117) size 1020x799
+[22:32:23]   Position difference: X=-231, Y=-23
+[22:32:23]   WARNING: Significant position mismatch!
+[22:32:23] FINAL FIX: Forcing position to (1153,117)
+[22:32:23] Used Win32 API for direct positioning
+[22:32:24] Used Win32 MoveWindow API: (1153,117) size 93x190
+[22:32:24] POSITION VERIFICATION:
+[22:32:24]   x(), y(): (922,94)
+[22:32:24]   geometry(): (922,94) size 74x152
+[22:32:24]   frameGeometry(): (922,94) size 74x152
+[22:32:24]   Game window: (1153,117) size 1020x799
+[22:32:24]   Position difference: X=-231, Y=-23
+[22:32:24]   WARNING: Significant position mismatch!
+[22:32:24] FINAL FIX: Forcing position to (1153,117)
+[22:32:24] Used Win32 API for direct positioning
+[22:32:24] Used Win32 MoveWindow API: (1153,117) size 74x152
+[22:32:24] POSITION VERIFICATION:
+[22:32:24]   x(), y(): (922,94)
+[22:32:24]   geometry(): (922,94) size 59x122
+[22:32:24]   frameGeometry(): (922,94) size 59x122
+[22:32:24]   Game window: (1153,117) size 1020x799
+[22:32:24]   Position difference: X=-231, Y=-23
+[22:32:24]   WARNING: Significant position mismatch!
+[22:32:24] FINAL FIX: Forcing position to (1153,117)
+[22:32:24] Used Win32 API for direct positioning
+[22:32:24] Used Win32 MoveWindow API: (1153,117) size 59x122
+[22:32:24] POSITION VERIFICATION:
+[22:32:24]   x(), y(): (922,94)
+[22:32:24]   geometry(): (922,94) size 47x98
+[22:32:24]   frameGeometry(): (922,94) size 47x98
+[22:32:24]   Game window: (1153,117) size 1020x799
+[22:32:24]   Position difference: X=-231, Y=-23
+[22:32:24]   WARNING: Significant position mismatch!
+[22:32:24] FINAL FIX: Forcing position to (1153,117)
+[22:32:24] Used Win32 API for direct positioning
+[22:32:25] Used Win32 MoveWindow API: (1153,117) size 47x98
+[22:32:25] POSITION VERIFICATION:
+[22:32:25]   x(), y(): (922,94)
+[22:32:25]   geometry(): (922,94) size 38x78
+[22:32:25]   frameGeometry(): (922,94) size 38x78
+[22:32:25]   Game window: (1153,117) size 1020x799
+[22:32:25]   Position difference: X=-231, Y=-23
+[22:32:25]   WARNING: Significant position mismatch!
+[22:32:25] FINAL FIX: Forcing position to (1153,117)
+[22:32:25] Used Win32 API for direct positioning
+[22:32:25] Used Win32 MoveWindow API: (1153,117) size 38x78
+[22:32:25] POSITION VERIFICATION:
+[22:32:25]   x(), y(): (922,94)
+[22:32:25]   geometry(): (922,94) size 30x62
+[22:32:25]   frameGeometry(): (922,94) size 30x62
+[22:32:25]   Game window: (1153,117) size 1020x799
+[22:32:25]   Position difference: X=-231, Y=-23
+[22:32:25]   WARNING: Significant position mismatch!
+[22:32:25] FINAL FIX: Forcing position to (1153,117)
+[22:32:25] Used Win32 API for direct positioning
+[22:32:25] Used Win32 MoveWindow API: (1153,117) size 30x62
+[22:32:25] POSITION VERIFICATION:
+[22:32:25]   x(), y(): (922,94)
+[22:32:25]   geometry(): (922,94) size 24x50
+[22:32:25]   frameGeometry(): (922,94) size 24x50
+[22:32:25]   Game window: (1153,117) size 1020x799
+[22:32:25]   Position difference: X=-231, Y=-23
+[22:32:25]   WARNING: Significant position mismatch!
+[22:32:25] FINAL FIX: Forcing position to (1153,117)
+[22:32:25] Used Win32 API for direct positioning
+[22:32:25] Used Win32 MoveWindow API: (1153,117) size 24x50
+[22:32:26] POSITION VERIFICATION:
+[22:32:26]   x(), y(): (922,94)
+[22:32:26]   geometry(): (922,94) size 19x40
+[22:32:26]   frameGeometry(): (922,94) size 19x40
+[22:32:26]   Game window: (1153,117) size 1020x799
+[22:32:26]   Position difference: X=-231, Y=-23
+[22:32:26]   WARNING: Significant position mismatch!
+[22:32:26] FINAL FIX: Forcing position to (1153,117)
+[22:32:26] Used Win32 API for direct positioning
+[22:32:26] Used Win32 MoveWindow API: (1153,117) size 19x40
+[22:32:26] POSITION VERIFICATION:
+[22:32:26]   x(), y(): (922,94)
+[22:32:26]   geometry(): (922,94) size 15x32
+[22:32:26]   frameGeometry(): (922,94) size 15x32
+[22:32:26]   Game window: (1153,117) size 1020x799
+[22:32:26]   Position difference: X=-231, Y=-23
+[22:32:26]   WARNING: Significant position mismatch!
+[22:32:26] FINAL FIX: Forcing position to (1153,117)
+[22:32:26] Used Win32 API for direct positioning
+[22:32:26] Used Win32 MoveWindow API: (1153,117) size 15x32
+[22:32:26] POSITION VERIFICATION:
+[22:32:26]   x(), y(): (922,94)
+[22:32:26]   geometry(): (922,94) size 12x26
+[22:32:26]   frameGeometry(): (922,94) size 12x26
+[22:32:26]   Game window: (1153,117) size 1020x799
+[22:32:26]   Position difference: X=-231, Y=-23
+[22:32:26]   WARNING: Significant position mismatch!
+[22:32:26] FINAL FIX: Forcing position to (1153,117)
+[22:32:26] Used Win32 API for direct positioning
+[22:32:26] Used Win32 MoveWindow API: (1153,117) size 12x26
+[22:32:26] POSITION VERIFICATION:
+[22:32:26]   x(), y(): (922,94)
+[22:32:26]   geometry(): (922,94) size 10x21
+[22:32:26]   frameGeometry(): (922,94) size 10x21
+[22:32:26]   Game window: (1153,117) size 1020x799
+[22:32:26]   Position difference: X=-231, Y=-23
+[22:32:26]   WARNING: Significant position mismatch!
+[22:32:26] FINAL FIX: Forcing position to (1153,117)
+[22:32:26] Used Win32 API for direct positioning
+[22:32:27] Used Win32 MoveWindow API: (1153,117) size 10x21
+[22:32:27] POSITION VERIFICATION:
+[22:32:27]   x(), y(): (922,94)
+[22:32:27]   geometry(): (922,94) size 8x17
+[22:32:27]   frameGeometry(): (922,94) size 8x17
+[22:32:27]   Game window: (1153,117) size 1020x799
+[22:32:27]   Position difference: X=-231, Y=-23
+[22:32:27]   WARNING: Significant position mismatch!
+[22:32:27] FINAL FIX: Forcing position to (1153,117)
+[22:32:27] Used Win32 API for direct positioning
+[22:32:27] Used Win32 MoveWindow API: (1153,117) size 8x17
+[22:32:27] POSITION VERIFICATION:
+[22:32:27]   x(), y(): (922,94)
+[22:32:27]   geometry(): (922,94) size 6x14
+[22:32:27]   frameGeometry(): (922,94) size 6x14
+[22:32:27]   Game window: (1153,117) size 1020x799
+[22:32:27]   Position difference: X=-231, Y=-23
+[22:32:27]   WARNING: Significant position mismatch!
+[22:32:27] FINAL FIX: Forcing position to (1153,117)
+[22:32:27] Used Win32 API for direct positioning
+[22:35:35] AutoFisher initialized!
+[22:35:35] Overlay mode enabled - drag from title bar to move
+[22:35:35] === SYSTEM INFORMATION ===
+[22:35:35] Platform: win32
+[22:35:35] Number of screens: 2
+[22:35:35] Screen 0: VX2480-2K
+[22:35:35]   Geometry: 2048x1152 at (0,0)
+[22:35:35]   DPI ratio: 1.25x
+[22:35:35]   Physical DPI: 98.78
+[22:35:35]   Logical DPI: 96.00
+[22:35:35] Screen 1: VA2732-FHD
+[22:35:35]   Geometry: 1920x1080 at (282,-1080)
+[22:35:35]   DPI ratio: 1.00x
+[22:35:35]   Physical DPI: 81.60
+[22:35:35]   Logical DPI: 96.00
+[22:35:35] Windows version: 10.0.26100
+[22:35:35] === END SYSTEM INFORMATION ===
+[22:35:35] Found game window: 'PLAY TOGETHER'
+[22:35:35] WINDOW DETAILS - 'PLAY TOGETHER' (UnityWndClass):
+[22:35:35]   Frame: (1153,117) to (2173,916)
+[22:35:35]   Size: 1020x799
+[22:35:35]   Client: (1162,155) size 1002x752
+[22:35:35]   Borders: L=9, T=38, R=9, B=9
+[22:35:36] Used Win32 API to position at (1153,117)
+[22:35:36] Game window found - overlay positioned on game
+[22:35:36] POSITION VERIFICATION:
+[22:35:36]   x(), y(): (100,100)
+[22:35:36]   geometry(): (100,100) size 440x904
+[22:35:36]   frameGeometry(): (100,100) size 440x904
+[22:35:36]   Game window: (1153,117) size 1020x799
+[22:35:36]   Position difference: X=-1053, Y=-17
+[22:35:36]   WARNING: Significant position mismatch!
+[22:36:59] AutoFisher initialized!
+[22:36:59] Overlay mode enabled - drag from title bar to move
+[22:36:59] === SYSTEM INFORMATION ===
+[22:36:59] Platform: win32
+[22:36:59] Number of screens: 2
+[22:36:59] Screen 0: VX2480-2K
+[22:36:59]   Geometry: 2048x1152 at (0,0)
+[22:36:59]   DPI ratio: 1.25x
+[22:36:59]   Physical DPI: 98.78
+[22:36:59]   Logical DPI: 96.00
+[22:36:59] Screen 1: VA2732-FHD
+[22:36:59]   Geometry: 1920x1080 at (282,-1080)
+[22:36:59]   DPI ratio: 1.00x
+[22:36:59]   Physical DPI: 81.60
+[22:36:59]   Logical DPI: 96.00
+[22:36:59] Windows version: 10.0.26100
+[22:36:59] === END SYSTEM INFORMATION ===
+[22:36:59] Found game window: 'PLAY TOGETHER'
+[22:36:59] WINDOW DETAILS - 'PLAY TOGETHER' (UnityWndClass):
+[22:36:59]   Frame: (1153,117) to (2173,916)
+[22:36:59]   Size: 1020x799
+[22:36:59]   Client: (1162,155) size 1002x752
+[22:36:59]   Borders: L=9, T=38, R=9, B=9
+[22:36:59] Used Win32 API to position at (1153,117)
+[22:36:59] Game window found - overlay positioned on game
+[22:36:59] POSITION VERIFICATION:
+[22:36:59]   x(), y(): (100,100)
+[22:36:59]   geometry(): (100,100) size 440x904
+[22:36:59]   frameGeometry(): (100,100) size 440x904
+[22:36:59]   Game window: (1153,117) size 1020x799
+[22:36:59]   Position difference: X=-1053, Y=-17
+[22:36:59]   WARNING: Significant position mismatch!
+[22:40:24] AutoFisher initialized!
+[22:40:24] Overlay mode enabled - drag from title bar to move
+[22:40:24] === SYSTEM INFORMATION ===
+[22:40:24] Platform: win32
+[22:40:24] Number of screens: 2
+[22:40:24] Screen 0: VX2480-2K
+[22:40:24]   Geometry: 2048x1152 at (0,0)
+[22:40:24]   DPI ratio: 1.25x
+[22:40:24]   Physical DPI: 98.78
+[22:40:24]   Logical DPI: 96.00
+[22:40:24] Screen 1: VA2732-FHD
+[22:40:24]   Geometry: 1920x1080 at (282,-1080)
+[22:40:24]   DPI ratio: 1.00x
+[22:40:24]   Physical DPI: 81.60
+[22:40:24]   Logical DPI: 96.00
+[22:40:24] Windows version: 10.0.26100
+[22:40:24] === END SYSTEM INFORMATION ===
+[22:40:24] Found game window: 'PLAY TOGETHER'
+[22:40:24] WINDOW DETAILS - 'PLAY TOGETHER' (UnityWndClass):
+[22:40:24]   Frame: (1153,117) to (2173,916)
+[22:40:24]   Size: 1020x799
+[22:40:24]   Client: (1162,155) size 1002x752
+[22:40:24]   Borders: L=9, T=38, R=9, B=9
+[22:40:24] Used Win32 API to position at (1153,117)
+[22:40:24] Game window found - overlay positioned on game
+[22:40:24] POSITION VERIFICATION:
+[22:40:24]   x(), y(): (100,100)
+[22:40:24]   geometry(): (100,100) size 440x904
+[22:40:24]   frameGeometry(): (100,100) size 440x904
+[22:40:24]   Game window: (1153,117) size 1020x799
+[22:40:24]   Position difference: X=-1053, Y=-17
+[22:40:24]   WARNING: Significant position mismatch!
+[22:40:41] AutoFisher initialized!
+[22:40:41] Overlay mode enabled - drag from title bar to move
+[22:40:41] === SYSTEM INFORMATION ===
+[22:40:41] Platform: win32
+[22:40:41] Number of screens: 2
+[22:40:41] Screen 0: VX2480-2K
+[22:40:41]   Geometry: 2048x1152 at (0,0)
+[22:40:41]   DPI ratio: 1.25x
+[22:40:41]   Physical DPI: 98.78
+[22:40:41]   Logical DPI: 96.00
+[22:40:41] Screen 1: VA2732-FHD
+[22:40:41]   Geometry: 1920x1080 at (282,-1080)
+[22:40:41]   DPI ratio: 1.00x
+[22:40:41]   Physical DPI: 81.60
+[22:40:41]   Logical DPI: 96.00
+[22:40:41] Windows version: 10.0.26100
+[22:40:41] === END SYSTEM INFORMATION ===
+[22:40:41] Found game window: 'PLAY TOGETHER'
+[22:40:41] WINDOW DETAILS - 'PLAY TOGETHER' (UnityWndClass):
+[22:40:41]   Frame: (1153,117) to (2173,916)
+[22:40:41]   Size: 1020x799
+[22:40:41]   Client: (1162,155) size 1002x752
+[22:40:41]   Borders: L=9, T=38, R=9, B=9
+[22:40:41] Used Win32 API to position at (1153,117)
+[22:40:41] Game window found - overlay positioned on game
+[22:40:41] POSITION VERIFICATION:
+[22:40:41]   x(), y(): (100,100)
+[22:40:41]   geometry(): (100,100) size 440x904
+[22:40:41]   frameGeometry(): (100,100) size 440x904
+[22:40:41]   Game window: (1153,117) size 1020x799
+[22:40:41]   Position difference: X=-1053, Y=-17
+[22:40:41]   WARNING: Significant position mismatch!
+[22:40:41] FINAL FIX: Forcing position to (1153,117)
+[22:40:41] Used Win32 API for direct positioning
+[22:40:41] Used Win32 SetWindowPos API: (1153,117) with NOSIZE flag
+[22:40:41] POSITION VERIFICATION:
+[22:40:41]   x(), y(): (922,94)
+[22:40:41]   geometry(): (922,94) size 440x904
+[22:40:41]   frameGeometry(): (922,94) size 440x904
+[22:40:41]   Game window: (1153,117) size 1020x799
+[22:40:41]   Position difference: X=-231, Y=-23
+[22:40:41]   WARNING: Significant position mismatch!
+[22:40:41] FINAL FIX: Forcing position to (1153,117)
+[22:40:41] Used Win32 API for direct positioning
+[22:40:41] Used Win32 SetWindowPos API: (1153,117) with NOSIZE flag
+[22:40:41] POSITION VERIFICATION:
+[22:40:41]   x(), y(): (922,94)
+[22:40:41]   geometry(): (922,94) size 440x904
+[22:40:41]   frameGeometry(): (922,94) size 440x904
+[22:40:41]   Game window: (1153,117) size 1020x799
+[22:40:41]   Position difference: X=-231, Y=-23
+[22:40:41]   WARNING: Significant position mismatch!
+[22:40:41] FINAL FIX: Forcing position to (1153,117)
+[22:40:41] Used Win32 API for direct positioning
+[22:40:42] Used Win32 SetWindowPos API: (1153,117) with NOSIZE flag
+[22:40:42] POSITION VERIFICATION:
+[22:40:42]   x(), y(): (922,94)
+[22:40:42]   geometry(): (922,94) size 440x904
+[22:40:42]   frameGeometry(): (922,94) size 440x904
+[22:40:42]   Game window: (1153,117) size 1020x799
+[22:40:42]   Position difference: X=-231, Y=-23
+[22:40:42]   WARNING: Significant position mismatch!
+[22:40:42] FINAL FIX: Forcing position to (1153,117)
+[22:40:42] Used Win32 API for direct positioning
+[22:40:42] Used Win32 SetWindowPos API: (1153,117) with NOSIZE flag
+[22:40:42] POSITION VERIFICATION:
+[22:40:42]   x(), y(): (922,94)
+[22:40:42]   geometry(): (922,94) size 440x904
+[22:40:42]   frameGeometry(): (922,94) size 440x904
+[22:40:42]   Game window: (1153,117) size 1020x799
+[22:40:42]   Position difference: X=-231, Y=-23
+[22:40:42]   WARNING: Significant position mismatch!
+[22:40:42] FINAL FIX: Forcing position to (1153,117)
+[22:40:42] Used Win32 API for direct positioning
+[22:40:42] Used Win32 SetWindowPos API: (1153,117) with NOSIZE flag
+[22:40:42] POSITION VERIFICATION:
+[22:40:42]   x(), y(): (922,94)
+[22:40:42]   geometry(): (922,94) size 440x904
+[22:40:42]   frameGeometry(): (922,94) size 440x904
+[22:40:42]   Game window: (1153,117) size 1020x799
+[22:40:42]   Position difference: X=-231, Y=-23
+[22:40:42]   WARNING: Significant position mismatch!
+[22:40:42] FINAL FIX: Forcing position to (1153,117)
+[22:40:42] Used Win32 API for direct positioning
+[22:40:42] Used Win32 SetWindowPos API: (1153,117) with NOSIZE flag
+[22:40:43] POSITION VERIFICATION:
+[22:40:43]   x(), y(): (922,94)
+[22:40:43]   geometry(): (922,94) size 440x904
+[22:40:43]   frameGeometry(): (922,94) size 440x904
+[22:40:43]   Game window: (1153,117) size 1020x799
+[22:40:43]   Position difference: X=-231, Y=-23
+[22:40:43]   WARNING: Significant position mismatch!
+[22:40:43] FINAL FIX: Forcing position to (1153,117)
+[22:40:43] Used Win32 API for direct positioning
+[22:40:43] Used Win32 SetWindowPos API: (1153,117) with NOSIZE flag
+[22:40:43] POSITION VERIFICATION:
+[22:40:43]   x(), y(): (922,94)
+[22:40:43]   geometry(): (922,94) size 440x904
+[22:40:43]   frameGeometry(): (922,94) size 440x904
+[22:40:43]   Game window: (1153,117) size 1020x799
+[22:40:43]   Position difference: X=-231, Y=-23
+[22:40:43]   WARNING: Significant position mismatch!
+[22:40:43] FINAL FIX: Forcing position to (1153,117)
+[22:40:43] Used Win32 API for direct positioning
+[22:40:43] Used Win32 SetWindowPos API: (1153,117) with NOSIZE flag
+[22:40:43] POSITION VERIFICATION:
+[22:40:43]   x(), y(): (922,94)
+[22:40:43]   geometry(): (922,94) size 440x904
+[22:40:43]   frameGeometry(): (922,94) size 440x904
+[22:40:43]   Game window: (1153,117) size 1020x799
+[22:40:43]   Position difference: X=-231, Y=-23
+[22:40:43]   WARNING: Significant position mismatch!
+[22:40:43] FINAL FIX: Forcing position to (1153,117)
+[22:40:43] Used Win32 API for direct positioning
+[22:40:43] Used Win32 SetWindowPos API: (1153,117) with NOSIZE flag
+[22:40:43] POSITION VERIFICATION:
+[22:40:43]   x(), y(): (922,94)
+[22:40:43]   geometry(): (922,94) size 440x904
+[22:40:43]   frameGeometry(): (922,94) size 440x904
+[22:40:43]   Game window: (1153,117) size 1020x799
+[22:40:43]   Position difference: X=-231, Y=-23
+[22:40:43]   WARNING: Significant position mismatch!
+[22:40:43] FINAL FIX: Forcing position to (1153,117)
+[22:40:43] Used Win32 API for direct positioning
+[22:40:44] Used Win32 SetWindowPos API: (1153,117) with NOSIZE flag
+[22:40:44] POSITION VERIFICATION:
+[22:40:44]   x(), y(): (922,94)
+[22:40:44]   geometry(): (922,94) size 440x904
+[22:40:44]   frameGeometry(): (922,94) size 440x904
+[22:40:44]   Game window: (1153,117) size 1020x799
+[22:40:44]   Position difference: X=-231, Y=-23
+[22:40:44]   WARNING: Significant position mismatch!
+[22:40:44] FINAL FIX: Forcing position to (1153,117)
+[22:40:44] Used Win32 API for direct positioning
+[22:40:44] Used Win32 SetWindowPos API: (1153,117) with NOSIZE flag
+[22:40:44] POSITION VERIFICATION:
+[22:40:44]   x(), y(): (922,94)
+[22:40:44]   geometry(): (922,94) size 440x904
+[22:40:44]   frameGeometry(): (922,94) size 440x904
+[22:40:44]   Game window: (1153,117) size 1020x799
+[22:40:44]   Position difference: X=-231, Y=-23
+[22:40:44]   WARNING: Significant position mismatch!
+[22:40:44] FINAL FIX: Forcing position to (1153,117)
+[22:40:44] Used Win32 API for direct positioning
+[22:40:44] Used Win32 SetWindowPos API: (1153,117) with NOSIZE flag
+[22:40:44] POSITION VERIFICATION:
+[22:40:44]   x(), y(): (922,94)
+[22:40:44]   geometry(): (922,94) size 440x904
+[22:40:44]   frameGeometry(): (922,94) size 440x904
+[22:40:44]   Game window: (1153,117) size 1020x799
+[22:40:44]   Position difference: X=-231, Y=-23
+[22:40:44]   WARNING: Significant position mismatch!
+[22:40:44] FINAL FIX: Forcing position to (1153,117)
+[22:40:44] Used Win32 API for direct positioning
+[22:40:45] Used Win32 SetWindowPos API: (1153,117) with NOSIZE flag
+[22:40:45] POSITION VERIFICATION:
+[22:40:45]   x(), y(): (922,94)
+[22:40:45]   geometry(): (922,94) size 440x904
+[22:40:45]   frameGeometry(): (922,94) size 440x904
+[22:40:45]   Game window: (1153,117) size 1020x799
+[22:40:45]   Position difference: X=-231, Y=-23
+[22:40:45]   WARNING: Significant position mismatch!
+[22:40:45] FINAL FIX: Forcing position to (1153,117)
+[22:40:45] Used Win32 API for direct positioning
+[22:40:45] Error in SetWindowPos: (1400, 'SetWindowPos', 'Invalid window handle.')
