@@ -1,0 +1,10 @@
+Application starting at 2025-06-25 22:29:36.976599
+Python version: 3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]
+Platform: win32
+Number of screens: 2
+Screen 0: VX2480-2K
+  Geometry: 2048x1152 at (0,0)
+  DPI ratio: 1.25
+Screen 1: VA2732-FHD
+  Geometry: 1920x1080 at (282,-1080)
+  DPI ratio: 1.0
