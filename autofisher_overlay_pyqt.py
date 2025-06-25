@@ -96,6 +96,7 @@ class OverlayAutoFisher(QMainWindow):
         self.expanded_height = 580
         
         # Game window tracking
+        self.last_move_target = None
         self.game_window = None
         self.game_window_name = "Play Together"
         self.offset_x = 16  # Offset from game window left edge
@@ -129,11 +130,12 @@ class OverlayAutoFisher(QMainWindow):
         self.minimized_frame = None
         self.create_widgets()
         
+        self.hwnd = self.winId().__int__()
+        
         # Only start game window tracking on Windows
         if WINDOWS_SUPPORT:
             if self.find_game_window():
                 # If game window found, position directly on it
-                self.position_relative_to_game()
                 self.start_tracking()
                 self.add_log("Game window found - overlay positioned on game")
             else:
@@ -788,7 +790,6 @@ class OverlayAutoFisher(QMainWindow):
         
         # Add initial log messages
         self.add_log("AutoFisher initialized!")
-        self.add_log("Overlay mode enabled - drag from title bar to move")
         
         parent_layout.addWidget(log_frame)
     
@@ -898,8 +899,7 @@ class OverlayAutoFisher(QMainWindow):
     
     def add_log(self, message):
         """Add a message to the log console, write to file, and print to console"""
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-        log_entry = f"[{timestamp}] {message}"
+        log_entry = f"{message}"
         
         # Add to UI console
         self.log_console.append(log_entry)
@@ -907,13 +907,13 @@ class OverlayAutoFisher(QMainWindow):
         # Print to standard output for immediate feedback
         print(log_entry)
         
-        # Also write to log file
-        try:
-            with open('autofisher_debug.log', 'a', encoding='utf-8') as f:
-                f.write(log_entry + '\n')
-        except Exception:
-            # Silently ignore file writing errors
-            pass
+        # # Also write to log file
+        # try:
+        #     with open('autofisher_debug.log', 'a', encoding='utf-8') as f:
+        #         f.write(log_entry + '\n')
+        # except Exception:
+        #     # Silently ignore file writing errors
+        #     pass
     
     def clear_logs(self):
         """Clear the log console"""
@@ -1049,88 +1049,8 @@ class OverlayAutoFisher(QMainWindow):
         except Exception as e:
             self.add_log(f"Error finding game window: {e}")
         
-        return False
-    
-    def position_relative_to_game(self):
-        """Position the overlay exactly at the game window position with detailed diagnostics"""
-        if not WINDOWS_SUPPORT or not self.game_window:
-            # Fall back to default position if game window not found or not on Windows
-            self.position_default()
-            return
+        return False    
             
-        try:
-            # Force display of all diagnostics
-            self.diagnose_game_window_position()
-            
-            # Try multiple positioning methods
-            self.try_positioning_methods()
-            
-        except Exception as e:
-            self.add_log(f"Error positioning relative to game: {e}")
-            # Fall back to default position
-            self.position_default()
-            
-    def diagnose_game_window_position(self):
-        """Get detailed diagnostics about the game window position"""
-        if not WINDOWS_SUPPORT or not self.game_window:
-            return
-            
-        try:
-            # Get window title for reference
-            window_title = win32gui.GetWindowText(self.game_window)
-            window_class = win32gui.GetClassName(self.game_window)
-            
-            # Get various window position information
-            window_rect = win32gui.GetWindowRect(self.game_window)
-            win_left, win_top, win_right, win_bottom = window_rect
-            
-            # Client area (content area without borders/title)
-            client_rect = win32gui.GetClientRect(self.game_window)
-            client_width, client_height = client_rect[2], client_rect[3]
-            
-            # Convert client (0,0) to screen coordinates
-            client_left, client_top = win32gui.ClientToScreen(self.game_window, (0, 0))
-            
-            # Calculate border sizes
-            left_border = client_left - win_left
-            top_border = client_top - win_top
-            right_border = win_right - (client_left + client_width)
-            bottom_border = win_bottom - (client_top + client_height)
-            
-            # Log all window details
-            self.add_log(f"WINDOW DETAILS - '{window_title}' ({window_class}):")
-            self.add_log(f"  Frame: ({win_left},{win_top}) to ({win_right},{win_bottom})")
-            self.add_log(f"  Size: {win_right-win_left}x{win_bottom-win_top}")
-            self.add_log(f"  Client: ({client_left},{client_top}) size {client_width}x{client_height}")
-            self.add_log(f"  Borders: L={left_border}, T={top_border}, R={right_border}, B={bottom_border}")
-            
-            return window_rect
-        except Exception as e:
-            self.add_log(f"Error in diagnose_game_window_position: {e}")
-            return None
-            
-    def try_positioning_methods(self):
-        """Try multiple methods to position the overlay at the game window"""
-        if not WINDOWS_SUPPORT or not self.game_window:
-            return
-            
-        # Get game window info
-        window_rect = win32gui.GetWindowRect(self.game_window)
-        win_left, win_top, win_right, win_bottom = window_rect
-        
-        # Try to use the most direct positioning method first - Win32 API
-        if WINDOWS_SUPPORT:
-            try:
-                our_hwnd = int(self.winId())
-                # Try direct Win32 API positioning first as it's most reliable
-                self.try_win32_move_window(our_hwnd,win_left, win_top)
-                self.add_log(f"Used Win32 API to position at ({win_left},{win_top})")
-                return
-            except Exception as e:
-                self.add_log(f"Win32 API positioning failed: {e}")
-        
-        self.move(win_left, win_top)
-    
     def animate_to_position(self, target_x, target_y):
         """Directly move the window to a position (no animation for simplicity)"""
         self.move(int(target_x), int(target_y))
@@ -1160,29 +1080,36 @@ class OverlayAutoFisher(QMainWindow):
         """Loop that monitors game window position and updates overlay position"""
         if not WINDOWS_SUPPORT:
             return
-            
-        last_position = None
         
         while self.tracking_active:
             try:
-                if self.game_window:
+
+                actual_x = self.x()
+                actual_y = self.y()
+                self.last_move_target = (actual_x, actual_y)
+                
+                if  hasattr(self, 'game_window') and self.game_window:
                     try:
                         # Check if window still exists
                         if win32gui.IsWindow(self.game_window):
-                            # Get the window frame position
-                            window_rect = win32gui.GetWindowRect(self.game_window)
-                            win_left, win_top, win_right, win_bottom = window_rect
-                            
-                            # Only update if position changed
-                            new_position = (win_left, win_top)
-                            if last_position != new_position:
-                                last_position = new_position
-                                
-                                # Store the target position for verification
-                                self.last_move_target = new_position
-                                
-                                # Use simple move to prevent any resizing
-                                QTimer.singleShot(0, lambda x=win_left, y=win_top: self.move(x, y))
+                            try:
+                                # Get our window handle (needs a bit of work in PyQt)
+                                window_rect = win32gui.GetWindowRect(self.game_window)
+                                win_left, win_top, win_right, win_bottom = window_rect
+
+                                # Use SetWindowPos for most accurate positioning
+                                win32gui.SetWindowPos(
+                                    self.hwnd, 
+                                    0,  # No z-order change
+                                    win_left, win_top,  # X, Y position
+                                    0, 0,  # Width, height (no change)
+                                    win32con.SWP_NOSIZE | win32con.SWP_NOZORDER
+                                )
+                              
+                            except Exception as e:
+                                self.add_log(f"Error positioning relative to game: {e}")
+                                 # Fall back to default position
+                                self.position_default()
                         else:
                             # Window closed/changed, try to find it again
                             self.game_window = None
@@ -1192,6 +1119,7 @@ class OverlayAutoFisher(QMainWindow):
                 else:
                     # Try to find the game window if not found
                     self.find_game_window()
+                 # Store this position for next comparison
             except Exception:
                 # Catch any errors to prevent thread crashes
                 pass
@@ -1287,118 +1215,7 @@ class OverlayAutoFisher(QMainWindow):
             if screen.geometry().contains(pos):
                 return screen
         return QApplication.primaryScreen()
-
-    def verify_position(self):
-        """Verify and log the actual position of the overlay after moving it"""
-        # Get all position information
-        actual_x = self.x()
-        actual_y = self.y()
-        geometry = self.geometry()
-        frame_geometry = self.frameGeometry()
         
-        # Check if we have a game window to compare against
-        if hasattr(self, 'game_window') and self.game_window:
-            try:
-                window_rect = win32gui.GetWindowRect(self.game_window)
-                win_left, win_top, win_right, win_bottom = window_rect
-                
-                # Calculate differences
-                diff_x = actual_x - win_left
-                diff_y = actual_y - win_top
-                
-                # If difference is significant, try a more direct approach
-                if abs(diff_x) > 5 or abs(diff_y) > 5:
-                    
-                    # Try the most direct approach possible
-                    QTimer.singleShot(0, lambda: self.try_final_fix(win_left, win_top))
-                    
-            except Exception as e:
-                self.add_log(f"  Error comparing with game window: {e}")
-        
-        # Store this position for next comparison
-        self.last_move_target = (actual_x, actual_y)
-        
-    def try_final_fix(self, x, y):
-        """Last attempt to fix positioning - using fixed values and Win32 API"""
-        self.add_log(f"FINAL FIX: Forcing position to ({x},{y})")
-        
-        # Try to fix any DPI scaling issues by using direct Win32 API calls if available
-        if WINDOWS_SUPPORT:
-            try:
-                # Get our window handle (needs a bit of work in PyQt)
-                our_hwnd = int(self.winId())
-                
-                # Use SetWindowPos for most accurate positioning
-                win32gui.SetWindowPos(
-                    our_hwnd,
-                    0,  # No z-order change
-                    x, y,  # X, Y position
-                    0, 0,  # Width, height (no change)
-                    win32con.SWP_NOSIZE | win32con.SWP_NOZORDER  # Don't change size or z-order
-                )
-                self.add_log(f"Used Win32 API for direct positioning")
-                
-                # Try additional positioning approach - MoveWindow
-                QTimer.singleShot(200, lambda: self.try_win32_move_window(our_hwnd, x, y))
-            except Exception as e:
-                self.add_log(f"Error in final fix with SetWindowPos: {e}")
-                
-                # Fall back to Qt's positioning as last resort
-                self.move(x, y)
-                
-    def try_win32_move_window(self, hwnd, x, y):
-        """Try using Win32 MoveWindow for positioning without resizing"""
-        if WINDOWS_SUPPORT:
-            try:
-                # Use only SetWindowPos with NOSIZE flag to prevent resizing
-                win32gui.SetWindowPos(
-                    hwnd,
-                    0,  # No z-order change
-                    x, y,  # X, Y position
-                    0, 0,  # Width, height (no change)
-                    win32con.SWP_NOSIZE | win32con.SWP_NOZORDER  # Don't change size or z-order
-                )
-                self.add_log(f"Used Win32 SetWindowPos API: ({x},{y}) with NOSIZE flag")
-                
-                # # Final verification
-                QTimer.singleShot(100, self.verify_position)
-            except Exception as e:
-                self.add_log(f"Error in SetWindowPos: {e}")
-
-    def position_with_win32(self, x, y):
-        """Position the window using Win32 API for most reliable positioning"""
-        if not WINDOWS_SUPPORT:
-            # Fall back to Qt positioning on non-Windows platforms
-            self.move(x, y)
-            return
-            
-        try:
-            # Get our window handle
-            our_hwnd = int(self.winId())
-            
-            # Save current size to ensure it doesn't change
-            self.saved_width = self.width()
-            self.saved_height = self.height()
-            
-            # Use only SetWindowPos with NOSIZE flag to prevent resizing
-            win32gui.SetWindowPos(
-                our_hwnd,
-                0,  # No z-order change
-                x, y,  # X, Y position
-                0, 0,  # Width, height (no change)
-                win32con.SWP_NOSIZE | win32con.SWP_NOZORDER  # Don't change size or z-order
-            )
-            
-            # Store the target position for verification
-            self.last_move_target = (x, y)
-            
-            # Verify position in a moment (but not size)
-            QTimer.singleShot(100, self.verify_position)
-        except Exception as e:
-            self.add_log(f"Error in position_with_win32: {e}")
-            # Fall back to Qt's positioning
-            self.move(x, y)
-
     def move(self, x, y):
         """Override move to store the target position and optionally validate"""
         # Store the target position
@@ -1412,22 +1229,8 @@ class OverlayAutoFisher(QMainWindow):
 
 # Run the overlay if executed directly
 if __name__ == "__main__":
-    # Write a startup marker to a log file
-    with open('startup_log.txt', 'w') as f:
-        f.write(f"Application starting at {datetime.datetime.now()}\n")
-        f.write(f"Python version: {sys.version}\n")
-        f.write(f"Platform: {sys.platform}\n")
-        
-        # Screen information 
-        app = QApplication(sys.argv)
-        f.write(f"Number of screens: {len(QApplication.screens())}\n")
-        
-        for i, screen in enumerate(QApplication.screens()):
-            geo = screen.geometry()
-            f.write(f"Screen {i}: {screen.name()}\n")
-            f.write(f"  Geometry: {geo.width()}x{geo.height()} at ({geo.x()},{geo.y()})\n")
-            f.write(f"  DPI ratio: {screen.devicePixelRatio()}\n")
-    
+    app = QApplication(sys.argv)
+   
     # Create and show the overlay
     overlay = OverlayAutoFisher()
     overlay.show()
