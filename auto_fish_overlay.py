@@ -389,10 +389,8 @@ class OverlayAutoFisher(QMainWindow):
                 font-size: {small_font}pt;
                 color: {self.colors['accent']};
                 background-color: {self.colors['bg_dark']};
-                border: 1px solid {self.colors['border']};
-                border-radius: {border_radius}px;
                 margin-top: {margin}px;
-                padding: {margin}px;
+                padding: -{margin}px;
             }}
         """)
         
