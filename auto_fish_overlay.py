@@ -367,9 +367,9 @@ class OverlayAutoFisher(QMainWindow):
         
         # Create AutoFisher UI sections
         self.create_settings_section(content_layout)
+        self.create_status_section(content_layout)
         self.create_monitoring_section(content_layout)
         self.create_control_section(content_layout)
-        # self.create_status_section(content_layout)
         self.create_log_section(content_layout)
         
         self.expanded_layout.addWidget(self.content_frame)
@@ -657,6 +657,44 @@ class OverlayAutoFisher(QMainWindow):
         elif self.threshold_var > 0.25:
             self.add_log("Current threshold: {self.threshold_var} is not very sensitive - may miss subtle changes")
     
+    def create_status_section(self, parent_layout):
+        """Create monitoring section similar to AutoFisher - more compact"""
+        small_font = self.ui_scale['small_font_size']
+        normal_font = self.ui_scale['font_size']
+        margin = self.ui_scale['margins']
+        border_radius = self.ui_scale['border_radius']
+        
+        status_frame = QGroupBox("")
+        status_frame.setStyleSheet(f"""
+            QGroupBox {{
+                font-size: {small_font}pt;
+                color: {self.colors['accent']};
+                background-color: {self.colors['bg_dark']};
+                border: 1px solid {self.colors['border']};
+                border-radius: {border_radius}px;
+                margin-top: {margin }px;
+                padding: {margin / 2}px;
+            }}
+        """)
+        
+        monitoring_layout = QVBoxLayout(status_frame)
+        monitoring_layout.setContentsMargins(margin-1, margin, margin-1, margin-1)  # Reduced margins
+        monitoring_layout.setSpacing(max(1, self.ui_scale['spacing'] - 1))  # Reduced spacing
+    
+        # System status - more compact
+        self.status_label = QLabel("System: monitor.idle")
+        self.status_label.setStyleSheet(f"""
+            color: {self.colors['text_dim']};
+            font-size: {normal_font}pt;
+            padding: {max(1, self.ui_scale['spacing']-1)}px;  /* Reduced padding */
+            background-color: {self.colors['bg_dark']};
+            border-radius: {border_radius/2}px;
+            min-height: {max(15, int(20 * self.ui_scale['base']))}px;  /* Fixed smaller height */
+        """)
+        monitoring_layout.addWidget(self.status_label)
+        
+        parent_layout.addWidget(status_frame)
+
     def create_monitoring_section(self, parent_layout):
         """Create monitoring section similar to AutoFisher - more compact"""
         small_font = self.ui_scale['small_font_size']
@@ -672,7 +710,7 @@ class OverlayAutoFisher(QMainWindow):
                 background-color: {self.colors['bg_dark']};
                 border: 1px solid {self.colors['border']};
                 border-radius: {border_radius}px;
-                margin-top: {margin + small_font}px;
+                margin-top: {margin }px;
                 padding: {margin}px;
             }}
         """)
@@ -721,18 +759,6 @@ class OverlayAutoFisher(QMainWindow):
             self.stats_labels[key] = l
         
         monitoring_layout.addWidget(stats_frame)
-        
-        # System status - more compact
-        self.status_label = QLabel("System: monitor.idle")
-        self.status_label.setStyleSheet(f"""
-            color: {self.colors['text_dim']};
-            font-size: {normal_font}pt;
-            padding: {max(1, self.ui_scale['spacing']-1)}px;  /* Reduced padding */
-            background-color: {self.colors['bg_lighter']};
-            border-radius: {border_radius/2}px;
-            min-height: {max(15, int(20 * self.ui_scale['base']))}px;  /* Fixed smaller height */
-        """)
-        monitoring_layout.addWidget(self.status_label)
 
         # Initialize with dummy values
         self.update_stats_display()
@@ -757,7 +783,7 @@ class OverlayAutoFisher(QMainWindow):
                 background-color: {self.colors['bg_dark']};
                 border: 1px solid {self.colors['border']};
                 border-radius: {self.ui_scale['border_radius']}px;
-                margin-top: {margin + small_font}px;
+                margin-top: {margin }px;
                 padding: {margin}px;
             }}
         """)
@@ -953,7 +979,7 @@ class OverlayAutoFisher(QMainWindow):
                 background-color: {self.colors['bg_dark']};
                 border: 1px solid {self.colors['border']};
                 border-radius: {border_radius}px;
-                margin-top: {margin + small_font}px;
+                margin-top: {margin }px;
                 padding: {margin}px;
             }}
         """)
