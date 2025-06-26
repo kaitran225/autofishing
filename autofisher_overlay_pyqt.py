@@ -70,26 +70,26 @@ class OverlayAutoFisher(QMainWindow):
         self.default_width = 350
         self.default_height = 550
         
-        # Dynamic sizing parameters
-        self.game_width_percentage = 0.25  # Reduced from 0.30 to 25% of game width
-        self.game_height_percentage = 0.60  # Reduced from 0.70 to 60% of game height
+        # Dynamic sizing parameters - more compact
+        self.game_width_percentage = 0.20  # Reduced from 0.25 to 20% of game width
+        self.game_height_percentage = 0.50  # Reduced from 0.60 to 50% of game height
         
         # Set initial size - will be recalculated if game window is found
-        self.expanded_width = self.default_width
-        self.expanded_height = self.default_height
+        self.expanded_width = int(self.default_width * self.game_width_percentage)  # Make default size more compact
+        self.expanded_height = int(self.default_height * self.game_height_percentage)
         
-        # Calculate initial UI scaling factors
+        # Calculate initial UI scaling factors - more compact
         self.ui_scale = {
-            'base': 1.0,            # Base scaling factor
-            'margins': 3,           # Default margin size (increased)
-            'spacing': 6,           # Default spacing (increased)
-            'button_height': 32,    # Default button height (increased)
-            'title_height': 36,     # Default title bar height (increased)
-            'font_size': 10,        # Default font size
-            'small_font_size': 9,   # Smaller font size
-            'large_font_size': 16,  # Larger font size
-            'border_radius': 8,     # Default border radius for rounded corners
-            'button_radius': 6      # Button border radius
+            'base': 0.7,           # Reduced base scaling factor
+            'margins': 2,           # Reduced margin size
+            'spacing': 4,           # Reduced spacing
+            'button_height': 28,    # Reduced button height
+            'title_height': 30,     # Reduced title bar height
+            'font_size': 9,         # Reduced font size
+            'small_font_size': 8,   # Reduced smaller font size
+            'large_font_size': 14,  # Reduced larger font size
+            'border_radius': 6,     # Reduced border radius
+            'button_radius': 5      # Reduced button border radius
         }
         
         # Set initial window position and flags
@@ -202,20 +202,21 @@ class OverlayAutoFisher(QMainWindow):
         width = self.expanded_width
         height = self.expanded_height
         
-        # Determine base scaling factor (1.0 is the reference at 380px width)
-        base_scale = 0.7        
-        # Calculate scaled values
+        # Determine base scaling factor (more compact)
+        base_scale = 0.65  # Reduced from 0.7 for more compact UI
+        
+        # Calculate scaled values - more compact
         self.ui_scale = {
             'base': base_scale,
-            'margins': max(2, int(6 * base_scale)),
-            'spacing': max(1, int(3 * base_scale)),
-            'button_height': max(20, int(32 * base_scale)),
-            'title_height': max(20, int(36 * base_scale)),
-            'font_size': max(8, int(10 * base_scale)),
-            'small_font_size': max(5, int(7 * base_scale)),
-            'large_font_size': max(10, int(13 * base_scale)),
-            'border_radius': max(4, int(8 * base_scale)),
-            'button_radius': max(3, int(6 * base_scale))
+            'margins': max(1, int(4 * base_scale)),  # Reduced margins
+            'spacing': max(1, int(2 * base_scale)),  # Reduced spacing
+            'button_height': max(18, int(28 * base_scale)),  # Reduced button height
+            'title_height': max(18, int(30 * base_scale)),  # Reduced title bar height
+            'font_size': max(8, int(9 * base_scale)),  # Reduced font size
+            'small_font_size': max(5, int(6 * base_scale)),  # Reduced small font
+            'large_font_size': max(10, int(12 * base_scale)),  # Reduced large font
+            'border_radius': max(3, int(6 * base_scale)),  # Reduced border radius
+            'button_radius': max(2, int(5 * base_scale))  # Reduced button radius
         }
         
         return self.ui_scale
@@ -373,14 +374,14 @@ class OverlayAutoFisher(QMainWindow):
         self.expanded_layout.addWidget(self.content_frame)
     
     def create_settings_section(self, parent_layout):
-        """Create settings section similar to AutoFisher"""
+        """Create settings section similar to AutoFisher - more compact"""
         small_font = self.ui_scale['small_font_size']
         normal_font = self.ui_scale['font_size']
         margin = self.ui_scale['margins']
-        spacing = self.ui_scale['spacing']
+        spacing = max(1, self.ui_scale['spacing'] - 1)  # Reduced spacing
         border_radius = self.ui_scale['border_radius']
         
-        settings_frame = QGroupBox("SETTINGS")
+        settings_frame = QGroupBox("")
         settings_frame.setStyleSheet(f"""
             QGroupBox {{
                 font-size: {small_font}pt;
@@ -391,17 +392,11 @@ class OverlayAutoFisher(QMainWindow):
                 margin-top: {margin}px;
                 padding: {margin}px;
             }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: {margin}px;
-                top: {small_font}px;
-                padding: 0px {margin/2}px 0px {margin/2}px;
-                background-color: {self.colors['bg_dark']};
-            }}
         """)
         settings_layout = QGridLayout(settings_frame)
-        settings_layout.setContentsMargins(margin, margin, margin, margin)
-        settings_layout.setSpacing(spacing)
+        settings_layout.setContentsMargins(margin - 1, margin, margin - 1, margin - 1)  # Reduced margins
+        settings_layout.setSpacing(spacing)  # Reduced spacing
+        settings_layout.setVerticalSpacing(int(spacing / 2))  # Even smaller vertical spacing
 
         # Threshold (row 0)
         threshold_label = QLabel("Threshold")
@@ -589,18 +584,24 @@ class OverlayAutoFisher(QMainWindow):
         parent_layout.addWidget(settings_frame)
     
     def on_threshold_changed(self, value):
-        """Handle threshold slider change"""
+        """Handle threshold slider change - with feedback like in autofisher.py"""
         self.threshold_var = value / 100.0
         self.threshold_label.setText(f"{self.threshold_var:.2f}")
+        
+        # Add threshold guidance messages like in autofisher.py
+        if self.threshold_var < 0.03:
+            self.add_log("Current threshold is very sensitive - may cause false positives")
+        elif self.threshold_var > 0.2:
+            self.add_log("Current threshold is not very sensitive - may miss subtle changes")
     
     def create_monitoring_section(self, parent_layout):
-        """Create monitoring section similar to AutoFisher"""
+        """Create monitoring section similar to AutoFisher - more compact"""
         small_font = self.ui_scale['small_font_size']
         normal_font = self.ui_scale['font_size']
         margin = self.ui_scale['margins']
         border_radius = self.ui_scale['border_radius']
         
-        monitoring_frame = QGroupBox("MONITORING")
+        monitoring_frame = QGroupBox("")
         monitoring_frame.setStyleSheet(f"""
             QGroupBox {{
                 font-size: {small_font}pt;
@@ -611,20 +612,25 @@ class OverlayAutoFisher(QMainWindow):
                 margin-top: {margin + small_font}px;
                 padding: {margin}px;
             }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: {margin}px;
-                top: {small_font}px;
-                padding: 0px {margin/2}px 0px {margin/2}px;
-                background-color: {self.colors['bg_dark']};
-            }}
         """)
         
         monitoring_layout = QVBoxLayout(monitoring_frame)
-        monitoring_layout.setContentsMargins(margin, margin*2, margin, margin)
-        monitoring_layout.setSpacing(self.ui_scale['spacing'])
+        monitoring_layout.setContentsMargins(margin-1, margin, margin-1, margin-1)  # Reduced margins
+        monitoring_layout.setSpacing(max(1, self.ui_scale['spacing'] - 1))  # Reduced spacing
         
-        # Stats details in two columns
+        # Region info display (from autofisher.py)
+        self.region_info_label = QLabel("No region selected")
+        self.region_info_label.setStyleSheet(f"""
+            color: {self.colors['accent']};
+            font-size: {small_font}pt;
+            padding: {max(1, self.ui_scale['spacing']-1)}px;
+            border: 1px solid {self.colors['border']};
+            border-radius: {border_radius/2}px;
+            background-color: {self.colors['bg_lighter']};
+        """)
+        monitoring_layout.addWidget(self.region_info_label)
+        
+        # Stats details in two columns - more compact
         stats_frame = QFrame()
         stats_frame.setStyleSheet(f"""
             background-color: {self.colors['bg_dark']};
@@ -633,8 +639,9 @@ class OverlayAutoFisher(QMainWindow):
         """)
         
         stats_layout = QGridLayout(stats_frame)
-        stats_layout.setContentsMargins(margin, margin, margin, margin)
-        stats_layout.setSpacing(self.ui_scale['spacing'])
+        stats_layout.setContentsMargins(margin-1, margin-1, margin-1, margin-1)  # Reduced margins
+        stats_layout.setSpacing(max(1, self.ui_scale['spacing'] - 1))  # Reduced spacing
+        stats_layout.setVerticalSpacing(max(1, (self.ui_scale['spacing'] - 1) // 2))  # Even smaller vertical spacing
         
         self.stats_labels = {}
         stats_keys = [
@@ -656,7 +663,7 @@ class OverlayAutoFisher(QMainWindow):
             l.setStyleSheet(f"""
                 color: {self.colors['text']};
                 font-size: {normal_font}pt;
-                padding: {self.ui_scale['spacing']}px;
+                padding: {max(1, self.ui_scale['spacing']-1)}px;  /* Reduced padding */
             """)
             stats_layout.addWidget(l, row, col, 1, 1, Qt.AlignmentFlag.AlignLeft)
             stats_layout.setColumnStretch(col, 1)
@@ -664,14 +671,15 @@ class OverlayAutoFisher(QMainWindow):
         
         monitoring_layout.addWidget(stats_frame)
         
-        # System status
+        # System status - more compact
         self.status_label = QLabel("System: monitor.idle")
         self.status_label.setStyleSheet(f"""
             color: {self.colors['text_dim']};
             font-size: {normal_font}pt;
-            padding: {self.ui_scale['spacing']}px;
+            padding: {max(1, self.ui_scale['spacing']-1)}px;  /* Reduced padding */
             background-color: {self.colors['bg_lighter']};
             border-radius: {border_radius/2}px;
+            min-height: {max(15, int(20 * self.ui_scale['base']))}px;  /* Fixed smaller height */
         """)
         monitoring_layout.addWidget(self.status_label)
 
@@ -681,16 +689,16 @@ class OverlayAutoFisher(QMainWindow):
         parent_layout.addWidget(monitoring_frame)
     
     def create_control_section(self, parent_layout):
-        """Create control section similar to AutoFisher"""
+        """Create control section similar to AutoFisher - more compact"""
         small_font = self.ui_scale['small_font_size']
         normal_font = self.ui_scale['font_size']
         margin = self.ui_scale['margins']
-        spacing = self.ui_scale['spacing']
-        button_padding_v = max(8, int(8 * self.ui_scale['base']))
-        button_padding_h = max(12, int(12 * self.ui_scale['base']))
+        spacing = max(1, self.ui_scale['spacing'] - 1)  # Reduced spacing
+        button_padding_v = max(4, int(6 * self.ui_scale['base']))  # Reduced vertical padding
+        button_padding_h = max(8, int(8 * self.ui_scale['base']))  # Reduced horizontal padding
         button_radius = self.ui_scale['button_radius']
         
-        control_frame = QGroupBox("CONTROL")
+        control_frame = QGroupBox("")
         control_frame.setStyleSheet(f"""
             QGroupBox {{
                 font-size: {small_font}pt;
@@ -701,26 +709,19 @@ class OverlayAutoFisher(QMainWindow):
                 margin-top: {margin + small_font}px;
                 padding: {margin}px;
             }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: {margin}px;
-                top: {small_font}px;
-                padding: 0px {margin/2}px 0px {margin/2}px;
-                background-color: {self.colors['bg_dark']};
-            }}
         """)
         
         control_layout = QVBoxLayout(control_frame)
-        control_layout.setContentsMargins(margin-1, margin*2, margin-1, margin-1)
-        control_layout.setSpacing(spacing)
+        control_layout.setContentsMargins(margin-1, margin, margin-1, margin-1)  # Reduced top margin
+        control_layout.setSpacing(spacing // 2)  # Smaller spacing between rows
         
-        # First row of buttons
+        # First row of buttons - more compact
         button_frame = QFrame()
         button_frame.setStyleSheet(f"background-color: {self.colors['bg_dark']}; border: none;")
         
         button_layout = QHBoxLayout(button_frame)
-        button_layout.setContentsMargins(spacing, spacing, spacing, spacing)
-        button_layout.setSpacing(spacing)
+        button_layout.setContentsMargins(spacing//2, spacing//2, spacing//2, spacing//2)  # Reduced margins
+        button_layout.setSpacing(spacing)  # Keep horizontal spacing between buttons
         
         self.start_button = QPushButton("Start")
         self.start_button.setStyleSheet(f"""
@@ -824,16 +825,16 @@ class OverlayAutoFisher(QMainWindow):
         
         control_layout.addWidget(button_frame)
         
-        # Second row of buttons
+        # Second row of buttons - more compact
         button_frame2 = QFrame()
         button_frame2.setStyleSheet(f"background-color: {self.colors['bg_dark']}; border: none;")
         
         button_layout2 = QHBoxLayout(button_frame2)
-        button_layout2.setContentsMargins(spacing, spacing, spacing, spacing)
-        button_layout2.setSpacing(spacing)
+        button_layout2.setContentsMargins(spacing//2, spacing//2, spacing//2, spacing//2)  # Reduced margins
+        button_layout2.setSpacing(spacing)  # Keep horizontal spacing between buttons
         
-        # Adjust padding for the wider button
-        ref_padding_h = max(15, int(15 * self.ui_scale['base']))
+        # Adjust padding for the wider button - reduced
+        ref_padding_h = max(8, int(10 * self.ui_scale['base']))  # Smaller padding
         
         self.ref_button = QPushButton("Capture Reference")
         self.ref_button.setStyleSheet(f"""
@@ -886,14 +887,14 @@ class OverlayAutoFisher(QMainWindow):
         parent_layout.addWidget(control_frame)
     
     def create_log_section(self, parent_layout):
-        """Create log section similar to AutoFisher"""
+        """Create log section similar to AutoFisher - more compact"""
         small_font = self.ui_scale['small_font_size']
         normal_font = self.ui_scale['font_size']
         margin = self.ui_scale['margins']
         border_radius = self.ui_scale['border_radius']
-        console_font_size = max(9, int(9 * self.ui_scale['base']))
+        console_font_size = max(8, int(8 * self.ui_scale['base']))  # Reduced font size
         
-        log_frame = QGroupBox("LOGS")
+        log_frame = QGroupBox("")
         log_frame.setStyleSheet(f"""
             QGroupBox {{
                 font-size: {small_font}pt;
@@ -904,20 +905,17 @@ class OverlayAutoFisher(QMainWindow):
                 margin-top: {margin + small_font}px;
                 padding: {margin}px;
             }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: {margin}px;
-                top: {small_font}px;
-                padding: 0px {margin/2}px 0px {margin/2}px;
-                background-color: {self.colors['bg_dark']};
-            }}
         """)
         
         log_layout = QVBoxLayout(log_frame)
-        log_layout.setContentsMargins(margin, margin*2, margin, margin)
+        log_layout.setContentsMargins(margin,margin, margin, margin)  # Reduced top margin
         log_layout.setSpacing(self.ui_scale['spacing'])
         
+        # # Set a fixed height for the log console (smaller)
+        # log_height = max(60, int(80 * self.ui_scale['base']))  # More compact log area
+        
         self.log_console = QTextEdit()
+        # self.log_console.setFixedHeight(log_height)  # Set fixed height for compact display
         self.log_console.setStyleSheet(f"""
             QTextEdit {{
                 background-color: {self.colors['bg_lighter']};
@@ -1100,6 +1098,19 @@ class OverlayAutoFisher(QMainWindow):
     def dummy_select_region(self):
         """Dummy function for select region button"""
         self.add_log("Please select a region on the screen...")
+        # This would be connected to actual region selection code
+        # For now, update the region info label with dummy data to demonstrate
+        self.update_region_info((100, 200, 250, 300))
+        
+    def update_region_info(self, region=None):
+        """Update the region info label similar to autofisher.py"""
+        if region:
+            left, top, right, bottom = region
+            width = right - left
+            height = bottom - top
+            self.region_info_label.setText(f"Region: ({left},{top}) size: {width}×{height}")
+        else:
+            self.region_info_label.setText("No region selected")
     
     def add_log(self, message):
         """Add a message to the log console, write to file, and print to console"""
