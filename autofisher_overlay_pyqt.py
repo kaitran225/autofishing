@@ -71,8 +71,8 @@ class OverlayAutoFisher(QMainWindow):
         self.default_height = 580
         
         # Dynamic sizing parameters
-        self.game_width_percentage = 0.30  # 30% of game width
-        self.game_height_percentage = 0.70  # 70% of game height
+        self.game_width_percentage = 0.25  # Reduced from 0.30 to 25% of game width
+        self.game_height_percentage = 0.60  # Reduced from 0.70 to 60% of game height
         
         # Set initial size - will be recalculated if game window is found
         self.expanded_width = self.default_width
@@ -81,13 +81,15 @@ class OverlayAutoFisher(QMainWindow):
         # Calculate initial UI scaling factors
         self.ui_scale = {
             'base': 1.0,            # Base scaling factor
-            'margins': 5,           # Default margin size
-            'spacing': 2,           # Default spacing
-            'button_height': 30,    # Default button height
-            'title_height': 30,     # Default title bar height
+            'margins': 8,           # Default margin size (increased)
+            'spacing': 4,           # Default spacing (increased)
+            'button_height': 32,    # Default button height (increased)
+            'title_height': 36,     # Default title bar height (increased)
             'font_size': 10,        # Default font size
             'small_font_size': 9,   # Smaller font size
-            'large_font_size': 16   # Larger font size
+            'large_font_size': 16,  # Larger font size
+            'border_radius': 8,     # Default border radius for rounded corners
+            'button_radius': 6      # Button border radius
         }
         
         # Set initial window position and flags
@@ -97,25 +99,25 @@ class OverlayAutoFisher(QMainWindow):
         
         # Colors and style
         self.colors = {
-            'bg_dark': '#181914',         # Oak wood dark
-            'bg_term': '#23281e',         # Slightly lighter for panels
-            'bg_lighter': '#2e3324',      # Lighter panel
-            'bg_alt': '#3e3c2f',          # Alternative dark
-            'text': '#F8F5E3',            # Warm off-white
-            'text_bright': '#FFFFFF',
+            'bg_dark': '#121212',         # Charcoal black
+            'bg_term': '#1A1A1A',         # Slightly lighter charcoal
+            'bg_lighter': '#232323',      # Lighter panel
+            'bg_alt': '#2C2C2C',          # Alternative dark
+            'text': '#E8E3D9',            # Warm off-white
+            'text_bright': '#FFFFFF',     # Bright white text
             'text_dim': '#A3A08C',        # Dimmed text
             'accent': '#A3D977',          # Matcha green
             'accent_alt': '#7CB518',      # Deeper matcha
             'accent_bright': '#C4E6B5',   # Bright matcha
-            'accent_special': '#E6CBA5',  # Oak highlight
+            'accent_special': '#8B5A2B',  # Dark oak wood
             'green': '#A3D977',           # Matcha green
-            'green_alt': '#BCD9B4',
-            'border': '#6B6E58',
-            'border_light': '#A3A08C',
-            'cursor': '#A3D977',
-            'alert': '#FF4D4D',
-            'warning': '#FFB940',
-            'selection': '#A3D977'
+            'green_alt': '#7CB518',       # Alternative matcha
+            'border': '#3A3A3A',          # Dark border
+            'border_light': '#4D4D4D',    # Light border
+            'cursor': '#A3D977',          # Cursor color (matcha)
+            'alert': '#FF6B6B',           # Alert/Error color
+            'warning': '#FFD166',         # Warning color
+            'selection': '#A3D977'        # Selection color (matcha)
         }
         
         # Track if window is minimized
@@ -127,8 +129,8 @@ class OverlayAutoFisher(QMainWindow):
         self.last_move_target = None
         self.game_window = None
         self.game_window_name = "Play Together"
-        self.offset_x = 16  # Offset from game window left edge
-        self.offset_y = 36  # Offset from game window top edge
+        self.offset_x = 10  # Reduced from 16 to 10 - Offset from game window left edge
+        self.offset_y = 40  # Increased from 36 to 40 - Offset from game window top edge
         self.tracking_active = False
         self.tracking_thread = None
         self.game_window_size = (0, 0)  # Will store (width, height) of game window
@@ -161,7 +163,11 @@ class OverlayAutoFisher(QMainWindow):
         # Create the UI (expanded state by default)
         self.central_widget = QWidget(self)
         self.setCentralWidget(self.central_widget)
-        self.central_widget.setStyleSheet(f"background-color: {self.colors['bg_dark']}; border: 2px solid {self.colors['border']};")
+        self.central_widget.setStyleSheet(f"""
+            background-color: {self.colors['bg_dark']};
+            border: 1px solid {self.colors['border']};
+            border-radius: {self.ui_scale['border_radius']}px;
+        """)
         
         self.main_layout = QVBoxLayout(self.central_widget)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
@@ -203,13 +209,15 @@ class OverlayAutoFisher(QMainWindow):
         # Calculate scaled values
         self.ui_scale = {
             'base': base_scale,
-            'margins': max(2, int(5 * base_scale)),
-            'spacing': max(1, int(2 * base_scale)),
-            'button_height': max(20, int(30 * base_scale)),
-            'title_height': max(20, int(30 * base_scale)),
+            'margins': max(2, int(8 * base_scale)),
+            'spacing': max(1, int(4 * base_scale)),
+            'button_height': max(20, int(32 * base_scale)),
+            'title_height': max(20, int(36 * base_scale)),
             'font_size': max(8, int(10 * base_scale)),
             'small_font_size': max(7, int(9 * base_scale)),
-            'large_font_size': max(12, int(16 * base_scale))
+            'large_font_size': max(12, int(16 * base_scale)),
+            'border_radius': max(4, int(8 * base_scale)),
+            'button_radius': max(3, int(6 * base_scale))
         }
         
         return self.ui_scale
@@ -269,39 +277,53 @@ class OverlayAutoFisher(QMainWindow):
         self.title_bar.stop_drag_func = self.stop_drag
         self.title_bar.on_drag_func = self.on_drag
         title_height = self.ui_scale['title_height']
-        self.title_bar.setStyleSheet(f"background-color: {self.colors['bg_term']}; height: {title_height}px;")
+        border_radius = self.ui_scale['border_radius']
+        self.title_bar.setStyleSheet(f"""
+            background-color: {self.colors['bg_term']};
+            height: {title_height}px;
+            border-top-left-radius: {border_radius}px;
+            border-top-right-radius: {border_radius}px;
+        """)
         
         title_layout = QHBoxLayout(self.title_bar)
-        title_layout.setContentsMargins(self.ui_scale['margins'], 0, 0, 0)
+        title_layout.setContentsMargins(self.ui_scale['margins'], 0, self.ui_scale['margins'], 0)
         title_layout.setSpacing(0)
         
         # Title label with adjusted font size
         font_size = self.ui_scale['font_size']
         self.title_label = QLabel("AutoFisher v0.0.01a")
-        self.title_label.setStyleSheet(f"color: {self.colors['accent']}; font-weight: bold; font-size: {font_size}pt;")
+        self.title_label.setStyleSheet(f"""
+            color: {self.colors['accent']};
+            font-weight: bold;
+            font-size: {font_size}pt;
+        """)
         title_layout.addWidget(self.title_label)
         
         # Control buttons
         btn_frame = QFrame()
-        btn_frame.setStyleSheet(f"background-color: {self.colors['bg_term']};")
+        btn_frame.setStyleSheet(f"background-color: transparent;")
         btn_layout = QHBoxLayout(btn_frame)
         btn_layout.setContentsMargins(0, 0, 0, 0)
-        btn_layout.setSpacing(0)
+        btn_layout.setSpacing(self.ui_scale['spacing'])
         
         # Minimize/Expand toggle button
-        button_width = int(self.ui_scale['button_height'] * 1.0)
+        button_width = int(self.ui_scale['button_height'] * 0.8)
+        button_radius = button_width // 2  # Make it circular
         self.toggle_button = QPushButton("−")
         self.toggle_button.setStyleSheet(f"""
             QPushButton {{
-                background-color: {self.colors['bg_term']};
+                background-color: {self.colors['bg_lighter']};
                 color: {self.colors['text']};
                 border: none;
                 font-weight: bold;
                 font-size: {font_size}pt;
                 width: {button_width}px;
+                height: {button_width}px;
+                border-radius: {button_radius}px;
             }}
             QPushButton:hover {{
-                background-color: {self.colors['bg_lighter']};
+                background-color: {self.colors['bg_alt']};
+                color: {self.colors['text_bright']};
             }}
         """)
         self.toggle_button.clicked.connect(self.toggle_minimize)
@@ -311,15 +333,18 @@ class OverlayAutoFisher(QMainWindow):
         self.close_button = QPushButton("×")
         self.close_button.setStyleSheet(f"""
             QPushButton {{
-                background-color: {self.colors['bg_term']};
+                background-color: {self.colors['bg_lighter']};
                 color: {self.colors['alert']};
                 border: none;
                 font-weight: bold;
                 font-size: {font_size}pt;
                 width: {button_width}px;
+                height: {button_width}px;
+                border-radius: {button_radius}px;
             }}
             QPushButton:hover {{
-                background-color: {self.colors['bg_lighter']};
+                background-color: {self.colors['alert']};
+                color: {self.colors['text_bright']};
             }}
         """)
         self.close_button.clicked.connect(self.close)
@@ -331,10 +356,14 @@ class OverlayAutoFisher(QMainWindow):
         # Content area
         self.content_frame = QFrame()
         content_margin = self.ui_scale['margins']
-        self.content_frame.setStyleSheet(f"background-color: {self.colors['bg_dark']}; margin: {content_margin}px;")
+        self.content_frame.setStyleSheet(f"""
+            background-color: {self.colors['bg_dark']};
+            margin: {content_margin}px;
+            border-radius: {self.ui_scale['border_radius']}px;
+        """)
         content_layout = QVBoxLayout(self.content_frame)
         content_layout.setContentsMargins(content_margin, content_margin, content_margin, content_margin)
-        content_layout.setSpacing(self.ui_scale['spacing'])
+        content_layout.setSpacing(self.ui_scale['spacing'] * 2)
         
         # Create AutoFisher UI sections
         self.create_settings_section(content_layout)
@@ -351,6 +380,7 @@ class OverlayAutoFisher(QMainWindow):
         normal_font = self.ui_scale['font_size']
         margin = self.ui_scale['margins']
         spacing = self.ui_scale['spacing']
+        border_radius = self.ui_scale['border_radius']
         
         settings_frame = QGroupBox("SETTINGS")
         settings_frame.setStyleSheet(f"""
@@ -359,19 +389,21 @@ class OverlayAutoFisher(QMainWindow):
                 color: {self.colors['accent']};
                 background-color: {self.colors['bg_dark']};
                 border: 1px solid {self.colors['border']};
-                margin-top: {margin}px;
+                border-radius: {border_radius}px;
+                margin-top: {margin + small_font}px;
                 padding: {margin}px;
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
-                left: 5px;
-                top: 0px;
-                padding: 0px 5px 0px 5px;
+                left: {margin}px;
+                top: -{small_font}px;
+                padding: 0px {margin/2}px 0px {margin/2}px;
+                background-color: {self.colors['bg_dark']};
             }}
         """)
         settings_layout = QGridLayout(settings_frame)
-        settings_layout.setContentsMargins(margin-1, margin*2, margin-1, margin-1)
-        settings_layout.setSpacing(spacing)
+        settings_layout.setContentsMargins(margin, margin*2, margin, margin)
+        settings_layout.setSpacing(spacing * 2)
 
         # Threshold (row 0)
         threshold_label = QLabel("Threshold")
@@ -387,19 +419,29 @@ class OverlayAutoFisher(QMainWindow):
         self.threshold_slider = QSlider(Qt.Orientation.Horizontal)
         self.threshold_slider.setRange(1, 50)  # 0.01 to 0.50
         self.threshold_slider.setValue(int(self.threshold_var * 100))
-        slider_height = max(8, int(8 * self.ui_scale['base']))
-        handle_width = max(12, int(12 * self.ui_scale['base']))
+        slider_height = max(6, int(6 * self.ui_scale['base']))
+        handle_width = max(16, int(16 * self.ui_scale['base']))
+        handle_radius = handle_width // 2
         self.threshold_slider.setStyleSheet(f"""
             QSlider::groove:horizontal {{
-                background: {self.colors['bg_lighter']};
+                background: {self.colors['bg_alt']};
+                height: {slider_height}px;
+                border-radius: {slider_height//2}px;
+            }}
+            QSlider::sub-page:horizontal {{
+                background: {self.colors['accent']};
                 height: {slider_height}px;
                 border-radius: {slider_height//2}px;
             }}
             QSlider::handle:horizontal {{
-                background: {self.colors['accent']};
+                background: {self.colors['text_bright']};
                 width: {handle_width}px;
+                height: {handle_width}px;
                 margin: -{(handle_width-slider_height)//2}px 0;
-                border-radius: {handle_width//2}px;
+                border-radius: {handle_radius}px;
+            }}
+            QSlider::handle:horizontal:hover {{
+                background: {self.colors['accent_bright']};
             }}
         """)
         self.threshold_slider.valueChanged.connect(self.on_threshold_changed)
@@ -423,17 +465,18 @@ class OverlayAutoFisher(QMainWindow):
         
         self.size_var = "50"
         self.size_entry = QLineEdit(self.size_var)
-        entry_padding = max(2, int(2 * self.ui_scale['base']))
+        entry_padding = max(4, int(4 * self.ui_scale['base']))
         entry_width = max(60, int(60 * self.ui_scale['base']))
+        entry_radius = self.ui_scale['button_radius']
         self.size_entry.setStyleSheet(f"""
             QLineEdit {{
-                background-color: {self.colors['bg_dark']};
+                background-color: {self.colors['bg_lighter']};
                 color: {self.colors['text']};
                 selection-background-color: {self.colors['selection']};
                 selection-color: {self.colors['text_bright']};
-                border: 1px solid {self.colors['border']};
+                border: none;
                 padding: {entry_padding}px;
-                border-radius: 0px;
+                border-radius: {entry_radius}px;
                 font-size: {normal_font}pt;
                 max-width: {entry_width}px;
             }}
@@ -464,13 +507,13 @@ class OverlayAutoFisher(QMainWindow):
         self.cooldown_entry = QLineEdit(self.cooldown_var)
         self.cooldown_entry.setStyleSheet(f"""
             QLineEdit {{
-                background-color: {self.colors['bg_dark']};
+                background-color: {self.colors['bg_lighter']};
                 color: {self.colors['text']};
                 selection-background-color: {self.colors['selection']};
                 selection-color: {self.colors['text_bright']};
-                border: 1px solid {self.colors['border']};
+                border: none;
                 padding: {entry_padding}px;
-                border-radius: 0px;
+                border-radius: {entry_radius}px;
                 font-size: {normal_font}pt;
                 max-width: {entry_width}px;
             }}
@@ -502,13 +545,13 @@ class OverlayAutoFisher(QMainWindow):
         self.fishing_key_entry = QLineEdit(self.fishing_key_var)
         self.fishing_key_entry.setStyleSheet(f"""
             QLineEdit {{
-                background-color: {self.colors['bg_dark']};
+                background-color: {self.colors['bg_lighter']};
                 color: {self.colors['text']};
                 selection-background-color: {self.colors['selection']};
                 selection-color: {self.colors['text_bright']};
-                border: 1px solid {self.colors['border']};
+                border: none;
                 padding: {entry_padding}px;
-                border-radius: 0px;
+                border-radius: {entry_radius}px;
                 font-size: {normal_font}pt;
                 max-width: {small_entry_width}px;
             }}
@@ -521,26 +564,25 @@ class OverlayAutoFisher(QMainWindow):
         
         settings_layout.addWidget(fishing_key_frame, 3, 1)
 
-        button_padding_v = max(6, int(6 * self.ui_scale['base']))
-        button_padding_h = max(10, int(10 * self.ui_scale['base']))
+        button_padding_v = max(8, int(8 * self.ui_scale['base']))
+        button_padding_h = max(12, int(12 * self.ui_scale['base']))
         
         self.apply_button = QPushButton("Apply Settings")
         self.apply_button.setStyleSheet(f"""
             QPushButton {{
-                background-color: {self.colors['bg_dark']};
-                color: {self.colors['accent']};
-                border: 1px solid {self.colors['border']};
+                background-color: {self.colors['accent']};
+                color: {self.colors['bg_dark']};
+                border: none;
                 padding: {button_padding_v}px {button_padding_h}px;
                 font-size: {normal_font}pt;
                 font-weight: bold;
+                border-radius: {self.ui_scale['button_radius']}px;
             }}
             QPushButton:hover {{
-                background-color: {self.colors['bg_lighter']};
-                color: {self.colors['accent_bright']};
+                background-color: {self.colors['accent_bright']};
             }}
             QPushButton:pressed {{
-                background-color: {self.colors['bg_alt']};
-                color: {self.colors['accent_alt']};
+                background-color: {self.colors['accent_alt']};
             }}
         """)
         self.apply_button.clicked.connect(self.dummy_apply_settings)
@@ -555,34 +597,46 @@ class OverlayAutoFisher(QMainWindow):
     
     def create_monitoring_section(self, parent_layout):
         """Create monitoring section similar to AutoFisher"""
+        small_font = self.ui_scale['small_font_size']
+        normal_font = self.ui_scale['font_size']
+        margin = self.ui_scale['margins']
+        border_radius = self.ui_scale['border_radius']
+        
         monitoring_frame = QGroupBox("MONITORING")
         monitoring_frame.setStyleSheet(f"""
             QGroupBox {{
-                font-size: 9pt;
+                font-size: {small_font}pt;
                 color: {self.colors['accent']};
                 background-color: {self.colors['bg_dark']};
                 border: 1px solid {self.colors['border']};
-                margin-top: 8px;
-                padding: 8px;
+                border-radius: {border_radius}px;
+                margin-top: {margin + small_font}px;
+                padding: {margin}px;
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
-                left: 5px;
-                top: 0px;
-                padding: 0px 5px 0px 5px;
+                left: {margin}px;
+                top: -{small_font}px;
+                padding: 0px {margin/2}px 0px {margin/2}px;
+                background-color: {self.colors['bg_dark']};
             }}
         """)
         
         monitoring_layout = QVBoxLayout(monitoring_frame)
-        monitoring_layout.setContentsMargins(4, 15, 4, 4)
+        monitoring_layout.setContentsMargins(margin, margin*2, margin, margin)
+        monitoring_layout.setSpacing(self.ui_scale['spacing'])
         
         # Stats details in two columns
         stats_frame = QFrame()
-        stats_frame.setStyleSheet(f"background-color: {self.colors['bg_dark']}; border: none;")
+        stats_frame.setStyleSheet(f"""
+            background-color: {self.colors['bg_dark']};
+            border: none;
+            border-radius: {border_radius/2}px;
+        """)
         
         stats_layout = QGridLayout(stats_frame)
-        stats_layout.setContentsMargins(0, 0, 0, 0)
-        stats_layout.setSpacing(1)
+        stats_layout.setContentsMargins(margin, margin, margin, margin)
+        stats_layout.setSpacing(self.ui_scale['spacing'])
         
         self.stats_labels = {}
         stats_keys = [
@@ -601,7 +655,11 @@ class OverlayAutoFisher(QMainWindow):
             row = i // 2
             col = i % 2
             l = QLabel(f"{label}: ...")
-            l.setStyleSheet(f"color: {self.colors['text']}; font-size: 10pt;")
+            l.setStyleSheet(f"""
+                color: {self.colors['text']};
+                font-size: {normal_font}pt;
+                padding: {self.ui_scale['spacing']}px;
+            """)
             stats_layout.addWidget(l, row, col, 1, 1, Qt.AlignmentFlag.AlignLeft)
             stats_layout.setColumnStretch(col, 1)
             self.stats_labels[key] = l
@@ -612,10 +670,12 @@ class OverlayAutoFisher(QMainWindow):
         self.status_label = QLabel("System: monitor.idle")
         self.status_label.setStyleSheet(f"""
             color: {self.colors['text_dim']};
-            font-size: 9pt;
-            padding: {max(2, int(2 * self.ui_scale['base']))}px;
+            font-size: {normal_font}pt;
+            padding: {self.ui_scale['spacing']}px;
+            background-color: {self.colors['bg_lighter']};
+            border-radius: {border_radius/2}px;
         """)
-        monitoring_layout.addWidget(self.status_label, alignment=Qt.AlignmentFlag.AlignLeft)
+        monitoring_layout.addWidget(self.status_label)
 
         # Initialize with dummy values
         self.update_stats_display()
@@ -628,8 +688,9 @@ class OverlayAutoFisher(QMainWindow):
         normal_font = self.ui_scale['font_size']
         margin = self.ui_scale['margins']
         spacing = self.ui_scale['spacing']
-        button_padding_v = max(5, int(5 * self.ui_scale['base']))
-        button_padding_h = max(10, int(10 * self.ui_scale['base']))
+        button_padding_v = max(8, int(8 * self.ui_scale['base']))
+        button_padding_h = max(12, int(12 * self.ui_scale['base']))
+        button_radius = self.ui_scale['button_radius']
         
         control_frame = QGroupBox("CONTROL")
         control_frame.setStyleSheet(f"""
@@ -638,14 +699,16 @@ class OverlayAutoFisher(QMainWindow):
                 color: {self.colors['accent']};
                 background-color: {self.colors['bg_dark']};
                 border: 1px solid {self.colors['border']};
-                margin-top: {margin}px;
+                border-radius: {self.ui_scale['border_radius']}px;
+                margin-top: {margin + small_font}px;
                 padding: {margin}px;
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
-                left: 5px;
-                top: 0px;
-                padding: 0px 5px 0px 5px;
+                left: {margin}px;
+                top: -{small_font}px;
+                padding: 0px {margin/2}px 0px {margin/2}px;
+                background-color: {self.colors['bg_dark']};
             }}
         """)
         
@@ -661,96 +724,101 @@ class OverlayAutoFisher(QMainWindow):
         button_layout.setContentsMargins(spacing, spacing, spacing, spacing)
         button_layout.setSpacing(spacing)
         
-        self.start_button = QPushButton("start")
+        self.start_button = QPushButton("Start")
         self.start_button.setStyleSheet(f"""
             QPushButton {{
-                background-color: {self.colors['bg_dark']};
-                color: {self.colors['green']};
-                border: 1px solid {self.colors['border']};
+                background-color: {self.colors['green']};
+                color: {self.colors['bg_dark']};
+                border: none;
                 padding: {button_padding_v}px {button_padding_h}px;
                 font-size: {normal_font}pt;
+                font-weight: bold;
+                border-radius: {button_radius}px;
             }}
             QPushButton:hover {{
-                background-color: {self.colors['bg_lighter']};
-                color: {self.colors['green_alt']};
+                background-color: {self.colors['green_alt']};
             }}
             QPushButton:pressed {{
-                background-color: {self.colors['bg_alt']};
-                color: {self.colors['green']};
+                background-color: {self.colors['accent']};
             }}
             QPushButton:disabled {{
-                color: grey;
+                background-color: {self.colors['bg_alt']};
+                color: {self.colors['text_dim']};
             }}
         """)
         self.start_button.clicked.connect(self.dummy_start)
         button_layout.addWidget(self.start_button)
         
-        self.stop_button = QPushButton("stop")
+        self.stop_button = QPushButton("Stop")
         self.stop_button.setEnabled(False)
         self.stop_button.setStyleSheet(f"""
             QPushButton {{
-                background-color: {self.colors['bg_dark']};
-                color: {self.colors['alert']};
-                border: 1px solid {self.colors['border']};
+                background-color: {self.colors['alert']};
+                color: {self.colors['bg_dark']};
+                border: none;
                 padding: {button_padding_v}px {button_padding_h}px;
                 font-size: {normal_font}pt;
+                font-weight: bold;
+                border-radius: {button_radius}px;
             }}
             QPushButton:hover {{
-                background-color: {self.colors['bg_lighter']};
-                color: {self.colors['alert']};
+                background-color: {self.colors['accent_special']};
             }}
             QPushButton:pressed {{
-                background-color: {self.colors['bg_alt']};
-                color: {self.colors['alert']};
+                background-color: {self.colors['accent']};
             }}
             QPushButton:disabled {{
-                color: grey;
+                background-color: {self.colors['bg_alt']};
+                color: {self.colors['text_dim']};
             }}
         """)
         self.stop_button.clicked.connect(self.dummy_stop)
         button_layout.addWidget(self.stop_button)
         
-        self.pause_button = QPushButton("pause")
+        self.pause_button = QPushButton("Pause")
         self.pause_button.setEnabled(False)
         self.pause_button.setStyleSheet(f"""
             QPushButton {{
-                background-color: {self.colors['bg_dark']};
-                color: {self.colors['warning']};
-                border: 1px solid {self.colors['border']};
+                background-color: {self.colors['warning']};
+                color: {self.colors['bg_dark']};
+                border: none;
                 padding: {button_padding_v}px {button_padding_h}px;
                 font-size: {normal_font}pt;
+                font-weight: bold;
+                border-radius: {button_radius}px;
             }}
             QPushButton:hover {{
-                background-color: {self.colors['bg_lighter']};
-                color: {self.colors['warning']};
+                background-color: {self.colors['accent_special']};
             }}
             QPushButton:pressed {{
-                background-color: {self.colors['bg_alt']};
-                color: {self.colors['warning']};
+                background-color: {self.colors['accent']};
             }}
             QPushButton:disabled {{
-                color: grey;
+                background-color: {self.colors['bg_alt']};
+                color: {self.colors['text_dim']};
             }}
         """)
         self.pause_button.clicked.connect(self.dummy_pause)
         button_layout.addWidget(self.pause_button)
         
-        self.clear_button = QPushButton("clear-logs")
+        self.clear_button = QPushButton("Clear Logs")
         self.clear_button.setStyleSheet(f"""
             QPushButton {{
-                background-color: {self.colors['bg_dark']};
-                color: {self.colors['text_dim']};
-                border: 1px solid {self.colors['border']};
-                padding: {button_padding_v}px {button_padding_h}px;
-                font-size: {normal_font}pt;
-            }}
-            QPushButton:hover {{
                 background-color: {self.colors['bg_lighter']};
                 color: {self.colors['text']};
+                border: none;
+                padding: {button_padding_v}px {button_padding_h}px;
+                font-size: {normal_font}pt;
+                font-weight: bold;
+                border-radius: {button_radius}px;
+            }}
+            QPushButton:hover {{
+                background-color: {self.colors['bg_alt']};
+                color: {self.colors['text_bright']};
             }}
             QPushButton:pressed {{
-                background-color: {self.colors['bg_alt']};
-                color: {self.colors['text']};
+                background-color: {self.colors['accent']};
+                color: {self.colors['bg_dark']};
             }}
         """)
         self.clear_button.clicked.connect(self.clear_logs)
@@ -769,43 +837,47 @@ class OverlayAutoFisher(QMainWindow):
         # Adjust padding for the wider button
         ref_padding_h = max(15, int(15 * self.ui_scale['base']))
         
-        self.ref_button = QPushButton("capture-reference")
+        self.ref_button = QPushButton("Capture Reference")
         self.ref_button.setStyleSheet(f"""
             QPushButton {{
-                background-color: {self.colors['bg_dark']};
+                background-color: {self.colors['bg_lighter']};
                 color: {self.colors['accent']};
-                border: 1px solid {self.colors['border']};
-                padding: {button_padding_v}px {ref_padding_h}px;
+                border: none;
+                padding: {button_padding_v}px {button_padding_h}px;
                 font-size: {normal_font}pt;
+                font-weight: bold;
+                border-radius: {button_radius}px;
             }}
             QPushButton:hover {{
-                background-color: {self.colors['bg_lighter']};
-                color: {self.colors['accent_alt']};
+                background-color: {self.colors['bg_alt']};
+                color: {self.colors['accent_bright']};
             }}
             QPushButton:pressed {{
-                background-color: {self.colors['bg_alt']};
-                color: {self.colors['accent']};
+                background-color: {self.colors['accent']};
+                color: {self.colors['bg_dark']};
             }}
         """)
         self.ref_button.clicked.connect(self.dummy_capture_reference)
         button_layout2.addWidget(self.ref_button)
         
-        self.region_button = QPushButton("select-region")
+        self.region_button = QPushButton("Select Region")
         self.region_button.setStyleSheet(f"""
             QPushButton {{
-                background-color: {self.colors['bg_dark']};
+                background-color: {self.colors['bg_lighter']};
                 color: {self.colors['green']};
-                border: 1px solid {self.colors['border']};
+                border: none;
                 padding: {button_padding_v}px {button_padding_h}px;
                 font-size: {normal_font}pt;
+                font-weight: bold;
+                border-radius: {button_radius}px;
             }}
             QPushButton:hover {{
-                background-color: {self.colors['bg_lighter']};
+                background-color: {self.colors['bg_alt']};
                 color: {self.colors['green_alt']};
             }}
             QPushButton:pressed {{
-                background-color: {self.colors['bg_alt']};
-                color: {self.colors['green']};
+                background-color: {self.colors['green']};
+                color: {self.colors['bg_dark']};
             }}
         """)
         self.region_button.clicked.connect(self.dummy_select_region)
@@ -818,7 +890,9 @@ class OverlayAutoFisher(QMainWindow):
     def create_log_section(self, parent_layout):
         """Create log section similar to AutoFisher"""
         small_font = self.ui_scale['small_font_size']
+        normal_font = self.ui_scale['font_size']
         margin = self.ui_scale['margins']
+        border_radius = self.ui_scale['border_radius']
         console_font_size = max(9, int(9 * self.ui_scale['base']))
         
         log_frame = QGroupBox("LOGS")
@@ -828,30 +902,48 @@ class OverlayAutoFisher(QMainWindow):
                 color: {self.colors['accent']};
                 background-color: {self.colors['bg_dark']};
                 border: 1px solid {self.colors['border']};
-                margin-top: {margin}px;
+                border-radius: {border_radius}px;
+                margin-top: {margin + small_font}px;
                 padding: {margin}px;
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
-                left: 5px;
-                top: 0px;
-                padding: 0px 5px 0px 5px;
+                left: {margin}px;
+                top: -{small_font}px;
+                padding: 0px {margin/2}px 0px {margin/2}px;
+                background-color: {self.colors['bg_dark']};
             }}
         """)
         
         log_layout = QVBoxLayout(log_frame)
-        log_layout.setContentsMargins(margin-1, margin*2, margin-1, margin-1)
+        log_layout.setContentsMargins(margin, margin*2, margin, margin)
         log_layout.setSpacing(self.ui_scale['spacing'])
         
         self.log_console = QTextEdit()
         self.log_console.setStyleSheet(f"""
             QTextEdit {{
-                background-color: {self.colors['bg_dark']};
+                background-color: {self.colors['bg_lighter']};
                 color: {self.colors['text']};
                 border: none;
-                font-family: 'Consolas', monospace;
+                border-radius: {border_radius/2}px;
+                font-family: 'Consolas', 'Courier New', monospace;
                 font-size: {console_font_size}pt;
                 padding: {margin}px;
+            }}
+            QScrollBar:vertical {{
+                background-color: {self.colors['bg_lighter']};
+                width: {margin}px;
+                border-radius: {margin/2}px;
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {self.colors['border']};
+                border-radius: {margin/2}px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background-color: {self.colors['accent']};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
             }}
         """)
         self.log_console.setReadOnly(True)
@@ -868,9 +960,10 @@ class OverlayAutoFisher(QMainWindow):
         margin = self.ui_scale['margins']
         normal_font = self.ui_scale['font_size']
         large_font = self.ui_scale['large_font_size']
+        border_radius = self.ui_scale['border_radius']
         
         self.minimized_frame = QFrame(self.central_widget)
-        self.minimized_frame.setStyleSheet(f"background-color: {self.colors['bg_dark']}; border: none;")
+        self.minimized_frame.setStyleSheet(f"background-color: transparent; border: none;")
         self.minimized_frame.hide()  # Hide initially
         
         minimized_layout = QVBoxLayout(self.minimized_frame)
@@ -884,25 +977,36 @@ class OverlayAutoFisher(QMainWindow):
         self.minimized_content.on_drag_func = self.on_drag
         self.minimized_content.setStyleSheet(f"""
             background-color: {self.colors['bg_term']};
-            border-radius: 5px;
+            border: 1px solid {self.colors['border']};
+            border-radius: {border_radius}px;
         """)
         
         minimized_content_layout = QVBoxLayout(self.minimized_content)
-        minimized_content_layout.setContentsMargins(0, 0, 0, 0)
+        half_margin = int(margin/2)
+        minimized_content_layout.setContentsMargins(half_margin, half_margin, half_margin, half_margin)
         minimized_content_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         # Expand button
+        button_size = max(32, int(32 * self.ui_scale['base']))
         self.expand_button = QPushButton("+")
         self.expand_button.setStyleSheet(f"""
             QPushButton {{
-                background-color: transparent;
-                color: {self.colors['accent']};
+                background-color: {self.colors['accent']};
+                color: {self.colors['bg_dark']};
                 border: none;
+                border-radius: {button_size/2}px;
                 font-weight: bold;
                 font-size: {large_font}pt;
+                min-width: {button_size}px;
+                min-height: {button_size}px;
+                max-width: {button_size}px;
+                max-height: {button_size}px;
             }}
             QPushButton:hover {{
-                color: {self.colors['accent_bright']};
+                background-color: {self.colors['accent_bright']};
+            }}
+            QPushButton:pressed {{
+                background-color: {self.colors['accent_alt']};
             }}
         """)
         self.expand_button.clicked.connect(self.toggle_minimize)
@@ -938,8 +1042,15 @@ class OverlayAutoFisher(QMainWindow):
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
         self.pause_button.setEnabled(True)
-        self.status_label.setText("System: monitor.active")
-        self.status_label.setStyleSheet(f"color: {self.colors['green']}; font-size: 16pt; padding: 2px;")
+        self.status_label.setText("System: ACTIVE")
+        self.status_label.setStyleSheet(f"""
+            color: {self.colors['green']};
+            font-size: {self.ui_scale['large_font_size']}pt;
+            font-weight: bold;
+            padding: {self.ui_scale['spacing']}px;
+            background-color: {self.colors['bg_lighter']};
+            border-radius: {self.ui_scale['border_radius']/2}px;
+        """)
     
     def dummy_stop(self):
         """Dummy function for stop button"""
@@ -947,21 +1058,42 @@ class OverlayAutoFisher(QMainWindow):
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         self.pause_button.setEnabled(False)
-        self.status_label.setText("System: monitor.stopped")
-        self.status_label.setStyleSheet(f"color: {self.colors['alert']}; font-size: 16pt; padding: 2px;")
+        self.status_label.setText("System: STOPPED")
+        self.status_label.setStyleSheet(f"""
+            color: {self.colors['alert']};
+            font-size: {self.ui_scale['large_font_size']}pt;
+            font-weight: bold;
+            padding: {self.ui_scale['spacing']}px;
+            background-color: {self.colors['bg_lighter']};
+            border-radius: {self.ui_scale['border_radius']/2}px;
+        """)
     
     def dummy_pause(self):
         """Dummy function for pause button"""
-        if self.pause_button.text() == "pause":
+        if self.pause_button.text() == "Pause":
             self.add_log("Detection paused")
-            self.pause_button.setText("resume")
-            self.status_label.setText("System: monitor.paused")
-            self.status_label.setStyleSheet(f"color: {self.colors['warning']}; font-size: 16pt; padding: 2px;")
+            self.pause_button.setText("Resume")
+            self.status_label.setText("System: PAUSED")
+            self.status_label.setStyleSheet(f"""
+                color: {self.colors['warning']};
+                font-size: {self.ui_scale['large_font_size']}pt;
+                font-weight: bold;
+                padding: {self.ui_scale['spacing']}px;
+                background-color: {self.colors['bg_lighter']};
+                border-radius: {self.ui_scale['border_radius']/2}px;
+            """)
         else:
             self.add_log("Detection resumed")
-            self.pause_button.setText("pause")
-            self.status_label.setText("System: monitor.active")
-            self.status_label.setStyleSheet(f"color: {self.colors['green']}; font-size: 16pt; padding: 2px;")
+            self.pause_button.setText("Pause")
+            self.status_label.setText("System: ACTIVE")
+            self.status_label.setStyleSheet(f"""
+                color: {self.colors['green']};
+                font-size: {self.ui_scale['large_font_size']}pt;
+                font-weight: bold;
+                padding: {self.ui_scale['spacing']}px;
+                background-color: {self.colors['bg_lighter']};
+                border-radius: {self.ui_scale['border_radius']/2}px;
+            """)
     
     def dummy_capture_reference(self):
         """Dummy function for capture reference button"""
