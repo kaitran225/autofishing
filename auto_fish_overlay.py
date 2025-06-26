@@ -7,7 +7,7 @@ import datetime
 from typing import Callable, Optional, List, Tuple
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QFrame, QLabel, 
                             QPushButton, QVBoxLayout, QHBoxLayout, QGridLayout, 
-                            QScrollArea, QSlider, QLineEdit, QTextEdit, QGroupBox)
+                            QScrollArea, QSlider, QLineEdit, QTextEdit, QGroupBox, QTabWidget)
 from PyQt6.QtCore import Qt, QTimer, QPoint, QRect, pyqtSignal, QPropertyAnimation, QEasingCurve, QSize, QObject
 from PyQt6.QtGui import QFont, QColor, QPalette, QPixmap, QFontMetrics, QCursor, QMouseEvent
 from PyQt6.QtGui import QMoveEvent, QScreen
@@ -375,13 +375,14 @@ class OverlayAutoFisher(QMainWindow):
         self.expanded_layout.addWidget(self.content_frame)
     
     def create_settings_section(self, parent_layout):
-        """Create settings section similar to AutoFisher - more compact"""
+        """Create settings section with tabs for settings and monitoring preview"""
         small_font = self.ui_scale['small_font_size']
         normal_font = self.ui_scale['font_size']
         margin = self.ui_scale['margins']
         spacing = max(1, self.ui_scale['spacing'] - 1)  # Reduced spacing
         border_radius = self.ui_scale['border_radius']
         
+        # Create main container frame
         settings_frame = QGroupBox("")
         settings_frame.setStyleSheet(f"""
             QGroupBox {{
@@ -394,15 +395,44 @@ class OverlayAutoFisher(QMainWindow):
                 padding: {margin}px;
             }}
         """)
-        settings_layout = QGridLayout(settings_frame)
-        settings_layout.setContentsMargins(margin - 1, margin, margin - 1, margin - 1)  # Reduced margins
-        settings_layout.setSpacing(spacing)  # Reduced spacing
-        settings_layout.setVerticalSpacing(int(spacing / 2))  # Even smaller vertical spacing
-
+        
+        # Create tab widget
+        tab_layout = QVBoxLayout(settings_frame)
+        tab_layout.setContentsMargins(margin, margin, margin, margin)
+        
+        tab_widget = QTabWidget()
+        tab_widget.setStyleSheet(f"""
+            QTabWidget::pane {{
+                border: 1px solid {self.colors['border']};
+                border-radius: {border_radius}px;
+                background-color: {self.colors['bg_dark']};
+            }}
+            QTabBar::tab {{
+                background-color: {self.colors['bg_lighter']};
+                color: {self.colors['text']};
+                padding: {spacing}px {spacing*3}px;
+                margin-right: 2px;
+            }}
+            QTabBar::tab:selected {{
+                background-color: {self.colors['bg_dark']};
+                color: {self.colors['accent']};
+            }}
+            QTabBar::tab:hover:!selected {{
+                background-color: {self.colors['bg_alt']};
+            }}
+        """)
+        
+        # Create Settings tab
+        settings_tab = QWidget()
+        settings_tab_layout = QGridLayout(settings_tab)
+        settings_tab_layout.setContentsMargins(margin, margin, margin, margin)
+        settings_tab_layout.setSpacing(spacing)
+        settings_tab_layout.setVerticalSpacing(int(spacing / 2))
+        
         # Threshold (row 0)
         threshold_label = QLabel("Threshold")
         threshold_label.setStyleSheet(f"color: {self.colors['text']}; font-size: {normal_font}pt;")
-        settings_layout.addWidget(threshold_label, 0, 0, alignment=Qt.AlignmentFlag.AlignLeft)
+        settings_tab_layout.addWidget(threshold_label, 0, 0, alignment=Qt.AlignmentFlag.AlignLeft)
         
         threshold_frame = QFrame()
         threshold_frame.setStyleSheet(f"background-color: {self.colors['bg_dark']}; border: none;")
@@ -445,12 +475,12 @@ class OverlayAutoFisher(QMainWindow):
         self.threshold_label.setStyleSheet(f"color: {self.colors['text']}; font-size: {normal_font}pt; min-width: {40*self.ui_scale['base']}px;")
         threshold_layout.addWidget(self.threshold_label)
         
-        settings_layout.addWidget(threshold_frame, 0, 1)
+        settings_tab_layout.addWidget(threshold_frame, 0, 1)
 
         # Region Size (row 1)
         region_label = QLabel("Region Size")
         region_label.setStyleSheet(f"color: {self.colors['text']}; font-size: {normal_font}pt;")
-        settings_layout.addWidget(region_label, 1, 0, alignment=Qt.AlignmentFlag.AlignLeft)
+        settings_tab_layout.addWidget(region_label, 1, 0, alignment=Qt.AlignmentFlag.AlignLeft)
         
         region_size_frame = QFrame()
         region_size_frame.setStyleSheet(f"background-color: {self.colors['bg_dark']}; border: none;")
@@ -485,12 +515,12 @@ class OverlayAutoFisher(QMainWindow):
         region_layout.addWidget(px_label)
         region_layout.addStretch()
         
-        settings_layout.addWidget(region_size_frame, 1, 1)
+        settings_tab_layout.addWidget(region_size_frame, 1, 1)
 
         # Cooldown (row 2)
         cooldown_label = QLabel("Cooldown")
         cooldown_label.setStyleSheet(f"color: {self.colors['text']}; font-size: {normal_font}pt;")
-        settings_layout.addWidget(cooldown_label, 2, 0, alignment=Qt.AlignmentFlag.AlignLeft)
+        settings_tab_layout.addWidget(cooldown_label, 2, 0, alignment=Qt.AlignmentFlag.AlignLeft)
         
         cooldown_frame = QFrame()
         cooldown_frame.setStyleSheet(f"background-color: {self.colors['bg_dark']}; border: none;")
@@ -522,12 +552,12 @@ class OverlayAutoFisher(QMainWindow):
         cooldown_layout.addWidget(sec_label)
         cooldown_layout.addStretch()
         
-        settings_layout.addWidget(cooldown_frame, 2, 1)
+        settings_tab_layout.addWidget(cooldown_frame, 2, 1)
 
         # Fishing Key (row 3)
         fishing_key_label = QLabel("Fishing Key")
         fishing_key_label.setStyleSheet(f"color: {self.colors['text']}; font-size: {normal_font}pt;")
-        settings_layout.addWidget(fishing_key_label, 3, 0, alignment=Qt.AlignmentFlag.AlignLeft)
+        settings_tab_layout.addWidget(fishing_key_label, 3, 0, alignment=Qt.AlignmentFlag.AlignLeft)
         
         fishing_key_frame = QFrame()
         fishing_key_frame.setStyleSheet(f"background-color: {self.colors['bg_dark']}; border: none;")
@@ -556,8 +586,9 @@ class OverlayAutoFisher(QMainWindow):
         fishing_key_layout.addWidget(self.fishing_key_entry)
         fishing_key_layout.addStretch()
         
-        settings_layout.addWidget(fishing_key_frame, 3, 1)
+        settings_tab_layout.addWidget(fishing_key_frame, 3, 1)
 
+        # Apply Settings button
         button_padding_v = max(8, int(8 * self.ui_scale['base']))
         button_padding_h = max(12, int(12 * self.ui_scale['base']))
         
@@ -580,7 +611,37 @@ class OverlayAutoFisher(QMainWindow):
             }}
         """)
         self.apply_button.clicked.connect(self.dummy_apply_settings)
-        fishing_key_layout.addWidget(self.apply_button)
+        settings_tab_layout.addWidget(self.apply_button, 4, 1, alignment=Qt.AlignmentFlag.AlignRight)
+        
+        # Create Monitoring Preview tab
+        preview_tab = QWidget()
+        preview_tab_layout = QVBoxLayout(preview_tab)
+        preview_tab_layout.setContentsMargins(margin, margin, margin, margin)
+        preview_tab_layout.setSpacing(spacing)
+        
+        preview_tab.setStyleSheet(f"""
+            background-color: {self.colors['bg_lighter']};
+        """)
+
+        # Placeholder for preview image
+        self.preview_label = QLabel("No preview available\nSelect a region first")
+        self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.preview_label.setStyleSheet(f"""
+            color: {self.colors['text_dim']};
+            font-size: {normal_font}pt;
+            background-color: {self.colors['bg_dark']};
+            border-radius: {border_radius-2}px;
+            padding: 0px;
+        """)
+        self.preview_label.setMinimumHeight(150)
+        preview_tab_layout.addWidget(self.preview_label)
+
+        # Add tabs to the tab widget
+        tab_widget.addTab(preview_tab, "Live Preview")
+        tab_widget.addTab(settings_tab, "Settings")
+        
+        # Add tab widget to main layout
+        tab_layout.addWidget(tab_widget)
         
         parent_layout.addWidget(settings_frame)
     
