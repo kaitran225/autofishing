@@ -71,8 +71,8 @@ class OverlayAutoFisher(QMainWindow):
         self.default_height = 550
         
         # Dynamic sizing parameters - more compact
-        self.game_width_percentage = 0.20  # Reduced from 0.25 to 20% of game width
-        self.game_height_percentage = 0.50  # Reduced from 0.60 to 50% of game height
+        self.game_width_percentage = 0.25  # Reduced from 0.25 to 20% of game width
+        self.game_height_percentage = 0.60  # Reduced from 0.60 to 50% of game height
         
         # Set initial size - will be recalculated if game window is found
         self.expanded_width = int(self.default_width * self.game_width_percentage)  # Make default size more compact
@@ -204,7 +204,7 @@ class OverlayAutoFisher(QMainWindow):
         height = self.expanded_height
         
         # Determine base scaling factor (more compact)
-        base_scale = 0.65  # Reduced from 0.7 for more compact UI
+        base_scale = 0.7  # Reduced from 0.7 for more compact UI
         
         # Calculate scaled values - more compact
         self.ui_scale = {
@@ -901,11 +901,7 @@ class OverlayAutoFisher(QMainWindow):
         log_layout.setContentsMargins(margin,margin, margin, margin)  # Reduced top margin
         log_layout.setSpacing(self.ui_scale['spacing'])
         
-        # # Set a fixed height for the log console (smaller)
-        # log_height = max(60, int(80 * self.ui_scale['base']))  # More compact log area
-        
         self.log_console = QTextEdit()
-        # self.log_console.setFixedHeight(log_height)  # Set fixed height for compact display
         self.log_console.setStyleSheet(f"""
             QTextEdit {{
                 background-color: {self.colors['bg_lighter']};
@@ -1094,13 +1090,10 @@ class OverlayAutoFisher(QMainWindow):
         
     def update_region_info(self, region=None):
         """Update the region info label similar to autofisher.py"""
-        if region:
+        if region and hasattr(self, 'region_info_label'):
             left, top, right, bottom = region
             width = right - left
             height = bottom - top
-            self.region_info_label.setText(f"Region: ({left},{top}) size: {width}×{height}")
-        else:
-            self.region_info_label.setText("No region selected")
     
     def add_log(self, message):
         """Add a message to the log console, write to file, and print to console"""
@@ -1125,8 +1118,12 @@ class OverlayAutoFisher(QMainWindow):
     
     def clear_logs(self):
         """Clear the log console"""
-        self.log_console = None
-        self.add_log("Logs cleared")
+        if hasattr(self, 'log_console') and self.log_console is not None:
+            self.log_console.clear()
+            self.add_log("Logs cleared")
+        else:
+            # If log console doesn't exist yet, just clear the buffer
+            self.log_buffer.clear()
     
     def toggle_minimize(self):
         """Toggle between minimized and expanded states with animation"""
