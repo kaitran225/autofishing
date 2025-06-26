@@ -130,11 +130,11 @@ class OverlayAutoFisher(QMainWindow):
         self.last_game_window_position = (0, 0)
         self.game_window = None
         self.game_window_name = "Play Together"
-        self.offset_x = 10  # Reduced from 16 to 10 - Offset from game window left edge
-        self.offset_y = 40  # Increased from 36 to 40 - Offset from game window top edge
+        self.offset_x = 10
+        self.offset_y = 40
         self.tracking_active = False
         self.tracking_thread = None
-        self.game_window_size = (0, 0)  # Will store (width, height) of game window
+        self.game_window_size = (0, 0)
         
         # Smooth movement variables
         self.target_x = 0
@@ -142,9 +142,9 @@ class OverlayAutoFisher(QMainWindow):
         self.current_x = 0
         self.current_y = 0
         self.is_animating = False
-        self.animation_speed = 0.15  # Lower = faster animation (0-1)
-        self.animation_min_step = 1  # Minimum pixel step for small movements
-        self.animation_timer = None  # Animation timer
+        self.animation_speed = 0.15
+        self.animation_min_step = 1
+        self.animation_timer = None
         
         # Track mouse position for dragging
         self.drag_start_position = None
