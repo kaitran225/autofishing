@@ -127,6 +127,7 @@ class OverlayAutoFisher(QMainWindow):
         
         # Game window tracking
         self.last_move_target = None
+        self.last_game_window_position = (0, 0)
         self.game_window = None
         self.game_window_name = "Play Together"
         self.offset_x = 10  # Reduced from 16 to 10 - Offset from game window left edge
@@ -587,12 +588,13 @@ class OverlayAutoFisher(QMainWindow):
         """Handle threshold slider change - with feedback like in autofisher.py"""
         self.threshold_var = value / 100.0
         self.threshold_label.setText(f"{self.threshold_var:.2f}")
-        
+
         # Add threshold guidance messages like in autofisher.py
-        if self.threshold_var < 0.03:
+        if self.threshold_var < 0.5:
             self.add_log("Current threshold is very sensitive - may cause false positives")
-        elif self.threshold_var > 0.2:
-            self.add_log("Current threshold is not very sensitive - may miss subtle changes")
+          
+        elif self.threshold_var > 0.25:
+            self.add_log("Current threshold: {self.threshold_var} is not very sensitive - may miss subtle changes")
     
     def create_monitoring_section(self, parent_layout):
         """Create monitoring section similar to AutoFisher - more compact"""
@@ -617,19 +619,7 @@ class OverlayAutoFisher(QMainWindow):
         monitoring_layout = QVBoxLayout(monitoring_frame)
         monitoring_layout.setContentsMargins(margin-1, margin, margin-1, margin-1)  # Reduced margins
         monitoring_layout.setSpacing(max(1, self.ui_scale['spacing'] - 1))  # Reduced spacing
-        
-        # Region info display (from autofisher.py)
-        self.region_info_label = QLabel("No region selected")
-        self.region_info_label.setStyleSheet(f"""
-            color: {self.colors['accent']};
-            font-size: {small_font}pt;
-            padding: {max(1, self.ui_scale['spacing']-1)}px;
-            border: 1px solid {self.colors['border']};
-            border-radius: {border_radius/2}px;
-            background-color: {self.colors['bg_lighter']};
-        """)
-        monitoring_layout.addWidget(self.region_info_label)
-        
+
         # Stats details in two columns - more compact
         stats_frame = QFrame()
         stats_frame.setStyleSheet(f"""
@@ -1330,8 +1320,6 @@ class OverlayAutoFisher(QMainWindow):
         if not WINDOWS_SUPPORT:
             return
 
-        last_resize_time = 0
-        resize_interval = 1.0  # Check resize every 1 second to reduce CPU usage
         last_position_update_time = 0
         position_update_interval = 0.015  # Update position every 0.1 seconds
         
@@ -1357,51 +1345,19 @@ class OverlayAutoFisher(QMainWindow):
                 try:
                     # Get window position and size
                     win_left, win_top, win_right, win_bottom = win32gui.GetWindowRect(self.game_window)
-                    
-                    # Check if we need to resize (less frequently)
-                    if current_time - last_resize_time > resize_interval:
-                        new_width = win_right - win_left
-                        new_height = win_bottom - win_top
-                        
-                        # Update game window size if changed
-                        if (new_width, new_height) != self.game_window_size:
-                            self.game_window_size = (new_width, new_height)
-                            
-                            # Calculate the new size for the overlay
-                            overlay_width = int(new_width * self.game_width_percentage)
-                            overlay_height = int(new_height * self.game_height_percentage)
-                            
-                            # Always update the expanded size
-                            self.expanded_width = overlay_width
-                            self.expanded_height = overlay_height
-                            
-                            # Only resize if not minimized
-                            if not self.is_minimized:
-                                # Use win32gui to resize the window directly
-                                try:
-                                    win32gui.SetWindowPos(
-                                        self.hwnd,
-                                        0,  # No z-order change
-                                        0, 0,  # Position (unchanged)
-                                        self.expanded_width, self.expanded_height,  # New size
-                                        win32con.SWP_NOMOVE | win32con.SWP_NOZORDER
-                                    )
-                                except Exception as e:
-                                    print(f"Error resizing window: {e}")
-                        
-                        last_resize_time = current_time
 
-                    # Update position more frequently
-                    if current_time - last_position_update_time > position_update_interval:
-                        # Move overlay window to track game window
-                        win32gui.SetWindowPos(
+                    if(win_left == self.last_game_window_position[0] and win_top == self.last_game_window_position[1]):
+                        continue
+
+                    win32gui.SetWindowPos(
                             self.hwnd,
                             0,  # No z-order change
                             win_left + offset_x, win_top + offset_y,  # Offset position
                             0, 0,  # Size (unchanged)
                             win32con.SWP_NOSIZE | win32con.SWP_NOZORDER
                         )
-                        last_position_update_time = current_time
+                    self.last_game_window_position = (win_left, win_top)
+                    time.sleep(position_update_interval)
                         
                 except Exception as e:
                     print(f"Error in tracking loop: {e}")
