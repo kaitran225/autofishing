@@ -81,8 +81,8 @@ class OverlayAutoFisher(QMainWindow):
         # Calculate initial UI scaling factors
         self.ui_scale = {
             'base': 1.0,            # Base scaling factor
-            'margins': 8,           # Default margin size (increased)
-            'spacing': 4,           # Default spacing (increased)
+            'margins': 3,           # Default margin size (increased)
+            'spacing': 6,           # Default spacing (increased)
             'button_height': 32,    # Default button height (increased)
             'title_height': 36,     # Default title bar height (increased)
             'font_size': 10,        # Default font size
@@ -203,9 +203,7 @@ class OverlayAutoFisher(QMainWindow):
         height = self.expanded_height
         
         # Determine base scaling factor (1.0 is the reference at 380px width)
-        base_scale = min(width / 380, height / 580)
-        base_scale = max(0.7, min(base_scale, 1.5))  # Clamp between 0.7 and 1.5
-        
+        base_scale = 0.7        
         # Calculate scaled values
         self.ui_scale = {
             'base': base_scale,
@@ -214,8 +212,8 @@ class OverlayAutoFisher(QMainWindow):
             'button_height': max(20, int(32 * base_scale)),
             'title_height': max(20, int(36 * base_scale)),
             'font_size': max(8, int(10 * base_scale)),
-            'small_font_size': max(7, int(9 * base_scale)),
-            'large_font_size': max(12, int(16 * base_scale)),
+            'small_font_size': max(5, int(7 * base_scale)),
+            'large_font_size': max(10, int(13 * base_scale)),
             'border_radius': max(4, int(8 * base_scale)),
             'button_radius': max(3, int(6 * base_scale))
         }
@@ -390,20 +388,20 @@ class OverlayAutoFisher(QMainWindow):
                 background-color: {self.colors['bg_dark']};
                 border: 1px solid {self.colors['border']};
                 border-radius: {border_radius}px;
-                margin-top: {margin + small_font}px;
+                margin-top: {margin}px;
                 padding: {margin}px;
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
                 left: {margin}px;
-                top: -{small_font}px;
+                top: {small_font}px;
                 padding: 0px {margin/2}px 0px {margin/2}px;
                 background-color: {self.colors['bg_dark']};
             }}
         """)
         settings_layout = QGridLayout(settings_frame)
-        settings_layout.setContentsMargins(margin, margin*2, margin, margin)
-        settings_layout.setSpacing(spacing * 2)
+        settings_layout.setContentsMargins(margin, margin, margin, margin)
+        settings_layout.setSpacing(spacing)
 
         # Threshold (row 0)
         threshold_label = QLabel("Threshold")
@@ -420,7 +418,7 @@ class OverlayAutoFisher(QMainWindow):
         self.threshold_slider.setRange(1, 50)  # 0.01 to 0.50
         self.threshold_slider.setValue(int(self.threshold_var * 100))
         slider_height = max(6, int(6 * self.ui_scale['base']))
-        handle_width = max(16, int(16 * self.ui_scale['base']))
+        handle_width = max(12, int(12 * self.ui_scale['base']))
         handle_radius = handle_width // 2
         self.threshold_slider.setStyleSheet(f"""
             QSlider::groove:horizontal {{
@@ -437,7 +435,7 @@ class OverlayAutoFisher(QMainWindow):
                 background: {self.colors['text_bright']};
                 width: {handle_width}px;
                 height: {handle_width}px;
-                margin: -{(handle_width-slider_height)//2}px 0;
+                margin: {(handle_width-slider_height)//2}px 0;
                 border-radius: {handle_radius}px;
             }}
             QSlider::handle:horizontal:hover {{
@@ -475,7 +473,7 @@ class OverlayAutoFisher(QMainWindow):
                 selection-background-color: {self.colors['selection']};
                 selection-color: {self.colors['text_bright']};
                 border: none;
-                padding: {entry_padding}px;
+                padding: {entry_padding / 2}px;
                 border-radius: {entry_radius}px;
                 font-size: {normal_font}pt;
                 max-width: {entry_width}px;
@@ -512,7 +510,7 @@ class OverlayAutoFisher(QMainWindow):
                 selection-background-color: {self.colors['selection']};
                 selection-color: {self.colors['text_bright']};
                 border: none;
-                padding: {entry_padding}px;
+                padding: {entry_padding / 2}px;
                 border-radius: {entry_radius}px;
                 font-size: {normal_font}pt;
                 max-width: {entry_width}px;
@@ -550,7 +548,7 @@ class OverlayAutoFisher(QMainWindow):
                 selection-background-color: {self.colors['selection']};
                 selection-color: {self.colors['text_bright']};
                 border: none;
-                padding: {entry_padding}px;
+                padding: {entry_padding / 2}px;
                 border-radius: {entry_radius}px;
                 font-size: {normal_font}pt;
                 max-width: {small_entry_width}px;
@@ -616,7 +614,7 @@ class OverlayAutoFisher(QMainWindow):
             QGroupBox::title {{
                 subcontrol-origin: margin;
                 left: {margin}px;
-                top: -{small_font}px;
+                top: {small_font}px;
                 padding: 0px {margin/2}px 0px {margin/2}px;
                 background-color: {self.colors['bg_dark']};
             }}
@@ -706,7 +704,7 @@ class OverlayAutoFisher(QMainWindow):
             QGroupBox::title {{
                 subcontrol-origin: margin;
                 left: {margin}px;
-                top: -{small_font}px;
+                top: {small_font}px;
                 padding: 0px {margin/2}px 0px {margin/2}px;
                 background-color: {self.colors['bg_dark']};
             }}
@@ -909,7 +907,7 @@ class OverlayAutoFisher(QMainWindow):
             QGroupBox::title {{
                 subcontrol-origin: margin;
                 left: {margin}px;
-                top: -{small_font}px;
+                top: {small_font}px;
                 padding: 0px {margin/2}px 0px {margin/2}px;
                 background-color: {self.colors['bg_dark']};
             }}
@@ -1126,7 +1124,7 @@ class OverlayAutoFisher(QMainWindow):
     
     def clear_logs(self):
         """Clear the log console"""
-        self.log_console.clear()
+        self.log_console = None
         self.add_log("Logs cleared")
     
     def toggle_minimize(self):
