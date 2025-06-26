@@ -209,8 +209,8 @@ class OverlayAutoFisher(QMainWindow):
         # Calculate scaled values
         self.ui_scale = {
             'base': base_scale,
-            'margins': max(2, int(8 * base_scale)),
-            'spacing': max(1, int(4 * base_scale)),
+            'margins': max(2, int(6 * base_scale)),
+            'spacing': max(1, int(3 * base_scale)),
             'button_height': max(20, int(32 * base_scale)),
             'title_height': max(20, int(36 * base_scale)),
             'font_size': max(8, int(10 * base_scale)),
