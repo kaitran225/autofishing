@@ -366,7 +366,7 @@ class OverlayAutoFisher(QMainWindow):
         content_layout.setSpacing(self.ui_scale['spacing'] * 2)
         
         # Create AutoFisher UI sections
-        self.create_settings_section(content_layout)
+        self.create_tabs_section(content_layout)
         self.create_status_section(content_layout)
         self.create_monitoring_section(content_layout)
         self.create_control_section(content_layout)
@@ -374,7 +374,7 @@ class OverlayAutoFisher(QMainWindow):
         
         self.expanded_layout.addWidget(self.content_frame)
     
-    def create_settings_section(self, parent_layout):
+    def create_tabs_section(self, parent_layout):
         """Create settings section with tabs for settings and monitoring preview"""
         small_font = self.ui_scale['small_font_size']
         normal_font = self.ui_scale['font_size']
@@ -383,8 +383,8 @@ class OverlayAutoFisher(QMainWindow):
         border_radius = self.ui_scale['border_radius']
         
         # Create main container frame
-        settings_frame = QGroupBox("")
-        settings_frame.setStyleSheet(f"""
+        tab_frame = QGroupBox("")
+        tab_frame.setStyleSheet(f"""
             QGroupBox {{
                 font-size: {small_font}pt;
                 color: {self.colors['accent']};
@@ -397,7 +397,7 @@ class OverlayAutoFisher(QMainWindow):
         """)
         
         # Create tab widget
-        tab_layout = QVBoxLayout(settings_frame)
+        tab_layout = QVBoxLayout(tab_frame)
         tab_layout.setContentsMargins(margin, margin, margin, margin)
         
         tab_widget = QTabWidget()
@@ -643,8 +643,8 @@ class OverlayAutoFisher(QMainWindow):
         # Add tab widget to main layout
         tab_layout.addWidget(tab_widget)
         
-        parent_layout.addWidget(settings_frame)
-    
+        parent_layout.addWidget(tab_frame)
+
     def on_threshold_changed(self, value):
         """Handle threshold slider change - with feedback like in autofisher.py"""
         self.threshold_var = value / 100.0
