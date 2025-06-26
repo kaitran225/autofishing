@@ -67,8 +67,8 @@ class OverlayAutoFisher(QMainWindow):
         self.setWindowTitle("AutoFisher v0.0.01a")
         
         # Default fallback size if no game window is found
-        self.default_width = 380
-        self.default_height = 580
+        self.default_width = 350
+        self.default_height = 550
         
         # Dynamic sizing parameters
         self.game_width_percentage = 0.25  # Reduced from 0.30 to 25% of game width
