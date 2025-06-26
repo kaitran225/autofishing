@@ -58,17 +58,42 @@ class OverlayAutoFisher(QMainWindow):
         # Create main window
         super().__init__(parent)
         self.is_toplevel = parent is not None
+        
+        # Initialize log buffer for early logging before UI is created
+        self.log_buffer = []
+        self.log_console = None
             
         # Configure the window
         self.setWindowTitle("AutoFisher v0.0.01a")
-    
-        self.move(100, 100)
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        # Default fallback size if no game window is found
+        self.default_width = 380
+        self.default_height = 580
         
         # Dynamic sizing parameters
         self.game_width_percentage = 0.30  # 30% of game width
         self.game_height_percentage = 0.70  # 70% of game height
+        
+        # Set initial size - will be recalculated if game window is found
+        self.expanded_width = self.default_width
+        self.expanded_height = self.default_height
+        
+        # Calculate initial UI scaling factors
+        self.ui_scale = {
+            'base': 1.0,            # Base scaling factor
+            'margins': 5,           # Default margin size
+            'spacing': 2,           # Default spacing
+            'button_height': 30,    # Default button height
+            'title_height': 30,     # Default title bar height
+            'font_size': 10,        # Default font size
+            'small_font_size': 9,   # Smaller font size
+            'large_font_size': 16   # Larger font size
+        }
+        
+        # Set initial window position and flags
+        self.move(100, 100)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
         # Colors and style
         self.colors = {
@@ -98,18 +123,10 @@ class OverlayAutoFisher(QMainWindow):
         self.minimized_width = 50
         self.minimized_height = 50
         
-        # Default fallback size if no game window is found
-        self.default_width = 380
-        self.default_height = 580
-        
-        # Expanded size will be calculated based on game window
-        self.expanded_width = self.default_width
-        self.expanded_height = self.default_height
-        
         # Game window tracking
         self.last_move_target = None
         self.game_window = None
-        self.game_window_name = "PLAY TOGETHER"
+        self.game_window_name = "Play Together"
         self.offset_x = 16  # Offset from game window left edge
         self.offset_y = 36  # Offset from game window top edge
         self.tracking_active = False
@@ -129,6 +146,18 @@ class OverlayAutoFisher(QMainWindow):
         # Track mouse position for dragging
         self.drag_start_position = None
         
+        # Find game window and calculate initial size
+        if WINDOWS_SUPPORT:
+            if self.find_game_window():
+                # If game window found, calculate size based on it
+                self.calculate_size_from_game_window()
+        
+        # Set the initial size
+        self.setGeometry(100, 100, self.expanded_width, self.expanded_height)
+        
+        # Calculate UI scaling factors based on initial size
+        self.calculate_ui_scaling()
+        
         # Create the UI (expanded state by default)
         self.central_widget = QWidget(self)
         self.setCentralWidget(self.central_widget)
@@ -143,10 +172,11 @@ class OverlayAutoFisher(QMainWindow):
         self.create_widgets()
         
         self.hwnd = self.winId().__int__()
-
+        
         # Only start game window tracking on Windows
         if WINDOWS_SUPPORT:
-            if self.find_game_window():
+            if self.game_window:
+                # If game window found, position directly on it
                 self.start_tracking()
                 self.add_log("Game window found - overlay positioned on game")
             else:
@@ -156,6 +186,60 @@ class OverlayAutoFisher(QMainWindow):
         else:
             self.position_default()
             self.add_log("Game window tracking is only available on Windows.")
+            
+        # Process any buffered logs
+        self.flush_log_buffer()
+    
+    def calculate_ui_scaling(self):
+        """Calculate UI scaling factors based on window size"""
+        # Base the scaling on the window width
+        width = self.expanded_width
+        height = self.expanded_height
+        
+        # Determine base scaling factor (1.0 is the reference at 380px width)
+        base_scale = min(width / 380, height / 580)
+        base_scale = max(0.7, min(base_scale, 1.5))  # Clamp between 0.7 and 1.5
+        
+        # Calculate scaled values
+        self.ui_scale = {
+            'base': base_scale,
+            'margins': max(2, int(5 * base_scale)),
+            'spacing': max(1, int(2 * base_scale)),
+            'button_height': max(20, int(30 * base_scale)),
+            'title_height': max(20, int(30 * base_scale)),
+            'font_size': max(8, int(10 * base_scale)),
+            'small_font_size': max(7, int(9 * base_scale)),
+            'large_font_size': max(12, int(16 * base_scale))
+        }
+        
+        return self.ui_scale
+    
+    def calculate_size_from_game_window(self):
+        """Calculate overlay size based on game window dimensions"""
+        if not WINDOWS_SUPPORT or not self.game_window:
+            return False
+            
+        try:
+            # Get game window size
+            left, top, right, bottom = win32gui.GetWindowRect(self.game_window)
+            game_width = right - left
+            game_height = bottom - top
+            
+            # Store game window size
+            self.game_window_size = (game_width, game_height)
+            
+            # Calculate new dimensions
+            new_width = int(game_width * self.game_width_percentage)
+            new_height = int(game_height * self.game_height_percentage)
+            
+            # Update expanded size
+            self.expanded_width = new_width
+            self.expanded_height = new_height
+            
+            return True
+        except Exception as e:
+            print(f"Error calculating size from game window: {e}")
+            return False
     
     def create_widgets(self):
         # Create expanded view
@@ -166,7 +250,7 @@ class OverlayAutoFisher(QMainWindow):
     
     def create_expanded_view(self):
         """Create the expanded view with AutoFisher UI"""
-        # Adjust for DPI scaling
+        # Get DPI scale for additional adjustments if needed
         dpi_scale = self.get_dpi_scale()
         
         # Main frame
@@ -184,15 +268,15 @@ class OverlayAutoFisher(QMainWindow):
         self.title_bar.start_drag_func = self.start_drag
         self.title_bar.stop_drag_func = self.stop_drag
         self.title_bar.on_drag_func = self.on_drag
-        title_height = int(30 / dpi_scale)  # Adjust for scaling
+        title_height = self.ui_scale['title_height']
         self.title_bar.setStyleSheet(f"background-color: {self.colors['bg_term']}; height: {title_height}px;")
         
         title_layout = QHBoxLayout(self.title_bar)
-        title_layout.setContentsMargins(10, 0, 0, 0)
+        title_layout.setContentsMargins(self.ui_scale['margins'], 0, 0, 0)
         title_layout.setSpacing(0)
         
-        # Title label with adjusted font size for DPI
-        font_size = int(10 / dpi_scale) if dpi_scale > 1.0 else 10
+        # Title label with adjusted font size
+        font_size = self.ui_scale['font_size']
         self.title_label = QLabel("AutoFisher v0.0.01a")
         self.title_label.setStyleSheet(f"color: {self.colors['accent']}; font-weight: bold; font-size: {font_size}pt;")
         title_layout.addWidget(self.title_label)
@@ -205,6 +289,7 @@ class OverlayAutoFisher(QMainWindow):
         btn_layout.setSpacing(0)
         
         # Minimize/Expand toggle button
+        button_width = int(self.ui_scale['button_height'] * 1.0)
         self.toggle_button = QPushButton("−")
         self.toggle_button.setStyleSheet(f"""
             QPushButton {{
@@ -212,8 +297,8 @@ class OverlayAutoFisher(QMainWindow):
                 color: {self.colors['text']};
                 border: none;
                 font-weight: bold;
-                font-size: 10pt;
-                width: 30px;
+                font-size: {font_size}pt;
+                width: {button_width}px;
             }}
             QPushButton:hover {{
                 background-color: {self.colors['bg_lighter']};
@@ -230,8 +315,8 @@ class OverlayAutoFisher(QMainWindow):
                 color: {self.colors['alert']};
                 border: none;
                 font-weight: bold;
-                font-size: 10pt;
-                width: 30px;
+                font-size: {font_size}pt;
+                width: {button_width}px;
             }}
             QPushButton:hover {{
                 background-color: {self.colors['bg_lighter']};
@@ -245,31 +330,37 @@ class OverlayAutoFisher(QMainWindow):
         
         # Content area
         self.content_frame = QFrame()
-        self.content_frame.setStyleSheet(f"background-color: {self.colors['bg_dark']}; margin: 5px;")
+        content_margin = self.ui_scale['margins']
+        self.content_frame.setStyleSheet(f"background-color: {self.colors['bg_dark']}; margin: {content_margin}px;")
         content_layout = QVBoxLayout(self.content_frame)
-        content_layout.setContentsMargins(5, 5, 5, 5)
-        content_layout.setSpacing(0)
+        content_layout.setContentsMargins(content_margin, content_margin, content_margin, content_margin)
+        content_layout.setSpacing(self.ui_scale['spacing'])
         
         # Create AutoFisher UI sections
         self.create_settings_section(content_layout)
         self.create_monitoring_section(content_layout)
         self.create_control_section(content_layout)
-        self.create_status_section(content_layout)
+        # self.create_status_section(content_layout)
         self.create_log_section(content_layout)
         
         self.expanded_layout.addWidget(self.content_frame)
     
     def create_settings_section(self, parent_layout):
         """Create settings section similar to AutoFisher"""
+        small_font = self.ui_scale['small_font_size']
+        normal_font = self.ui_scale['font_size']
+        margin = self.ui_scale['margins']
+        spacing = self.ui_scale['spacing']
+        
         settings_frame = QGroupBox("SETTINGS")
         settings_frame.setStyleSheet(f"""
             QGroupBox {{
-                font-size: 9pt;
+                font-size: {small_font}pt;
                 color: {self.colors['accent']};
                 background-color: {self.colors['bg_dark']};
                 border: 1px solid {self.colors['border']};
-                margin-top: 8px;
-                padding: 8px;
+                margin-top: {margin}px;
+                padding: {margin}px;
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
@@ -279,12 +370,12 @@ class OverlayAutoFisher(QMainWindow):
             }}
         """)
         settings_layout = QGridLayout(settings_frame)
-        settings_layout.setContentsMargins(4, 15, 4, 4)
-        settings_layout.setSpacing(2)
+        settings_layout.setContentsMargins(margin-1, margin*2, margin-1, margin-1)
+        settings_layout.setSpacing(spacing)
 
         # Threshold (row 0)
         threshold_label = QLabel("Threshold")
-        threshold_label.setStyleSheet(f"color: {self.colors['text']}; font-size: 10pt;")
+        threshold_label.setStyleSheet(f"color: {self.colors['text']}; font-size: {normal_font}pt;")
         settings_layout.addWidget(threshold_label, 0, 0, alignment=Qt.AlignmentFlag.AlignLeft)
         
         threshold_frame = QFrame()
@@ -296,31 +387,33 @@ class OverlayAutoFisher(QMainWindow):
         self.threshold_slider = QSlider(Qt.Orientation.Horizontal)
         self.threshold_slider.setRange(1, 50)  # 0.01 to 0.50
         self.threshold_slider.setValue(int(self.threshold_var * 100))
+        slider_height = max(8, int(8 * self.ui_scale['base']))
+        handle_width = max(12, int(12 * self.ui_scale['base']))
         self.threshold_slider.setStyleSheet(f"""
             QSlider::groove:horizontal {{
                 background: {self.colors['bg_lighter']};
-                height: 8px;
-                border-radius: 4px;
+                height: {slider_height}px;
+                border-radius: {slider_height//2}px;
             }}
             QSlider::handle:horizontal {{
                 background: {self.colors['accent']};
-                width: 12px;
-                margin: -2px 0;
-                border-radius: 6px;
+                width: {handle_width}px;
+                margin: -{(handle_width-slider_height)//2}px 0;
+                border-radius: {handle_width//2}px;
             }}
         """)
         self.threshold_slider.valueChanged.connect(self.on_threshold_changed)
         threshold_layout.addWidget(self.threshold_slider)
         
         self.threshold_label = QLabel("0.05")
-        self.threshold_label.setStyleSheet(f"color: {self.colors['text']}; font-size: 10pt; min-width: 40px;")
+        self.threshold_label.setStyleSheet(f"color: {self.colors['text']}; font-size: {normal_font}pt; min-width: {40*self.ui_scale['base']}px;")
         threshold_layout.addWidget(self.threshold_label)
         
         settings_layout.addWidget(threshold_frame, 0, 1)
 
         # Region Size (row 1)
         region_label = QLabel("Region Size")
-        region_label.setStyleSheet(f"color: {self.colors['text']}; font-size: 10pt;")
+        region_label.setStyleSheet(f"color: {self.colors['text']}; font-size: {normal_font}pt;")
         settings_layout.addWidget(region_label, 1, 0, alignment=Qt.AlignmentFlag.AlignLeft)
         
         region_size_frame = QFrame()
@@ -330,6 +423,8 @@ class OverlayAutoFisher(QMainWindow):
         
         self.size_var = "50"
         self.size_entry = QLineEdit(self.size_var)
+        entry_padding = max(2, int(2 * self.ui_scale['base']))
+        entry_width = max(60, int(60 * self.ui_scale['base']))
         self.size_entry.setStyleSheet(f"""
             QLineEdit {{
                 background-color: {self.colors['bg_dark']};
@@ -337,10 +432,10 @@ class OverlayAutoFisher(QMainWindow):
                 selection-background-color: {self.colors['selection']};
                 selection-color: {self.colors['text_bright']};
                 border: 1px solid {self.colors['border']};
-                padding: 2px;
+                padding: {entry_padding}px;
                 border-radius: 0px;
-                font-size: 10pt;
-                max-width: 60px;
+                font-size: {normal_font}pt;
+                max-width: {entry_width}px;
             }}
             QLineEdit:focus {{
                 border: 1px solid {self.colors['accent']};
@@ -349,7 +444,7 @@ class OverlayAutoFisher(QMainWindow):
         region_layout.addWidget(self.size_entry)
         
         px_label = QLabel("px")
-        px_label.setStyleSheet(f"color: {self.colors['text']}; font-size: 10pt;")
+        px_label.setStyleSheet(f"color: {self.colors['text']}; font-size: {normal_font}pt;")
         region_layout.addWidget(px_label)
         region_layout.addStretch()
         
@@ -357,7 +452,7 @@ class OverlayAutoFisher(QMainWindow):
 
         # Cooldown (row 2)
         cooldown_label = QLabel("Cooldown")
-        cooldown_label.setStyleSheet(f"color: {self.colors['text']}; font-size: 10pt;")
+        cooldown_label.setStyleSheet(f"color: {self.colors['text']}; font-size: {normal_font}pt;")
         settings_layout.addWidget(cooldown_label, 2, 0, alignment=Qt.AlignmentFlag.AlignLeft)
         
         cooldown_frame = QFrame()
@@ -374,10 +469,10 @@ class OverlayAutoFisher(QMainWindow):
                 selection-background-color: {self.colors['selection']};
                 selection-color: {self.colors['text_bright']};
                 border: 1px solid {self.colors['border']};
-                padding: 2px;
+                padding: {entry_padding}px;
                 border-radius: 0px;
-                font-size: 10pt;
-                max-width: 60px;
+                font-size: {normal_font}pt;
+                max-width: {entry_width}px;
             }}
             QLineEdit:focus {{
                 border: 1px solid {self.colors['accent']};
@@ -386,7 +481,7 @@ class OverlayAutoFisher(QMainWindow):
         cooldown_layout.addWidget(self.cooldown_entry)
         
         sec_label = QLabel("sec")
-        sec_label.setStyleSheet(f"color: {self.colors['text']}; font-size: 10pt;")
+        sec_label.setStyleSheet(f"color: {self.colors['text']}; font-size: {normal_font}pt;")
         cooldown_layout.addWidget(sec_label)
         cooldown_layout.addStretch()
         
@@ -394,7 +489,7 @@ class OverlayAutoFisher(QMainWindow):
 
         # Fishing Key (row 3)
         fishing_key_label = QLabel("Fishing Key")
-        fishing_key_label.setStyleSheet(f"color: {self.colors['text']}; font-size: 10pt;")
+        fishing_key_label.setStyleSheet(f"color: {self.colors['text']}; font-size: {normal_font}pt;")
         settings_layout.addWidget(fishing_key_label, 3, 0, alignment=Qt.AlignmentFlag.AlignLeft)
         
         fishing_key_frame = QFrame()
@@ -403,6 +498,7 @@ class OverlayAutoFisher(QMainWindow):
         fishing_key_layout.setContentsMargins(0, 0, 0, 0)
         
         self.fishing_key_var = "f"
+        small_entry_width = max(40, int(40 * self.ui_scale['base']))
         self.fishing_key_entry = QLineEdit(self.fishing_key_var)
         self.fishing_key_entry.setStyleSheet(f"""
             QLineEdit {{
@@ -411,10 +507,10 @@ class OverlayAutoFisher(QMainWindow):
                 selection-background-color: {self.colors['selection']};
                 selection-color: {self.colors['text_bright']};
                 border: 1px solid {self.colors['border']};
-                padding: 2px;
+                padding: {entry_padding}px;
                 border-radius: 0px;
-                font-size: 10pt;
-                max-width: 40px;
+                font-size: {normal_font}pt;
+                max-width: {small_entry_width}px;
             }}
             QLineEdit:focus {{
                 border: 1px solid {self.colors['accent']};
@@ -424,13 +520,9 @@ class OverlayAutoFisher(QMainWindow):
         fishing_key_layout.addStretch()
         
         settings_layout.addWidget(fishing_key_frame, 3, 1)
-        
-        # Apply Settings button
-        apply_button_frame = QFrame()
-        apply_button_frame.setStyleSheet(f"background-color: {self.colors['bg_dark']}; border: none;")
-        apply_layout = QHBoxLayout(apply_button_frame)
-        apply_layout.setContentsMargins(0, 8, 0, 0)
-        apply_layout.setAlignment(Qt.AlignmentFlag.AlignRight)
+
+        button_padding_v = max(6, int(6 * self.ui_scale['base']))
+        button_padding_h = max(10, int(10 * self.ui_scale['base']))
         
         self.apply_button = QPushButton("Apply Settings")
         self.apply_button.setStyleSheet(f"""
@@ -438,8 +530,8 @@ class OverlayAutoFisher(QMainWindow):
                 background-color: {self.colors['bg_dark']};
                 color: {self.colors['accent']};
                 border: 1px solid {self.colors['border']};
-                padding: 6px 10px;
-                font-size: 10pt;
+                padding: {button_padding_v}px {button_padding_h}px;
+                font-size: {normal_font}pt;
                 font-weight: bold;
             }}
             QPushButton:hover {{
@@ -452,9 +544,7 @@ class OverlayAutoFisher(QMainWindow):
             }}
         """)
         self.apply_button.clicked.connect(self.dummy_apply_settings)
-        apply_layout.addWidget(self.apply_button)
-        
-        settings_layout.addWidget(apply_button_frame, 4, 0, 1, 2)
+        fishing_key_layout.addWidget(self.apply_button)
         
         parent_layout.addWidget(settings_frame)
     
@@ -518,6 +608,15 @@ class OverlayAutoFisher(QMainWindow):
         
         monitoring_layout.addWidget(stats_frame)
         
+        # System status
+        self.status_label = QLabel("System: monitor.idle")
+        self.status_label.setStyleSheet(f"""
+            color: {self.colors['text_dim']};
+            font-size: 9pt;
+            padding: {max(2, int(2 * self.ui_scale['base']))}px;
+        """)
+        monitoring_layout.addWidget(self.status_label, alignment=Qt.AlignmentFlag.AlignLeft)
+
         # Initialize with dummy values
         self.update_stats_display()
         
@@ -525,15 +624,22 @@ class OverlayAutoFisher(QMainWindow):
     
     def create_control_section(self, parent_layout):
         """Create control section similar to AutoFisher"""
+        small_font = self.ui_scale['small_font_size']
+        normal_font = self.ui_scale['font_size']
+        margin = self.ui_scale['margins']
+        spacing = self.ui_scale['spacing']
+        button_padding_v = max(5, int(5 * self.ui_scale['base']))
+        button_padding_h = max(10, int(10 * self.ui_scale['base']))
+        
         control_frame = QGroupBox("CONTROL")
         control_frame.setStyleSheet(f"""
             QGroupBox {{
-                font-size: 9pt;
+                font-size: {small_font}pt;
                 color: {self.colors['accent']};
                 background-color: {self.colors['bg_dark']};
                 border: 1px solid {self.colors['border']};
-                margin-top: 8px;
-                padding: 8px;
+                margin-top: {margin}px;
+                padding: {margin}px;
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
@@ -544,15 +650,16 @@ class OverlayAutoFisher(QMainWindow):
         """)
         
         control_layout = QVBoxLayout(control_frame)
-        control_layout.setContentsMargins(4, 15, 4, 4)
+        control_layout.setContentsMargins(margin-1, margin*2, margin-1, margin-1)
+        control_layout.setSpacing(spacing)
         
         # First row of buttons
         button_frame = QFrame()
         button_frame.setStyleSheet(f"background-color: {self.colors['bg_dark']}; border: none;")
         
         button_layout = QHBoxLayout(button_frame)
-        button_layout.setContentsMargins(5, 4, 5, 4)
-        button_layout.setSpacing(5)
+        button_layout.setContentsMargins(spacing, spacing, spacing, spacing)
+        button_layout.setSpacing(spacing)
         
         self.start_button = QPushButton("start")
         self.start_button.setStyleSheet(f"""
@@ -560,8 +667,8 @@ class OverlayAutoFisher(QMainWindow):
                 background-color: {self.colors['bg_dark']};
                 color: {self.colors['green']};
                 border: 1px solid {self.colors['border']};
-                padding: 5px 10px;
-                font-size: 10pt;
+                padding: {button_padding_v}px {button_padding_h}px;
+                font-size: {normal_font}pt;
             }}
             QPushButton:hover {{
                 background-color: {self.colors['bg_lighter']};
@@ -585,8 +692,8 @@ class OverlayAutoFisher(QMainWindow):
                 background-color: {self.colors['bg_dark']};
                 color: {self.colors['alert']};
                 border: 1px solid {self.colors['border']};
-                padding: 5px 10px;
-                font-size: 10pt;
+                padding: {button_padding_v}px {button_padding_h}px;
+                font-size: {normal_font}pt;
             }}
             QPushButton:hover {{
                 background-color: {self.colors['bg_lighter']};
@@ -610,8 +717,8 @@ class OverlayAutoFisher(QMainWindow):
                 background-color: {self.colors['bg_dark']};
                 color: {self.colors['warning']};
                 border: 1px solid {self.colors['border']};
-                padding: 5px 10px;
-                font-size: 10pt;
+                padding: {button_padding_v}px {button_padding_h}px;
+                font-size: {normal_font}pt;
             }}
             QPushButton:hover {{
                 background-color: {self.colors['bg_lighter']};
@@ -634,8 +741,8 @@ class OverlayAutoFisher(QMainWindow):
                 background-color: {self.colors['bg_dark']};
                 color: {self.colors['text_dim']};
                 border: 1px solid {self.colors['border']};
-                padding: 5px 10px;
-                font-size: 10pt;
+                padding: {button_padding_v}px {button_padding_h}px;
+                font-size: {normal_font}pt;
             }}
             QPushButton:hover {{
                 background-color: {self.colors['bg_lighter']};
@@ -656,8 +763,11 @@ class OverlayAutoFisher(QMainWindow):
         button_frame2.setStyleSheet(f"background-color: {self.colors['bg_dark']}; border: none;")
         
         button_layout2 = QHBoxLayout(button_frame2)
-        button_layout2.setContentsMargins(5, 4, 5, 4)
-        button_layout2.setSpacing(5)
+        button_layout2.setContentsMargins(spacing, spacing, spacing, spacing)
+        button_layout2.setSpacing(spacing)
+        
+        # Adjust padding for the wider button
+        ref_padding_h = max(15, int(15 * self.ui_scale['base']))
         
         self.ref_button = QPushButton("capture-reference")
         self.ref_button.setStyleSheet(f"""
@@ -665,8 +775,8 @@ class OverlayAutoFisher(QMainWindow):
                 background-color: {self.colors['bg_dark']};
                 color: {self.colors['accent']};
                 border: 1px solid {self.colors['border']};
-                padding: 5px 15px;
-                font-size: 10pt;
+                padding: {button_padding_v}px {ref_padding_h}px;
+                font-size: {normal_font}pt;
             }}
             QPushButton:hover {{
                 background-color: {self.colors['bg_lighter']};
@@ -686,8 +796,8 @@ class OverlayAutoFisher(QMainWindow):
                 background-color: {self.colors['bg_dark']};
                 color: {self.colors['green']};
                 border: 1px solid {self.colors['border']};
-                padding: 5px 10px;
-                font-size: 10pt;
+                padding: {button_padding_v}px {button_padding_h}px;
+                font-size: {normal_font}pt;
             }}
             QPushButton:hover {{
                 background-color: {self.colors['bg_lighter']};
@@ -700,76 +810,26 @@ class OverlayAutoFisher(QMainWindow):
         """)
         self.region_button.clicked.connect(self.dummy_select_region)
         button_layout2.addWidget(self.region_button)
-        
-        # Add a "Log Position" button
-        self.log_pos_button = QPushButton("log-position")
-        self.log_pos_button.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {self.colors['bg_dark']};
-                color: {self.colors['text_dim']};
-                border: 1px solid {self.colors['border']};
-                padding: 5px 10px;
-                font-size: 10pt;
-            }}
-            QPushButton:hover {{
-                background-color: {self.colors['bg_lighter']};
-                color: {self.colors['text']};
-            }}
-            QPushButton:pressed {{
-                background-color: {self.colors['bg_alt']};
-                color: {self.colors['text']};
-            }}
-        """)
 
         control_layout.addWidget(button_frame2)
-        
+
         parent_layout.addWidget(control_frame)
-    
-    def create_status_section(self, parent_layout):
-        """Create status section similar to AutoFisher"""
-        status_frame = QGroupBox("STATUS")
-        status_frame.setStyleSheet(f"""
-            QGroupBox {{
-                font-size: 9pt;
-                color: {self.colors['accent']};
-                background-color: {self.colors['bg_dark']};
-                border: 1px solid {self.colors['border']};
-                margin-top: 8px;
-                padding: 8px;
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: 5px;
-                top: 0px;
-                padding: 0px 5px 0px 5px;
-            }}
-        """)
-        
-        status_layout = QVBoxLayout(status_frame)
-        status_layout.setContentsMargins(4, 15, 4, 4)
-        
-        # System status
-        self.status_label = QLabel("System: monitor.idle")
-        self.status_label.setStyleSheet(f"""
-            color: {self.colors['text_dim']};
-            font-size: 16pt;
-            padding: 2px;
-        """)
-        status_layout.addWidget(self.status_label, alignment=Qt.AlignmentFlag.AlignLeft)
-        
-        parent_layout.addWidget(status_frame)
     
     def create_log_section(self, parent_layout):
         """Create log section similar to AutoFisher"""
+        small_font = self.ui_scale['small_font_size']
+        margin = self.ui_scale['margins']
+        console_font_size = max(9, int(9 * self.ui_scale['base']))
+        
         log_frame = QGroupBox("LOGS")
         log_frame.setStyleSheet(f"""
             QGroupBox {{
-                font-size: 9pt;
+                font-size: {small_font}pt;
                 color: {self.colors['accent']};
                 background-color: {self.colors['bg_dark']};
                 border: 1px solid {self.colors['border']};
-                margin-top: 8px;
-                padding: 8px;
+                margin-top: {margin}px;
+                padding: {margin}px;
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
@@ -780,7 +840,8 @@ class OverlayAutoFisher(QMainWindow):
         """)
         
         log_layout = QVBoxLayout(log_frame)
-        log_layout.setContentsMargins(4, 15, 4, 4)
+        log_layout.setContentsMargins(margin-1, margin*2, margin-1, margin-1)
+        log_layout.setSpacing(self.ui_scale['spacing'])
         
         self.log_console = QTextEdit()
         self.log_console.setStyleSheet(f"""
@@ -789,8 +850,8 @@ class OverlayAutoFisher(QMainWindow):
                 color: {self.colors['text']};
                 border: none;
                 font-family: 'Consolas', monospace;
-                font-size: 9pt;
-                padding: 8px;
+                font-size: {console_font_size}pt;
+                padding: {margin}px;
             }}
         """)
         self.log_console.setReadOnly(True)
@@ -804,6 +865,10 @@ class OverlayAutoFisher(QMainWindow):
     
     def create_minimized_view(self):
         """Create the minimized view (just the expand button)"""
+        margin = self.ui_scale['margins']
+        normal_font = self.ui_scale['font_size']
+        large_font = self.ui_scale['large_font_size']
+        
         self.minimized_frame = QFrame(self.central_widget)
         self.minimized_frame.setStyleSheet(f"background-color: {self.colors['bg_dark']}; border: none;")
         self.minimized_frame.hide()  # Hide initially
@@ -834,7 +899,7 @@ class OverlayAutoFisher(QMainWindow):
                 color: {self.colors['accent']};
                 border: none;
                 font-weight: bold;
-                font-size: 12pt;
+                font-size: {large_font}pt;
             }}
             QPushButton:hover {{
                 color: {self.colors['accent_bright']};
@@ -910,19 +975,22 @@ class OverlayAutoFisher(QMainWindow):
         """Add a message to the log console, write to file, and print to console"""
         log_entry = f"{message}"
         
-        # Add to UI console
-        self.log_console.append(log_entry)
-        
         # Print to standard output for immediate feedback
         print(log_entry)
         
-        # # Also write to log file
-        # try:
-        #     with open('autofisher_debug.log', 'a', encoding='utf-8') as f:
-        #         f.write(log_entry + '\n')
-        # except Exception:
-        #     # Silently ignore file writing errors
-        #     pass
+        # If log_console exists, add to UI
+        if hasattr(self, 'log_console') and self.log_console is not None:
+            self.log_console.append(log_entry)
+        else:
+            # Otherwise buffer the log for later
+            self.log_buffer.append(log_entry)
+    
+    def flush_log_buffer(self):
+        """Flush any buffered log messages to the log console"""
+        if hasattr(self, 'log_console') and self.log_console is not None and self.log_buffer:
+            for log_entry in self.log_buffer:
+                self.log_console.append(log_entry)
+            self.log_buffer.clear()
     
     def clear_logs(self):
         """Clear the log console"""
@@ -1122,81 +1190,88 @@ class OverlayAutoFisher(QMainWindow):
             return
 
         last_resize_time = 0
-        resize_interval = 0.5  # Check resize every 0.5 seconds
+        resize_interval = 1.0  # Check resize every 1 second to reduce CPU usage
+        last_position_update_time = 0
+        position_update_interval = 0.015  # Update position every 0.1 seconds
+        
+        # Precalculate offsets
+        offset_x = self.offset_x
+        offset_y = self.offset_y
 
         while self.tracking_active:
             try:
-                # Update internal position tracking
-                actual_x, actual_y = self.x(), self.y()
-                self.last_move_target = (actual_x, actual_y)
-
+                current_time = time.time()
+                
                 # If game_window is not set or invalid, try to find it
                 if not hasattr(self, 'game_window') or not self.game_window:
                     self.find_game_window()
-                    time.sleep(0.015)
+                    time.sleep(position_update_interval)
                     continue
 
                 if not win32gui.IsWindow(self.game_window):
                     self.game_window = None  # Window closed or changed
-                    time.sleep(0.015)
+                    time.sleep(position_update_interval)
                     continue
 
                 try:
                     # Get window position and size
                     win_left, win_top, win_right, win_bottom = win32gui.GetWindowRect(self.game_window)
                     
-                    # Update game window size if changed
-                    new_width = win_right - win_left
-                    new_height = win_bottom - win_top
-                    
-                    # Check if we need to resize
-                    current_time = time.time()
-                    size_changed = (new_width, new_height) != self.game_window_size
-                    
-                    if size_changed or (current_time - last_resize_time > resize_interval):
-                        self.game_window_size = (new_width, new_height)
+                    # Check if we need to resize (less frequently)
+                    if current_time - last_resize_time > resize_interval:
+                        new_width = win_right - win_left
+                        new_height = win_bottom - win_top
                         
-                        # Calculate the new size for the overlay
-                        overlay_width = int(new_width * self.game_width_percentage)
-                        overlay_height = int(new_height * self.game_height_percentage)
+                        # Update game window size if changed
+                        if (new_width, new_height) != self.game_window_size:
+                            self.game_window_size = (new_width, new_height)
+                            
+                            # Calculate the new size for the overlay
+                            overlay_width = int(new_width * self.game_width_percentage)
+                            overlay_height = int(new_height * self.game_height_percentage)
+                            
+                            # Always update the expanded size
+                            self.expanded_width = overlay_width
+                            self.expanded_height = overlay_height
+                            
+                            # Only resize if not minimized
+                            if not self.is_minimized:
+                                # Use win32gui to resize the window directly
+                                try:
+                                    win32gui.SetWindowPos(
+                                        self.hwnd,
+                                        0,  # No z-order change
+                                        0, 0,  # Position (unchanged)
+                                        self.expanded_width, self.expanded_height,  # New size
+                                        win32con.SWP_NOMOVE | win32con.SWP_NOZORDER
+                                    )
+                                except Exception as e:
+                                    print(f"Error resizing window: {e}")
                         
-                        # Always update the expanded size
-                        self.expanded_width = overlay_width
-                        self.expanded_height = overlay_height
-                        
-                        # Only resize if not minimized
-                        if not self.is_minimized:
-                            # Use win32gui to resize the window directly
-                            try:
-                                win32gui.SetWindowPos(
-                                    self.hwnd,
-                                    0,  # No z-order change
-                                    0, 0,  # Position (unchanged)
-                                    self.expanded_width, self.expanded_height,  # New size
-                                    win32con.SWP_NOMOVE | win32con.SWP_NOZORDER
-                                )
-                                last_resize_time = current_time
-                            except Exception as e:
-                                print(f"Error resizing window: {e}")
+                        last_resize_time = current_time
 
-                    # Move overlay window to track game window
-                    win32gui.SetWindowPos(
-                        self.hwnd,
-                        0,  # No z-order change
-                        win_left + 20, win_top + 40,  # Offset position
-                        0, 0,  # Size (unchanged)
-                        win32con.SWP_NOSIZE | win32con.SWP_NOZORDER
-                    )
+                    # Update position more frequently
+                    if current_time - last_position_update_time > position_update_interval:
+                        # Move overlay window to track game window
+                        win32gui.SetWindowPos(
+                            self.hwnd,
+                            0,  # No z-order change
+                            win_left + offset_x, win_top + offset_y,  # Offset position
+                            0, 0,  # Size (unchanged)
+                            win32con.SWP_NOSIZE | win32con.SWP_NOZORDER
+                        )
+                        last_position_update_time = current_time
+                        
                 except Exception as e:
-                    self.add_log(f"Error positioning relative to game: {e}")
-                    self.position_default()
+                    print(f"Error in tracking loop: {e}")
+                    time.sleep(position_update_interval)  # Longer sleep on error
 
-            except Exception:
-                # Prevent thread from crashing silently
-                pass
+            except Exception as e:
+                print(f"Tracking loop exception: {e}")
+                time.sleep(position_update_interval)  # Longer sleep on exception
 
             # Small sleep to reduce CPU usage
-            time.sleep(0.015)
+            time.sleep(position_update_interval)
 
     def start_drag(self, event):
         """Begin dragging the window"""
