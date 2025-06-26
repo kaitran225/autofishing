@@ -61,9 +61,14 @@ class OverlayAutoFisher(QMainWindow):
             
         # Configure the window
         self.setWindowTitle("AutoFisher v0.0.01a")
-        self.setGeometry(100, 100, 380, 580)
+    
+        self.move(100, 100)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        # Dynamic sizing parameters
+        self.game_width_percentage = 0.30  # 30% of game width
+        self.game_height_percentage = 0.70  # 70% of game height
         
         # Colors and style
         self.colors = {
@@ -92,17 +97,24 @@ class OverlayAutoFisher(QMainWindow):
         self.is_minimized = False
         self.minimized_width = 50
         self.minimized_height = 50
-        self.expanded_width = 380
-        self.expanded_height = 580
+        
+        # Default fallback size if no game window is found
+        self.default_width = 380
+        self.default_height = 580
+        
+        # Expanded size will be calculated based on game window
+        self.expanded_width = self.default_width
+        self.expanded_height = self.default_height
         
         # Game window tracking
         self.last_move_target = None
         self.game_window = None
-        self.game_window_name = "Play Together"
+        self.game_window_name = "PLAY TOGETHER"
         self.offset_x = 16  # Offset from game window left edge
         self.offset_y = 36  # Offset from game window top edge
         self.tracking_active = False
         self.tracking_thread = None
+        self.game_window_size = (0, 0)  # Will store (width, height) of game window
         
         # Smooth movement variables
         self.target_x = 0
@@ -135,7 +147,6 @@ class OverlayAutoFisher(QMainWindow):
         # Only start game window tracking on Windows
         if WINDOWS_SUPPORT:
             if self.find_game_window():
-                # If game window found, position directly on it
                 self.start_tracking()
                 self.add_log("Game window found - overlay positioned on game")
             else:
@@ -710,8 +721,6 @@ class OverlayAutoFisher(QMainWindow):
             }}
         """)
 
-        button_layout2.addWidget(self.log_pos_button)
-        
         control_layout.addWidget(button_frame2)
         
         parent_layout.addWidget(control_frame)
@@ -923,10 +932,29 @@ class OverlayAutoFisher(QMainWindow):
     def toggle_minimize(self):
         """Toggle between minimized and expanded states with animation"""
         if self.is_minimized:
+            # Calculate the correct expanded size before expanding
+            if self.game_window and WINDOWS_SUPPORT:
+                try:
+                    # Get current game window size
+                    left, top, right, bottom = win32gui.GetWindowRect(self.game_window)
+                    game_width = right - left
+                    game_height = bottom - top
+                    
+                    # Update the expanded dimensions based on current game window size
+                    self.expanded_width = int(game_width * self.game_width_percentage)
+                    self.expanded_height = int(game_height * self.game_height_percentage)
+                except Exception as e:
+                    print(f"Error calculating expanded size: {e}")
+            
             # Expand
             if self.main_frame and self.minimized_frame:
+                # First update the size target
                 self.main_frame.show()
                 self.minimized_frame.hide()
+                
+                # Small delay to ensure frame visibility changes are processed
+                QApplication.processEvents()
+                
                 # Animate size change
                 self._animate_size(self.minimized_width, self.minimized_height,
                                 self.expanded_width, self.expanded_height)
@@ -935,6 +963,10 @@ class OverlayAutoFisher(QMainWindow):
             if self.main_frame and self.minimized_frame:
                 self.main_frame.hide()
                 self.minimized_frame.show()
+                
+                # Small delay to ensure frame visibility changes are processed
+                QApplication.processEvents()
+                
                 # Animate size change
                 self._animate_size(self.expanded_width, self.expanded_height,
                                 self.minimized_width, self.minimized_height)
@@ -1021,7 +1053,14 @@ class OverlayAutoFisher(QMainWindow):
             if game_windows:
                 self.game_window = game_windows[0][0]
                 window_title = game_windows[0][1]
-                self.add_log(f"Found game window: '{window_title}'")
+                
+                # Get window size for dynamic sizing
+                left, top, right, bottom = win32gui.GetWindowRect(self.game_window)
+                game_width = right - left
+                game_height = bottom - top
+                self.game_window_size = (game_width, game_height)
+                
+                self.add_log(f"Found game window: '{window_title}' ({game_width}x{game_height})")
                 return True
                 
             # Second priority: Use any visible non-system window
@@ -1036,13 +1075,18 @@ class OverlayAutoFisher(QMainWindow):
                     
                     if width > 200 and height > 200:
                         self.game_window = hwnd
+                        self.game_window_size = (width, height)
                         self.add_log(f"No game window found, using window: '{title}' ({width}x{height})")
                         return True
                 
             # Last resort: Use the first window we found
             if visible_windows:
                 self.game_window = visible_windows[0][0]
-                self.add_log(f"Using fallback window: '{visible_windows[0][1]}'")
+                rect = win32gui.GetWindowRect(self.game_window)
+                width = rect[2] - rect[0]
+                height = rect[3] - rect[1]
+                self.game_window_size = (width, height)
+                self.add_log(f"Using fallback window: '{visible_windows[0][1]}' ({width}x{height})")
                 return True
                 
             self.add_log("No suitable window found")
@@ -1077,6 +1121,9 @@ class OverlayAutoFisher(QMainWindow):
         if not WINDOWS_SUPPORT:
             return
 
+        last_resize_time = 0
+        resize_interval = 0.5  # Check resize every 0.5 seconds
+
         while self.tracking_active:
             try:
                 # Update internal position tracking
@@ -1095,8 +1142,42 @@ class OverlayAutoFisher(QMainWindow):
                     continue
 
                 try:
-                    # Get window position
-                    win_left, win_top, _, _ = win32gui.GetWindowRect(self.game_window)
+                    # Get window position and size
+                    win_left, win_top, win_right, win_bottom = win32gui.GetWindowRect(self.game_window)
+                    
+                    # Update game window size if changed
+                    new_width = win_right - win_left
+                    new_height = win_bottom - win_top
+                    
+                    # Check if we need to resize
+                    current_time = time.time()
+                    size_changed = (new_width, new_height) != self.game_window_size
+                    
+                    if size_changed or (current_time - last_resize_time > resize_interval):
+                        self.game_window_size = (new_width, new_height)
+                        
+                        # Calculate the new size for the overlay
+                        overlay_width = int(new_width * self.game_width_percentage)
+                        overlay_height = int(new_height * self.game_height_percentage)
+                        
+                        # Always update the expanded size
+                        self.expanded_width = overlay_width
+                        self.expanded_height = overlay_height
+                        
+                        # Only resize if not minimized
+                        if not self.is_minimized:
+                            # Use win32gui to resize the window directly
+                            try:
+                                win32gui.SetWindowPos(
+                                    self.hwnd,
+                                    0,  # No z-order change
+                                    0, 0,  # Position (unchanged)
+                                    self.expanded_width, self.expanded_height,  # New size
+                                    win32con.SWP_NOMOVE | win32con.SWP_NOZORDER
+                                )
+                                last_resize_time = current_time
+                            except Exception as e:
+                                print(f"Error resizing window: {e}")
 
                     # Move overlay window to track game window
                     win32gui.SetWindowPos(
@@ -1175,9 +1256,25 @@ class OverlayAutoFisher(QMainWindow):
         # Get the device pixel ratio for proper scaling on high-DPI displays
         device_pixel_ratio = target_screen.devicePixelRatio()
         
-        # Adjust size for the current DPI scaling
-        window_width = int(self.expanded_width / device_pixel_ratio)
-        window_height = int(self.expanded_height / device_pixel_ratio)
+        # If we have a game window size, use it for dynamic sizing
+        if self.game_window_size[0] > 0 and self.game_window_size[1] > 0:
+            game_width, game_height = self.game_window_size
+            window_width = int(game_width * self.game_width_percentage)
+            window_height = int(game_height * self.game_height_percentage)
+            
+            # Update expanded dimensions
+            self.expanded_width = window_width
+            self.expanded_height = window_height
+        else:
+            # Otherwise use default size adjusted for DPI
+            window_width = int(self.default_width / device_pixel_ratio)
+            window_height = int(self.default_height / device_pixel_ratio)
+            
+            # Update expanded dimensions
+            self.expanded_width = window_width
+            self.expanded_height = window_height
+        
+        # Update minimized dimensions
         self.minimized_width = int(50 / device_pixel_ratio)
         self.minimized_height = int(50 / device_pixel_ratio)
         
@@ -1185,8 +1282,12 @@ class OverlayAutoFisher(QMainWindow):
         x = screen_geometry.x() + (screen_width - window_width) // 2
         y = screen_geometry.y() + (screen_height - window_height) // 2
         
-        # Resize and position
-        self.resize(window_width, window_height)
+        # Resize and position - only if not minimized
+        if not self.is_minimized:
+            self.resize(window_width, window_height)
+        else:
+            self.resize(self.minimized_width, self.minimized_height)
+            
         self.move(x, y)
         
         self.add_log(f"Positioned at ({x},{y}) with size {window_width}x{window_height}")
