@@ -65,12 +65,17 @@ class RegionSelectorOverlay(QMainWindow):
     """Overlay window for selecting a screen region"""
     region_selected = pyqtSignal(tuple)
     
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, game_window=None, region_width=75, region_height=50):
         super().__init__(parent)
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
-        # Get screen geometry
+        # Store game window reference
+        self.game_window = game_window
+        self.game_window_rect = None
+        self.client_rect = None
+        
+        # Get screen geometry for fallback
         screen = QApplication.primaryScreen()
         if screen:
             self.screen_geometry = screen.geometry()
@@ -78,8 +83,38 @@ class RegionSelectorOverlay(QMainWindow):
             # Fallback to a reasonable default
             self.screen_geometry = QRect(0, 0, 1920, 1080)
         
-        # Set window to cover the entire screen
-        self.setGeometry(self.screen_geometry)
+        # If we have a game window, position overlay on it
+        if self.game_window and WINDOWS_SUPPORT:
+            try:
+                # Get window position and size
+                window_rect = win32gui.GetWindowRect(self.game_window)
+                win_left, win_top, win_right, win_bottom = window_rect
+                win_width = win_right - win_left
+                win_height = win_bottom - win_top
+                
+                # Store game window rect for later use
+                self.game_window_rect = (win_left, win_top, win_right, win_bottom)
+                
+                # Get the client area (actual game content area)
+                client_rect = win32gui.GetClientRect(self.game_window)
+                client_left, client_top, client_right, client_bottom = client_rect
+                
+                # Convert client coordinates to screen coordinates
+                client_left, client_top = win32gui.ClientToScreen(self.game_window, (client_left, client_top))
+                client_right, client_bottom = win32gui.ClientToScreen(self.game_window, (client_right, client_bottom))
+                
+                # Store client rect for later use
+                self.client_rect = (client_left, client_top, client_right, client_bottom)
+                
+                # Set geometry to match client area
+                self.setGeometry(client_left, client_top, client_right - client_left, client_bottom - client_top)
+            except Exception as e:
+                print(f"Error positioning overlay on game window: {e}")
+                # Fallback to full screen
+                self.setGeometry(self.screen_geometry)
+        else:
+            # Set window to cover the entire screen
+            self.setGeometry(self.screen_geometry)
         
         # Initialize selection variables
         self.start_point = None
@@ -87,8 +122,8 @@ class RegionSelectorOverlay(QMainWindow):
         self.is_selecting = False
         
         # Default region size - 1.5:1 aspect ratio
-        self.region_width = 75  # Default width
-        self.region_height = 50  # Default height
+        self.region_width = region_width
+        self.region_height = region_height
         
         # Colors for drawing
         self.colors = {
@@ -113,23 +148,38 @@ class RegionSelectorOverlay(QMainWindow):
             right = left + self.region_width
             bottom = top + self.region_height
             
-            # Ensure region stays within screen bounds
+            # Ensure region stays within bounds
             if left < 0:
                 left = 0
                 right = self.region_width
-            elif right > self.screen_geometry.width():
-                right = self.screen_geometry.width()
+            elif right > self.width():
+                right = self.width()
                 left = right - self.region_width
                 
             if top < 0:
                 top = 0
                 bottom = self.region_height
-            elif bottom > self.screen_geometry.height():
-                bottom = self.screen_geometry.height()
+            elif bottom > self.height():
+                bottom = self.height()
                 top = bottom - self.region_height
             
-            # Emit signal with selected region
-            self.region_selected.emit((left, top, right, bottom))
+            # Calculate absolute screen coordinates
+            abs_left = self.x() + left
+            abs_top = self.y() + top
+            abs_right = abs_left + self.region_width
+            abs_bottom = abs_top + self.region_height
+            
+            # Calculate relative coordinates to the game window for tracking
+            rel_coords = None
+            if self.game_window and WINDOWS_SUPPORT and self.game_window_rect:
+                gw_left, gw_top, _, _ = self.game_window_rect
+                # Store offsets from game window top-left corner
+                rel_left = abs_left - gw_left
+                rel_top = abs_top - gw_top
+                rel_coords = (rel_left, rel_top)
+            
+            # Emit signal with selected region and relative coordinates
+            self.region_selected.emit((abs_left, abs_top, abs_right, abs_bottom, rel_coords))
             self.close()
     
     def mouseMoveEvent(self, event):
@@ -148,8 +198,8 @@ class RegionSelectorOverlay(QMainWindow):
         painter.fillRect(self.rect(), overlay_color)
         
         # Draw crosshair guides across the entire screen
-        screen_width = self.screen_geometry.width()
-        screen_height = self.screen_geometry.height()
+        screen_width = self.width()
+        screen_height = self.height()
         
         # Horizontal guide line
         painter.setPen(QPen(QColor(self.colors['accent']), 1, Qt.PenStyle.DashLine))
@@ -219,13 +269,13 @@ class RegionSelectorOverlay(QMainWindow):
             # Ensure region stays within screen bounds
             if left < 0:
                 left = 0
-            elif left + self.region_width > self.screen_geometry.width():
-                left = self.screen_geometry.width() - self.region_width
+            elif left + self.region_width > screen_width:
+                left = screen_width - self.region_width
                 
             if top < 0:
                 top = 0
-            elif top + self.region_height > self.screen_geometry.height():
-                top = self.screen_geometry.height() - self.region_height
+            elif top + self.region_height > screen_height:
+                top = screen_height - self.region_height
             
             right = left + self.region_width
             bottom = top + self.region_height
@@ -266,28 +316,26 @@ class RegionSelectorOverlay(QMainWindow):
                     right, top + i * cell_height
                 )
             
-            # Show dimensions
-            text = f"{self.region_width} × {self.region_height}"
-            font = painter.font()
-            font.setBold(True)
-            painter.setFont(font)
+            # Calculate absolute position for display
+            abs_left = self.x() + left
+            abs_top = self.y() + top
             
-            # Draw text with background
-            text_rect = painter.fontMetrics().boundingRect(text)
-            text_x = left + self.region_width - text_rect.width() - 5
-            text_y = bottom + text_rect.height() + 5
+            # Show position coordinates
+            coord_text = f"position: ({abs_left},{abs_top})"
             
-            # Ensure text is visible
-            if text_y > self.height() - 10:
+            # Calculate text position
+            text_y = bottom + 15
+            if text_y > screen_height - 5:
                 text_y = top - 5
-            
+                
             # Draw text background
-            bg_rect = QRect(text_x - 2, text_y - text_rect.height(), text_rect.width() + 4, text_rect.height() + 2)
-            painter.fillRect(bg_rect, QColor(0, 0, 0, 180))
+            coord_rect = painter.fontMetrics().boundingRect(coord_text)
+            coord_bg_rect = QRect(left - 2, text_y - coord_rect.height(), coord_rect.width() + 4, coord_rect.height() + 2)
+            painter.fillRect(coord_bg_rect, QColor(0, 0, 0, 180))
             
-            # Draw text
+            # Draw coordinates
             painter.setPen(QColor(self.colors['text_bright']))
-            painter.drawText(text_x, text_y, text)
+            painter.drawText(left, text_y, coord_text)
             
             # Draw crosshair at center
             center_x = left + self.region_width // 2
@@ -300,24 +348,6 @@ class RegionSelectorOverlay(QMainWindow):
             painter.setPen(QPen(QColor(self.colors['text_bright']), 1))
             painter.drawLine(center_x - cross_size, center_y, center_x + cross_size, center_y)
             painter.drawLine(center_x, center_y - cross_size, center_x, center_y + cross_size)
-            
-            # Show position coordinates
-            coord_text = f"position: ({left},{top})"
-            coord_rect = painter.fontMetrics().boundingRect(coord_text)
-            coord_x = left
-            coord_y = bottom + text_rect.height() + 25
-            
-            # Ensure coordinates are visible
-            if coord_y > self.height() - 10:
-                coord_y = top - 25
-            
-            # Draw coordinates background
-            coord_bg_rect = QRect(coord_x - 2, coord_y - coord_rect.height(), coord_rect.width() + 4, coord_rect.height() + 2)
-            painter.fillRect(coord_bg_rect, QColor(0, 0, 0, 180))
-            
-            # Draw coordinates
-            painter.setPen(QColor(self.colors['text_bright']))
-            painter.drawText(coord_x, coord_y, coord_text)
 
 class OverlayAutoFisher(QMainWindow):
     def __init__(self, parent=None):
@@ -1013,7 +1043,7 @@ class OverlayAutoFisher(QMainWindow):
             ("Threshold", "current_threshold"),
             ("Cooldown", "cooldown"),
             ("Key Mapping", "key_mapping"),
-            ("Processing FPS", "processing_fps")
+            ("Region Position", "region_position")
         ]
         
         # Arrange in two columns
@@ -1358,6 +1388,15 @@ class OverlayAutoFisher(QMainWindow):
 
     def update_stats_display(self):
         """Update the stats display with  values"""
+        # Get region position for display if available
+        region_pos = "Not set"
+        if hasattr(self, 'region') and self.region:
+            left, top, _, _ = self.region
+            region_pos = f"({left},{top})"
+            
+            if hasattr(self, 'region_rel_coords') and self.region_rel_coords:
+                region_pos += " 🔒"
+                
         stats_data = {
             "total_detections": "0",
             "session_runtime": "00:00:00",
@@ -1366,7 +1405,7 @@ class OverlayAutoFisher(QMainWindow):
             "current_threshold": f"{self.threshold_var:.3f}",
             "cooldown": f"{self.cooldown_var}s",
             "key_mapping": self.fishing_key_var.upper(),
-            "processing_fps": "30"
+            "region_position": region_pos
         }
         
         for key, label in self.stats_labels.items():
@@ -1514,6 +1553,9 @@ class OverlayAutoFisher(QMainWindow):
     
     def capture_reference(self):
         """Capture a reference frame for comparison"""
+        # Update region position before capturing
+        self.update_region_position()
+        
         frame = self.capture_screen()
         if frame is not None:
             self.reference_frame = frame
@@ -1544,47 +1586,11 @@ class OverlayAutoFisher(QMainWindow):
                 self.add_log("Cannot start region selection: Game window not found")
                 return
         
-        # Get window position and size
-        try:
-            if WINDOWS_SUPPORT:
-                # Get window position and size
-                window_rect = win32gui.GetWindowRect(self.game_window)
-                win_left, win_top, win_right, win_bottom = window_rect
-                win_width = win_right - win_left
-                win_height = win_bottom - win_top
-                
-                # Get the client area (actual game content area)
-                client_rect = win32gui.GetClientRect(self.game_window)
-                client_left, client_top, client_right, client_bottom = client_rect
-                
-                # Convert client coordinates to screen coordinates
-                client_left, client_top = win32gui.ClientToScreen(self.game_window, (client_left, client_top))
-                client_right, client_bottom = win32gui.ClientToScreen(self.game_window, (client_right, client_bottom))
-                
-                # Use client area dimensions for more accurate game content area
-                game_width = client_right - client_left
-                game_height = client_bottom - client_top
-                
-                self.add_log(f"Game window found: {win_width}x{win_height} at ({win_left},{win_top})")
-                self.add_log(f"Game content area: {game_width}x{game_height} at ({client_left},{client_top})")
-            else:
-                # Fallback for non-Windows platforms - use screen dimensions
-                screen = QApplication.primaryScreen()
-                screen_geometry = screen.geometry()
-                client_left = screen_geometry.x()
-                client_top = screen_geometry.y()
-                game_width = screen_geometry.width()
-                game_height = screen_geometry.height()
-                self.add_log(f"Using screen dimensions: {game_width}x{game_height}")
-        except Exception as e:
-            self.add_log(f"Error getting window dimensions: {e}")
-            return
-        
         # Calculate region dimensions based on 1.5:1 ratio
         width = int(size * 1.5)
         height = size
         
-        # Temporarily minimize our own window
+        # Remember if we were minimized
         was_minimized = self.is_minimized
         if not was_minimized:
             self.toggle_minimize()
@@ -1592,227 +1598,66 @@ class OverlayAutoFisher(QMainWindow):
             QApplication.processEvents()
             time.sleep(0.2)
         
-        # Create a Tkinter root window
-        import tkinter as tk
-        root = tk.Tk()
-        root.withdraw()  # Hide the main window
+        # Create region selector overlay
+        self.region_selector = RegionSelectorOverlay(None, self.game_window, width, height)
+        self.region_selector.region_selected.connect(self.set_region)
+        self.region_selector.show()
         
-        # Create a transparent window for selection that matches the game window exactly
-        selection_window = tk.Toplevel(root)
-        selection_window.geometry(f"{game_width}x{game_height}+{client_left}+{client_top}")
-        selection_window.attributes('-alpha', 0.2)
-        selection_window.attributes('-topmost', True)
-        selection_window.overrideredirect(True)  # Remove window decorations
-        selection_window.configure(bg=self.colors['bg_dark'])
+        # Make sure we restore our window after selection is done
+        self.region_selector.destroyed.connect(lambda: QTimer.singleShot(200, lambda: self.restore_after_region_selection(was_minimized)))
         
-        # Create canvas for drawing the selection rectangle
-        canvas = tk.Canvas(selection_window, cursor="cross", bg=self.colors['bg_dark'], highlightthickness=0)
-        canvas.pack(fill=tk.BOTH, expand=True)
-        
-        # Variables to track selection rectangle
-        preview_rect = None
-        outline_rect = None
-        grid_lines = []
-        info_text = None
-        
-        def update_preview(event):
-            nonlocal preview_rect, outline_rect, grid_lines, info_text
+        # Set focus to the overlay
+        self.region_selector.activateWindow()
+        self.region_selector.raise_()
+
+    def set_region(self, region_data):
+        """Set the selected region and update UI"""
+        # Handle both old-style (4-tuple) and new-style (5-tuple) region data
+        if len(region_data) >= 5:
+            # New style with relative coordinates
+            left, top, right, bottom, rel_coords = region_data
+            self.region = (left, top, right, bottom)
             
-            # Calculate region coordinates centered on mouse position
-            left = event.x - width // 2
-            top = event.y - height // 2
-            right = left + width
-            bottom = top + height
-            
-            # Ensure region stays within game window bounds
-            if left < 0:
-                left = 0
-                right = width
-            elif right > game_width:
-                right = game_width
-                left = right - width
+            # Store relative coordinates for tracking
+            if rel_coords:
+                self.region_rel_coords = rel_coords
+                self.add_log(f"Region will track with game window at offset {rel_coords}")
                 
-            if top < 0:
-                top = 0
-                bottom = height
-            elif bottom > game_height:
-                bottom = game_height
-                top = bottom - height
-            
-            # Clear previous shapes
-            if preview_rect:
-                canvas.delete(preview_rect)
-            if outline_rect:
-                canvas.delete(outline_rect)
-            for line in grid_lines:
-                canvas.delete(line)
-            grid_lines = []
-            if info_text:
-                canvas.delete(info_text)
-            
-            # Draw a clean, minimal border (slightly larger for visibility)
-            outline_rect = canvas.create_rectangle(
-                left-2, top-2, right+2, bottom+2,
-                outline=self.colors['accent'], width=2
-            )
-            
-            # Draw the inner rectangle with minimal styling
-            preview_rect = canvas.create_rectangle(
-                left, top, right, bottom,
-                outline=self.colors['green'], width=1,
-                fill=self.colors['accent'], stipple="gray12"  # Sparse fill
-            )
-            
-            # Add grid lines (3x3 grid)
-            cell_width = width // 3
-            cell_height = height // 3
-            
-            # Vertical grid lines
-            for i in range(1, 3):
-                line = canvas.create_line(
-                    left + i * cell_width, top,
-                    left + i * cell_width, bottom,
-                    fill=self.colors['green'], width=1, dash=(2, 2)
-                )
-                grid_lines.append(line)
-                
-            # Horizontal grid lines
-            for i in range(1, 3):
-                line = canvas.create_line(
-                    left, top + i * cell_height,
-                    right, top + i * cell_height,
-                    fill=self.colors['green'], width=1, dash=(2, 2)
-                )
-                grid_lines.append(line)
-            
-            # Create coordinate display with more information
-            # Convert to absolute screen coordinates
-            abs_left = client_left + left
-            abs_top = client_top + top
-            coord_text = f"position: ({abs_left},{abs_top}) • size: {width}×{height}"
-            
-            # Display information at the bottom center
-            info_text = canvas.create_text(
-                game_width // 2, game_height - 30,
-                text=coord_text,
-                fill=self.colors['text_bright'],
-                font=("Consolas", 10)
-            )
+                # Update UI to indicate region is attached to game window
+                if hasattr(self, 'preview_label'):
+                    current_text = self.preview_label.text() if not self.preview_label.pixmap() else ""
+                    prefix = "🔒 ATTACHED TO GAME: "
+                    if "ATTACHED" not in current_text:
+                        self.preview_label.setText(f"{prefix}\nTracking region will follow game window movements")
+        else:
+            # Old style, just absolute coordinates
+            self.region = region_data
+            self.region_rel_coords = None
         
-        def on_mouse_click(event):
-            nonlocal preview_rect, outline_rect, grid_lines
-            
-            # Calculate region coordinates centered on mouse position
-            left = event.x - width // 2
-            top = event.y - height // 2
-            right = left + width
-            bottom = top + height
-            
-            # Ensure region stays within game window bounds
-            if left < 0:
-                left = 0
-                right = width
-            elif right > game_width:
-                right = game_width
-                left = right - width
-                
-            if top < 0:
-                top = 0
-                bottom = height
-            elif bottom > game_height:
-                bottom = game_height
-                top = bottom - height
-            
-            # Convert to absolute screen coordinates
-            abs_left = client_left + left
-            abs_top = client_top + top
-            abs_right = client_left + right
-            abs_bottom = client_top + bottom
-            
-            # Close selection window
-            selection_window.destroy()
-            root.destroy()
-            
-            # Store the selected region
-            region = (abs_left, abs_top, abs_right, abs_bottom)
-            
-            # Restore our window
-            if not was_minimized:
-                # Use QTimer to restore after a short delay
-                QTimer.singleShot(200, lambda: self.toggle_minimize())
-            
-            # Set the region
-            self.set_region(region)
+        left, top, right, bottom = self.region
+        width = right - left
+        height = bottom - top
         
-        # Create a more visible instruction panel
-        instruction_frame = tk.Frame(
-            canvas,
-            bg=self.colors['bg_dark'],
-            highlightbackground=self.colors['accent'],
-            highlightthickness=1,
-            padx=15,
-            pady=10
-        )
+        # Update region info
+        self.add_log(f"Region selected: ({left},{top}) to ({right},{bottom}), size: {width}x{height}")
         
-        instruction_label = tk.Label(
-            instruction_frame,
-            text="SELECT REGION • CLICK TO PLACE • ESC TO CANCEL",
-            font=("Segoe UI", 11, "bold"),
-            fg=self.colors['green'],
-            bg=self.colors['bg_dark']
-        )
-        instruction_label.pack()
+        # Update the size entry field
+        self.size_entry.setText(str(height))
         
-        # Add second line of instructions
-        detail_label = tk.Label(
-            instruction_frame,
-            text=f"Region size: {width}×{height} pixels • Move mouse to position",
-            font=("Segoe UI", 10),
-            fg=self.colors['text'],
-            bg=self.colors['bg_dark']
-        )
-        detail_label.pack()
-        
-        # Place instruction frame at top center
-        canvas.create_window(game_width // 2, 50, window=instruction_frame)
-        
-        # Add crosshair guides
-        # Horizontal line
-        canvas.create_line(
-            0, game_height // 2,
-            game_width, game_height // 2,
-            fill=self.colors['accent'], width=1, dash=(8, 8)
-        )
-        
-        # Vertical line
-        canvas.create_line(
-            game_width // 2, 0,
-            game_width // 2, game_height,
-            fill=self.colors['accent'], width=1, dash=(8, 8)
-        )
-        
-        # Handle ESC key to cancel
-        def on_escape(event):
-            selection_window.destroy()
-            root.destroy()
+        # Validate the region by capturing a frame
+        if self.validate_region():
+            # Capture a reference frame right away
+            self.capture_reference()
+            self.add_log("Reference frame captured for the selected region")
             
-            # Restore our window
-            if not was_minimized:
-                # Use QTimer to restore after a short delay
-                QTimer.singleShot(200, lambda: self.toggle_minimize())
-            
-            self.add_log("Region selection cancelled")
-        
-        # Bind mouse events
-        canvas.bind("<Motion>", update_preview)  # Update preview on mouse move
-        canvas.bind("<ButtonPress-1>", on_mouse_click)
-        selection_window.bind("<Escape>", on_escape)
-        
-        # Start the Tkinter main loop
-        root.mainloop()
-    
+            # Start preview updates
+            self.start_preview()
+
     def validate_region(self):
         """Validate the selected region with a preview capture"""
+        # Update region position before validating
+        self.update_region_position()
+        
         frame = self.capture_screen()
         if frame is not None:
             self.add_log(f"Region validation successful: captured {frame.shape}")
@@ -1836,6 +1681,9 @@ class OverlayAutoFisher(QMainWindow):
             if width < 10 or height < 10:
                 self.add_log("Invalid region size detected. Please select a new region.")
                 return None
+            
+            # Use the current region coordinates which may have been updated by tracking
+            left, top, right, bottom = self.region
             
             if WINDOWS_SUPPORT and hasattr(mss, 'mss'):
                 # Use mss for better performance on Windows
@@ -1896,6 +1744,9 @@ class OverlayAutoFisher(QMainWindow):
         """Update the preview image with the current captured frame"""
         if self.region is None:
             return
+        
+        # Make sure the region is up-to-date if it's tracking the game window
+        self.update_region_position()
         
         frame = self.capture_screen()
         if frame is None:
@@ -1962,6 +1813,8 @@ class OverlayAutoFisher(QMainWindow):
     
     def toggle_minimize(self):
         """Toggle between minimized and expanded states with animation"""
+        was_minimized = self.is_minimized
+        
         if self.is_minimized:
             # Calculate the correct expanded size before expanding
             if self.game_window and WINDOWS_SUPPORT:
@@ -2006,6 +1859,16 @@ class OverlayAutoFisher(QMainWindow):
         
         # Reposition for multi-monitor support
         self.ensure_on_screen()
+        
+        # Make sure region tracking continues to work correctly
+        # after window state changes
+        if was_minimized and not self.is_minimized:
+            # We just expanded, update the region position
+            self.update_region_position()
+            
+            # If we have a preview active, update it
+            if hasattr(self, 'preview_active') and self.preview_active:
+                self.update_preview()
     
     def _animate_size(self, start_width, start_height, end_width, end_height):
         """Animate window size change with proper multi-monitor awareness"""
@@ -2153,7 +2016,7 @@ class OverlayAutoFisher(QMainWindow):
             return
 
         last_position_update_time = 0
-        position_update_interval = 0.015  # Update position every 0.1 seconds
+        position_update_interval = 0.015  # Update position every 15ms
         
         # Precalculate offsets
         offset_x = self.offset_x
@@ -2178,17 +2041,33 @@ class OverlayAutoFisher(QMainWindow):
                     # Get window position and size
                     win_left, win_top, win_right, win_bottom = win32gui.GetWindowRect(self.game_window)
 
-                    if(win_left == self.last_game_window_position[0] and win_top == self.last_game_window_position[1]):
-                        continue
-
-                    win32gui.SetWindowPos(
-                            self.hwnd,
-                            0,  # No z-order change
-                            win_left + offset_x, win_top + offset_y,  # Offset position
-                            0, 0,  # Size (unchanged)
-                            win32con.SWP_NOSIZE | win32con.SWP_NOZORDER
-                        )
-                    self.last_game_window_position = (win_left, win_top)
+                    # Check if window has moved
+                    if win_left != self.last_game_window_position[0] or win_top != self.last_game_window_position[1]:
+                        # Move the overlay window
+                        win32gui.SetWindowPos(
+                                self.hwnd,
+                                0,  # No z-order change
+                                win_left + offset_x, win_top + offset_y,  # Offset position
+                                0, 0,  # Size (unchanged)
+                                win32con.SWP_NOSIZE | win32con.SWP_NOZORDER
+                            )
+                        
+                        # Also update the selected region if it's relative to the game window
+                        if hasattr(self, 'region') and self.region and hasattr(self, 'region_rel_coords') and self.region_rel_coords:
+                            rel_left, rel_top = self.region_rel_coords
+                            old_left, old_top, old_right, old_bottom = self.region
+                            
+                            # Calculate new region position based on game window movement
+                            new_left = win_left + rel_left
+                            new_top = win_top + rel_top
+                            new_right = new_left + (old_right - old_left)
+                            new_bottom = new_top + (old_bottom - old_top)
+                            
+                            # Update the region
+                            self.region = (new_left, new_top, new_right, new_bottom)
+                        
+                        self.last_game_window_position = (win_left, win_top)
+                        
                     time.sleep(position_update_interval)
                         
                 except Exception as e:
@@ -2330,27 +2209,47 @@ class OverlayAutoFisher(QMainWindow):
         if not was_minimized and self.is_minimized:
             self.toggle_minimize()
     
-    def set_region(self, region):
-        """Set the selected region and update UI"""
-        self.region = region
-        left, top, right, bottom = region
-        width = right - left
-        height = bottom - top
-        
-        # Update region info
-        self.add_log(f"Region selected: ({left},{top}) to ({right},{bottom}), size: {width}x{height}")
-        
-        # Update the size entry field
-        self.size_entry.setText(str(height))
-        
-        # Validate the region by capturing a frame
-        if self.validate_region():
-            # Capture a reference frame right away
-            self.capture_reference()
-            self.add_log("Reference frame captured for the selected region")
+    def update_region_position(self):
+        """Update the region position if it's tracking the game window"""
+        if not hasattr(self, 'region') or not self.region or not hasattr(self, 'region_rel_coords') or not self.region_rel_coords:
+            return
             
-            # Start preview updates
-            self.start_preview()
+        if not WINDOWS_SUPPORT or not self.game_window:
+            return
+            
+        try:
+            # Get current game window position
+            win_left, win_top, win_right, win_bottom = win32gui.GetWindowRect(self.game_window)
+            
+            # Get stored relative coordinates
+            rel_left, rel_top = self.region_rel_coords
+            
+            # Get current region dimensions
+            old_left, old_top, old_right, old_bottom = self.region
+            width = old_right - old_left
+            height = old_bottom - old_top
+            
+            # Calculate new region position based on game window
+            new_left = win_left + rel_left
+            new_top = win_top + rel_top
+            new_right = new_left + width
+            new_bottom = new_top + height
+            
+            # Only update if position has actually changed
+            if new_left != old_left or new_top != old_top:
+                self.region = (new_left, new_top, new_right, new_bottom)
+                
+                # Update status with new position coordinates (every 30 updates to avoid spam)
+                update_count = getattr(self, '_region_update_count', 0) + 1
+                setattr(self, '_region_update_count', update_count)
+                
+                if update_count % 30 == 0:
+                    # Update status label if available
+                    if hasattr(self, 'stats_labels') and 'region_position' in self.stats_labels:
+                        self.stats_labels['region_position'].setText(f"Region: ({new_left},{new_top})")
+        except Exception as e:
+            print(f"Error updating region position: {e}")
+            # Don't update the region on error
 
 # Run the overlay if executed directly
 if __name__ == "__main__":
