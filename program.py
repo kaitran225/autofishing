@@ -303,61 +303,60 @@ class PixelChangeDetector:
         # Explicitly exclude our own detector window
         excluded_titles = ['play together pixel change detector', 'pixel change detector']
         
-        # Find process ID first
-        found_pid = False
-        for proc in psutil.process_iter(['pid', 'name']):
-            try:
-                process_name = proc.info['name'].lower()
-                if any(variation in process_name for variation in name_variations):
-                    self.play_together_pid = proc.info['pid']
-                    self.log(f"Found Play Together process: {process_name} (PID: {self.play_together_pid})")
-                    found_pid = True
-                    break
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                pass
-                
-        # Find window handle using EnumWindows
-        def enum_window_callback(hwnd, _):
-            if win32gui.IsWindowVisible(hwnd):
-                window_text = win32gui.GetWindowText(hwnd).lower()
-                
-                # Skip our own detector window
-                if any(excluded in window_text for excluded in excluded_titles):
-                    return True
-                
+        # New approach: First find process ID using psutil
+        self.play_together_pid = None
+        try:
+            for proc in psutil.process_iter(['pid', 'name']):
                 try:
-                    _, found_pid = win32process.GetWindowThreadProcessId(hwnd)
-                    
-                    # Check if window belongs to our process
-                    if self.play_together_pid and found_pid == self.play_together_pid:
-                        self.play_together_window = hwnd
-                        self.log(f"Found Play Together window: {window_text} (HWND: {hwnd})")
-                        return False
+                    process_name = proc.info['name'].lower()
+                    if any(variation in process_name for variation in name_variations):
+                        self.play_together_pid = proc.info['pid']
+                        self.log(f"Found Play Together process: {process_name} (PID: {self.play_together_pid})")
+                        break
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    pass
+        except Exception as e:
+            self.log(f"Error finding process: {e}")
+            
+        # Alternative approach: Find window by title without using EnumWindows
+        self.play_together_window = None
+        try:
+            # Try to find window by title using FindWindow instead of EnumWindows
+            for variation in name_variations:
+                try:
+                    # Try exact match
+                    hwnd = win32gui.FindWindow(None, variation)
+                    if hwnd and win32gui.IsWindowVisible(hwnd):
+                        window_text = win32gui.GetWindowText(hwnd).lower()
+                        if not any(excluded in window_text for excluded in excluded_titles):
+                            self.play_together_window = hwnd
+                            self.log(f"Found Play Together window by title: {window_text} (HWND: {hwnd})")
+                            break
+                            
+                    # Try partial match with common window class names
+                    for class_name in [None, "Window", "ApplicationFrameWindow"]:
+                        try:
+                            hwnd = win32gui.FindWindowEx(0, 0, class_name, None)
+                            while hwnd:
+                                if win32gui.IsWindowVisible(hwnd):
+                                    window_text = win32gui.GetWindowText(hwnd).lower()
+                                    if (variation in window_text and 
+                                        not any(excluded in window_text for excluded in excluded_titles)):
+                                        self.play_together_window = hwnd
+                                        self.log(f"Found Play Together window by partial title: {window_text} (HWND: {hwnd})")
+                                        break
+                                hwnd = win32gui.FindWindowEx(0, hwnd, class_name, None)
+                            if self.play_together_window:
+                                break
+                        except Exception:
+                            pass
                 except Exception:
                     pass
                     
-                # Or check by window title - but be more strict about matching
-                if any(variation == window_text or 
-                       window_text.startswith(f"{variation} ") or
-                       window_text.endswith(f" {variation}") or
-                       f" {variation} " in window_text
-                       for variation in name_variations):
-                    self.play_together_window = hwnd
-                    self.log(f"Found Play Together window by title: {window_text} (HWND: {hwnd})")
-                    return False
-            return True
-        
-        # Add error handling for EnumWindows
-        try:
-            win32gui.EnumWindows(enum_window_callback, None)
+                if self.play_together_window:
+                    break
         except Exception as e:
-            self.log(f"Error enumerating windows: {e}")
-            # Continue without failing - we'll try other methods or skip window focus
-            # This prevents the error from stopping the entire detection process
-            
-            # Set a default window handle if needed for testing
-            if not hasattr(self, 'play_together_window') or self.play_together_window is None:
-                self.play_together_window = None
+            self.log(f"Error finding window: {e}")
         
         # If no Play Together window was found, log it clearly
         if not self.play_together_window:
@@ -1469,7 +1468,7 @@ class OverlayAutoFisher(QMainWindow):
         self.current_frame = None
         self.reference_frame = None
         self.preview_timer = None
-        self.preview_interval = 500  # ms
+        self.preview_interval = 100  # ms - faster updates (was 500ms)
         self.preview_active = False
         
         # Find game window and calculate initial size
@@ -2497,12 +2496,11 @@ class OverlayAutoFisher(QMainWindow):
             self.select_region()
             return
         
-        # Check if reference frame is captured
-        if self.detector.reference_frame is None:
-            self.add_log("No reference frame captured. Capturing now...")
-            if not self.capture_reference():
-                self.add_log("Failed to capture reference frame. Cannot start detection.")
-                return
+        # Always capture a new reference frame when starting
+        self.add_log("Capturing fresh reference frame before starting detection...")
+        if not self.capture_reference():
+            self.add_log("Failed to capture reference frame. Cannot start detection.")
+            return
         
         self.add_log("Starting detection...")
         self.start_button.setEnabled(False)
@@ -2794,6 +2792,11 @@ class OverlayAutoFisher(QMainWindow):
         # If log_console exists, add to UI
         if hasattr(self, 'log_console') and self.log_console is not None:
             self.log_console.append(log_entry)
+            
+            # Check if scrollbar exists before accessing it
+            scrollbar = self.log_console.verticalScrollBar()
+            if scrollbar is not None:
+                scrollbar.setValue(scrollbar.maximum())
         else:
             # Otherwise buffer the log for later
             self.log_buffer.append(log_entry)
@@ -2803,6 +2806,12 @@ class OverlayAutoFisher(QMainWindow):
         if hasattr(self, 'log_console') and self.log_console is not None and self.log_buffer:
             for log_entry in self.log_buffer:
                 self.log_console.append(log_entry)
+                
+            # After adding all buffered messages, scroll to the bottom
+            scrollbar = self.log_console.verticalScrollBar()
+            if scrollbar is not None:
+                scrollbar.setValue(scrollbar.maximum())
+            
             self.log_buffer.clear()
     
     def clear_logs(self):
