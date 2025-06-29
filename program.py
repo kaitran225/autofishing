@@ -346,8 +346,18 @@ class PixelChangeDetector:
                     self.log(f"Found Play Together window by title: {window_text} (HWND: {hwnd})")
                     return False
             return True
+        
+        # Add error handling for EnumWindows
+        try:
+            win32gui.EnumWindows(enum_window_callback, None)
+        except Exception as e:
+            self.log(f"Error enumerating windows: {e}")
+            # Continue without failing - we'll try other methods or skip window focus
+            # This prevents the error from stopping the entire detection process
             
-        win32gui.EnumWindows(enum_window_callback, None)
+            # Set a default window handle if needed for testing
+            if not hasattr(self, 'play_together_window') or self.play_together_window is None:
+                self.play_together_window = None
         
         # If no Play Together window was found, log it clearly
         if not self.play_together_window:
@@ -708,7 +718,7 @@ class PixelChangeDetector:
         else:
             self.log("Failed to capture reference frame")
             return False
-            
+    
     def validate_region(self):
         """Validate the selected region with a preview capture"""
         if self.region is None:
@@ -954,7 +964,6 @@ class PixelChangeDetector:
                 if hasattr(self.gui, 'set_status_indicator'):
                     QTimer.singleShot(0, lambda: self.gui.set_status_indicator("running"))  # type: ignore
 
-
 class DraggableFrame(QFrame):
     """Custom QFrame that can be dragged"""
     def __init__(self, parent=None):
@@ -989,15 +998,26 @@ class RegionSelectorOverlay(QMainWindow):
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
+        # Enable mouse tracking to get mouse move events without clicks
+        self.setMouseTracking(True)
+        
+        # Add a timer to update cursor position even if mouse events aren't firing
+        self.cursor_update_timer = QTimer(self)
+        self.cursor_update_timer.timeout.connect(self.update_cursor_position)
+        self.cursor_update_timer.start(16)  # ~60fps for smooth tracking
+        
         # Store game window reference
         self.game_window = game_window
         self.game_window_rect = None
         self.client_rect = None
         
+        # Get screen information for proper scaling
+        self.target_screen = self.get_appropriate_screen()
+        self.dpi_scale = self.get_dpi_scale()
+        
         # Get screen geometry for fallback
-        screen = QApplication.primaryScreen()
-        if screen:
-            self.screen_geometry = screen.geometry()
+        if self.target_screen:
+            self.screen_geometry = self.target_screen.geometry()
         else:
             # Fallback to a reasonable default
             self.screen_geometry = QRect(0, 0, 1920, 1080)
@@ -1037,12 +1057,16 @@ class RegionSelectorOverlay(QMainWindow):
         
         # Initialize selection variables
         self.start_point = None
-        self.current_point = None
+        # Initialize current_point to the center of the screen to show a default selection box
+        screen_width = self.width()
+        screen_height = self.height()
+        self.current_point = QPoint(screen_width // 2, screen_height // 2)
         self.is_selecting = False
         
         # Default region size - 1.5:1 aspect ratio
-        self.region_width = region_width
-        self.region_height = region_height
+        # Scale region size based on DPI
+        self.region_width = int(region_width * self.dpi_scale)
+        self.region_height = int(region_height * self.dpi_scale)
         
         # Colors for drawing
         self.colors = {
@@ -1055,6 +1079,32 @@ class RegionSelectorOverlay(QMainWindow):
         
         # Set cursor to crosshair
         self.setCursor(Qt.CursorShape.CrossCursor)
+        
+    def get_appropriate_screen(self):
+        """Get the most appropriate screen for the overlay"""
+        # First, try to get the screen containing the game window
+        if self.game_window and WINDOWS_SUPPORT:
+            try:
+                # Get game window position
+                window_rect = win32gui.GetWindowRect(self.game_window)
+                win_left, win_top, _, _ = window_rect
+                
+                # Find screen containing this point
+                point = QPoint(win_left, win_top)
+                for screen in QApplication.screens():
+                    if screen.geometry().contains(point):
+                        return screen
+            except Exception:
+                pass
+        
+        # If we couldn't find the game window's screen, use the primary screen
+        return QApplication.primaryScreen()
+        
+    def get_dpi_scale(self):
+        """Get the DPI scaling factor for the current screen"""
+        if self.target_screen:
+            return self.target_screen.devicePixelRatio()
+        return 1.0
         
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -1102,8 +1152,17 @@ class RegionSelectorOverlay(QMainWindow):
             self.close()
     
     def mouseMoveEvent(self, event):
+        # Get current mouse position and ensure it's valid
+        if event.position().isNull():
+            return
+            
         self.current_point = event.position().toPoint()
+        
+        # Force immediate repaint to update the selection box position
         self.update()
+        
+        # Process events to ensure the UI updates immediately
+        QApplication.processEvents()
     
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
@@ -1132,24 +1191,27 @@ class RegionSelectorOverlay(QMainWindow):
         detail_text = f"Region size: {self.region_width}×{self.region_height} pixels • Move mouse to position"
         
         # Calculate text dimensions
+        # Scale font size based on DPI
         font = painter.font()
         font.setBold(True)
-        font.setPointSize(11)
+        font.setPointSize(int(11 * self.dpi_scale))
         painter.setFont(font)
         
         instruction_rect = painter.fontMetrics().boundingRect(instruction_text)
         
         font.setBold(False)
-        font.setPointSize(10)
+        font.setPointSize(int(10 * self.dpi_scale))
         painter.setFont(font)
         
         detail_rect = painter.fontMetrics().boundingRect(detail_text)
         
         # Calculate panel dimensions
-        panel_width = max(instruction_rect.width(), detail_rect.width()) + 30
-        panel_height = instruction_rect.height() + detail_rect.height() + 30
+        # Scale panel padding based on DPI
+        panel_padding = int(30 * self.dpi_scale)
+        panel_width = max(instruction_rect.width(), detail_rect.width()) + panel_padding
+        panel_height = instruction_rect.height() + detail_rect.height() + panel_padding
         panel_x = (screen_width - panel_width) // 2
-        panel_y = 50
+        panel_y = int(50 * self.dpi_scale)
         
         # Draw panel background
         panel_rect = QRect(panel_x, panel_y, panel_width, panel_height)
@@ -1159,28 +1221,28 @@ class RegionSelectorOverlay(QMainWindow):
         
         # Draw instruction text
         font.setBold(True)
-        font.setPointSize(11)
+        font.setPointSize(int(11 * self.dpi_scale))
         painter.setFont(font)
         painter.setPen(QColor(self.colors['green']))
         painter.drawText(
             panel_x + (panel_width - instruction_rect.width()) // 2,
-            panel_y + 20,
+            panel_y + int(20 * self.dpi_scale),
             instruction_text
         )
         
         # Draw detail text
         font.setBold(False)
-        font.setPointSize(10)
+        font.setPointSize(int(10 * self.dpi_scale))
         painter.setFont(font)
         painter.setPen(QColor(self.colors['text']))
         painter.drawText(
             panel_x + (panel_width - detail_rect.width()) // 2,
-            panel_y + 20 + instruction_rect.height() + 10,
+            panel_y + int(20 * self.dpi_scale) + instruction_rect.height() + int(10 * self.dpi_scale),
             detail_text
         )
         
         # Draw selection box at current mouse position
-        if self.current_point:
+        if self.current_point is not None:
             # Calculate region coordinates centered on mouse position
             left = self.current_point.x() - self.region_width // 2
             top = self.current_point.y() - self.region_height // 2
@@ -1208,15 +1270,21 @@ class RegionSelectorOverlay(QMainWindow):
             
             # Draw selection border
             border_color = QColor(self.colors['green'])
-            painter.setPen(QPen(border_color, 2))
+            painter.setPen(QPen(border_color, max(1, int(2 * self.dpi_scale))))
             painter.drawRect(QRect(left, top, self.region_width, self.region_height))
             
             # Draw outer border for better visibility
+            border_offset = max(1, int(2 * self.dpi_scale))
             painter.setPen(QPen(QColor(self.colors['accent']), 1))
-            painter.drawRect(QRect(left-2, top-2, self.region_width+4, self.region_height+4))
+            painter.drawRect(QRect(
+                left - border_offset, 
+                top - border_offset, 
+                self.region_width + (border_offset * 2), 
+                self.region_height + (border_offset * 2)
+            ))
             
             # Draw grid lines (3x3 grid)
-            grid_pen = QPen(QColor(self.colors['green']), 1, Qt.PenStyle.DashLine)
+            grid_pen = QPen(QColor(self.colors['green']), max(1, int(1 * self.dpi_scale)), Qt.PenStyle.DashLine)
             painter.setPen(grid_pen)
             
             # Vertical grid lines
@@ -1243,13 +1311,18 @@ class RegionSelectorOverlay(QMainWindow):
             coord_text = f"position: ({abs_left},{abs_top})"
             
             # Calculate text position
-            text_y = bottom + 15
+            text_y = bottom + int(15 * self.dpi_scale)
             if text_y > screen_height - 5:
-                text_y = top - 5
+                text_y = top - int(5 * self.dpi_scale)
                 
             # Draw text background
             coord_rect = painter.fontMetrics().boundingRect(coord_text)
-            coord_bg_rect = QRect(left - 2, text_y - coord_rect.height(), coord_rect.width() + 4, coord_rect.height() + 2)
+            coord_bg_rect = QRect(
+                left - int(2 * self.dpi_scale), 
+                text_y - coord_rect.height(), 
+                coord_rect.width() + int(4 * self.dpi_scale), 
+                coord_rect.height() + int(2 * self.dpi_scale)
+            )
             painter.fillRect(coord_bg_rect, QColor(0, 0, 0, 180))
             
             # Draw coordinates
@@ -1261,12 +1334,34 @@ class RegionSelectorOverlay(QMainWindow):
             center_y = top + self.region_height // 2
             
             # Crosshair size
-            cross_size = 5
+            cross_size = int(5 * self.dpi_scale)
             
             # Draw crosshair
             painter.setPen(QPen(QColor(self.colors['text_bright']), 1))
             painter.drawLine(center_x - cross_size, center_y, center_x + cross_size, center_y)
             painter.drawLine(center_x, center_y - cross_size, center_x, center_y + cross_size)
+
+    def update_cursor_position(self):
+        """Update the cursor position from the global cursor position"""
+        # Get the current global cursor position
+        global_pos = QCursor.pos()
+        
+        # Convert to local coordinates
+        local_pos = self.mapFromGlobal(global_pos)
+        
+        # Only update if the cursor is within our window
+        if self.rect().contains(local_pos):
+            self.current_point = local_pos
+            self.update()
+    
+    def closeEvent(self, event):
+        """Handle window close event"""
+        # Stop the cursor update timer
+        if hasattr(self, 'cursor_update_timer') and self.cursor_update_timer.isActive():
+            self.cursor_update_timer.stop()
+        
+        # Accept the event to close the window
+        event.accept()
 
 class OverlayAutoFisher(QMainWindow):
     def __init__(self, parent=None):
@@ -1371,7 +1466,6 @@ class OverlayAutoFisher(QMainWindow):
         self.drag_start_position = None
         
         # Region selection and monitoring variables
-        self.region = None  # (left, top, right, bottom)
         self.current_frame = None
         self.reference_frame = None
         self.preview_timer = None
@@ -2398,7 +2492,7 @@ class OverlayAutoFisher(QMainWindow):
     def start(self):
         """Start detection"""
         # Check if region is selected
-        if not self.region:
+        if not self.detector.region:
             self.add_log("No region selected. Please select a region first.")
             self.select_region()
             return
@@ -2423,8 +2517,6 @@ class OverlayAutoFisher(QMainWindow):
             background-color: {self.colors['bg_lighter']};
             border-radius: {self.ui_scale['border_radius']/2}px;
         """)
-        if self.region is not None:
-            self.detector.region = self.region
         self.detector.THRESHOLD = self.threshold_var
         self.detector.detection_cooldown = float(self.cooldown_var)
         self.detector.fishing_key = self.fishing_key_var
@@ -2486,10 +2578,13 @@ class OverlayAutoFisher(QMainWindow):
         # Update region position before capturing
         self.update_region_position()
         
-        frame = self.capture_screen()
-        if frame is not None:
-            self.reference_frame = frame
-            self.add_log(f"Reference frame captured: {self.reference_frame.shape}")
+        # Delegate to detector
+        if self.detector.capture_reference():
+            # Access detector's reference frame safely
+            if hasattr(self.detector, 'reference_frame') and self.detector.reference_frame is not None:
+                self.add_log(f"Reference frame captured: {self.detector.reference_frame.shape}")
+            else:
+                self.add_log("Reference frame captured")
             return True
         else:
             self.add_log("Failed to capture reference frame")
@@ -2516,9 +2611,20 @@ class OverlayAutoFisher(QMainWindow):
                 self.add_log("Cannot start region selection: Game window not found")
                 return
         
+        # Get the current screen's DPI scale for proper sizing
+        dpi_scale = self.get_dpi_scale()
+        
+        # Log screen information
+        current_screen = self.get_current_screen()
+        if current_screen:
+            self.add_log(f"Using screen: {current_screen.name()} with scale factor: {dpi_scale:.2f}")
+        
         # Calculate region dimensions based on 1.5:1 ratio
         width = int(size * 1.5)
         height = size
+        
+        # Note: We don't scale width/height here because RegionSelectorOverlay 
+        # will apply DPI scaling internally based on the target screen
         
         # Remember if we were minimized
         was_minimized = self.is_minimized
@@ -2546,11 +2652,28 @@ class OverlayAutoFisher(QMainWindow):
         if len(region_data) >= 5:
             # New style with relative coordinates
             left, top, right, bottom, rel_coords = region_data
-            self.region = (left, top, right, bottom)
+            # Set region in detector
+            self.detector.region = (left, top, right, bottom)
             
             # Store relative coordinates for tracking
             if rel_coords:
                 self.region_rel_coords = rel_coords
+                
+                # Store the current DPI scale for future reference
+                # This will be used to adjust the region when moving between monitors with different DPI
+                current_screen = None
+                point = QPoint(left, top)
+                for screen in QApplication.screens():
+                    if screen.geometry().contains(point):
+                        current_screen = screen
+                        break
+                
+                if current_screen:
+                    self.original_region_dpi_scale = current_screen.devicePixelRatio()
+                    self.add_log(f"Region selected on screen with scale factor: {self.original_region_dpi_scale:.2f}")
+                else:
+                    self.original_region_dpi_scale = 1.0
+                
                 self.add_log(f"Region will track with game window at offset {rel_coords}")
                 
                 # Update UI to indicate region is attached to game window
@@ -2561,18 +2684,24 @@ class OverlayAutoFisher(QMainWindow):
                         self.preview_label.setText(f"{prefix}\nTracking region will follow game window movements")
         else:
             # Old style, just absolute coordinates
-            self.region = region_data
+            self.detector.region = region_data
             self.region_rel_coords = None
+            self.original_region_dpi_scale = 1.0
         
-        left, top, right, bottom = self.region
-        width = right - left
-        height = bottom - top
-        
-        # Update region info
-        self.add_log(f"Region selected: ({left},{top}) to ({right},{bottom}), size: {width}x{height}")
-        
-        # Update the size entry field
-        self.size_entry.setText(str(height))
+        # Safely unpack region coordinates
+        if self.detector.region is not None:
+            left, top, right, bottom = self.detector.region
+            width = right - left
+            height = bottom - top
+            
+            # Update region info
+            self.add_log(f"Region selected: ({left},{top}) to ({right},{bottom}), size: {width}x{height}")
+            
+            # Update the size entry field
+            self.size_entry.setText(str(height))
+        else:
+            self.add_log("Error: Region selection failed")
+            return
         
         # Validate the region by capturing a frame
         if self.detector.validate_region():
@@ -2588,69 +2717,13 @@ class OverlayAutoFisher(QMainWindow):
         # Update region position before validating
         self.update_region_position()
         
-        frame = self.capture_screen()
-        if frame is not None:
-            self.add_log(f"Region validation successful: captured {frame.shape}")
+        # Delegate to detector
+        if self.detector.validate_region():
+            self.add_log(f"Region validation successful")
             return True
         else:
             self.add_log("Failed to validate region")
             return False
-    
-    def capture_screen(self):
-        """Capture the screen or region of interest"""
-        try:
-            if not self.region:
-                self.add_log("No region selected. Please select a region first.")
-                return None
-                
-            # Validate region size
-            left, top, right, bottom = self.region
-            width = right - left
-            height = bottom - top
-            
-            if width < 10 or height < 10:
-                self.add_log("Invalid region size detected. Please select a new region.")
-                return None
-            
-            # Use the current region coordinates which may have been updated by tracking
-            left, top, right, bottom = self.region
-            
-            if WINDOWS_SUPPORT and hasattr(mss, 'mss'):
-                # Use mss for better performance on Windows
-                with mss.mss() as sct:
-                    # Convert region format to mss format (left, top, width, height)
-                    mss_region = {
-                        "left": left,
-                        "top": top,
-                        "width": width,
-                        "height": height
-                    }
-                    
-                    # Capture the region
-                    screenshot = sct.grab(mss_region)
-                    
-                    # Convert to numpy array
-                    frame = np.array(screenshot)
-                    
-                    # Convert BGRA to BGR
-                    if len(frame.shape) >= 3:
-                        frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
-            else:
-                # Fallback to PIL/Pillow
-                screenshot = ImageGrab.grab(bbox=(left, top, right, bottom))
-                frame = np.array(screenshot)
-                
-                # Convert RGB to BGR (OpenCV format)
-                if len(frame.shape) >= 3:
-                    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            
-            # Store current frame
-            self.current_frame = frame
-            return frame
-            
-        except Exception as e:
-            self.add_log(f"Error capturing screen: {e}")
-            return None
     
     def start_preview(self):
         """Start updating the preview image"""
@@ -2672,13 +2745,13 @@ class OverlayAutoFisher(QMainWindow):
     
     def update_preview(self):
         """Update the preview image with the current captured frame"""
-        if self.region is None:
+        if self.detector.region is None:
             return
         
         # Make sure the region is up-to-date if it's tracking the game window
         self.update_region_position()
         
-        frame = self.capture_screen()
+        frame = self.detector.capture_screen()
         if frame is None:
             return
         
@@ -3141,7 +3214,7 @@ class OverlayAutoFisher(QMainWindow):
     
     def update_region_position(self):
         """Update the region position if it's tracking the game window"""
-        if not hasattr(self, 'region') or not self.region or not hasattr(self, 'region_rel_coords') or not self.region_rel_coords:
+        if not hasattr(self.detector, 'region') or not self.detector.region or not hasattr(self, 'region_rel_coords') or not self.region_rel_coords:
             return
             
         if not WINDOWS_SUPPORT or not self.game_window:
@@ -3155,9 +3228,34 @@ class OverlayAutoFisher(QMainWindow):
             rel_left, rel_top = self.region_rel_coords
             
             # Get current region dimensions
-            old_left, old_top, old_right, old_bottom = self.region
+            old_left, old_top, old_right, old_bottom = self.detector.region
             width = old_right - old_left
             height = old_bottom - old_top
+            
+            # Get the DPI scale of the screen containing the game window
+            game_window_screen = None
+            game_window_dpi_scale = 1.0
+            
+            # Find the screen containing the game window
+            game_window_point = QPoint(win_left, win_top)
+            for screen in QApplication.screens():
+                if screen.geometry().contains(game_window_point):
+                    game_window_screen = screen
+                    game_window_dpi_scale = screen.devicePixelRatio()
+                    break
+            
+            # Apply DPI scaling to the relative coordinates if needed
+            # This ensures the region is positioned correctly on different DPI screens
+            if game_window_screen:
+                # Get the DPI scale when the region was originally selected
+                original_dpi_scale = getattr(self, 'original_region_dpi_scale', 1.0)
+                
+                # If the current DPI scale is different from the original, adjust the relative coordinates
+                if abs(game_window_dpi_scale - original_dpi_scale) > 0.01:  # Small threshold to avoid floating point issues
+                    # Scale the relative coordinates based on the ratio of the DPI scales
+                    dpi_ratio = game_window_dpi_scale / original_dpi_scale
+                    rel_left = int(rel_left * dpi_ratio)
+                    rel_top = int(rel_top * dpi_ratio)
             
             # Calculate new region position based on game window
             new_left = win_left + rel_left
@@ -3167,7 +3265,7 @@ class OverlayAutoFisher(QMainWindow):
             
             # Only update if position has actually changed
             if new_left != old_left or new_top != old_top:
-                self.region = (new_left, new_top, new_right, new_bottom)
+                self.detector.region = (new_left, new_top, new_right, new_bottom)
                 
                 # Update status with new position coordinates (every 30 updates to avoid spam)
                 update_count = getattr(self, '_region_update_count', 0) + 1
@@ -3188,6 +3286,31 @@ class OverlayAutoFisher(QMainWindow):
                 self.add_log(msg)
             except Exception:
                 break
+
+    def increment_detection_count(self):
+        """Increment the detection count in the UI"""
+        # Update detection count in stats
+        current_count = 0
+        if hasattr(self, 'stats_labels') and 'total_detections' in self.stats_labels:
+            # Get current count from label
+            label_text = self.stats_labels['total_detections'].text()
+            try:
+                current_count = int(label_text.split(':')[1].strip())
+            except (ValueError, IndexError):
+                current_count = 0
+                
+            # Update label with incremented count
+            self.stats_labels['total_detections'].setText(f"Detections: {current_count + 1}")
+            
+        # Log the detection
+        self.add_log(f"Fish bite detected! ({current_count + 1})")
+        
+        # Update other stats if needed
+        self.update_stats_display()
+
+    def log(self, message):
+        """Wrapper for add_log to ensure compatibility with detector's calls"""
+        self.add_log(message)
 
 # Run the overlay if executed directly
 if __name__ == "__main__":
