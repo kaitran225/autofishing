@@ -1005,6 +1005,11 @@ class RegionSelectorOverlay(QMainWindow):
         self.cursor_update_timer.timeout.connect(self.update_cursor_position)
         self.cursor_update_timer.start(16)  # ~60fps for smooth tracking
         
+        # Add a timer to update window position to track the game window
+        self.position_update_timer = QTimer(self)
+        self.position_update_timer.timeout.connect(self.update_position)
+        self.position_update_timer.start(50)  # Update every 50ms
+        
         # Store game window reference
         self.game_window = game_window
         self.game_window_rect = None
@@ -1044,8 +1049,18 @@ class RegionSelectorOverlay(QMainWindow):
                 # Store client rect for later use
                 self.client_rect = (client_left, client_top, client_right, client_bottom)
                 
-                # Set geometry to match client area
-                self.setGeometry(client_left, client_top, client_right - client_left, client_bottom - client_top)
+                # Create the window first with any geometry
+                self.setGeometry(0, 0, client_right - client_left, client_bottom - client_top)
+                
+                # Then use Win32 to position it exactly like the tracking loop does
+                self.hwnd = self.winId().__int__()
+                win32gui.SetWindowPos(
+                    self.hwnd,
+                    win32con.HWND_TOPMOST,  # Make it topmost
+                    client_left, client_top,  # Position at client area
+                    client_right - client_left, client_bottom - client_top,  # Size to match client area
+                    win32con.SWP_SHOWWINDOW  # Show the window
+                )
             except Exception as e:
                 print(f"Error positioning overlay on game window: {e}")
                 # Fallback to full screen
@@ -1062,10 +1077,13 @@ class RegionSelectorOverlay(QMainWindow):
         self.current_point = QPoint(screen_width // 2, screen_height // 2)
         self.is_selecting = False
         
-        # Default region size - 1.5:1 aspect ratio
-        # Scale region size based on DPI
-        self.region_width = int(region_width * self.dpi_scale)
-        self.region_height = int(region_height * self.dpi_scale)
+        # Default region size - use exact pixel dimensions, not scaled
+        # Use exact pixel dimensions as specified
+        self.region_width = region_width
+        self.region_height = region_height
+        
+        # Log the exact dimensions being used
+        print(f"Selection region dimensions: {self.region_width}x{self.region_height} pixels")
         
         # Colors for drawing
         self.colors = {
@@ -1084,9 +1102,8 @@ class RegionSelectorOverlay(QMainWindow):
         # First, try to get the screen containing the game window
         if self.game_window and WINDOWS_SUPPORT:
             try:
-                # Get game window position
-                window_rect = win32gui.GetWindowRect(self.game_window)
-                win_left, win_top, _, _ = window_rect
+                # Get window position and size - same approach as tracking loop
+                win_left, win_top, win_right, win_bottom = win32gui.GetWindowRect(self.game_window)
                 
                 # Find screen containing this point
                 point = QPoint(win_left, win_top)
@@ -1145,6 +1162,9 @@ class RegionSelectorOverlay(QMainWindow):
                 rel_left = abs_left - gw_left
                 rel_top = abs_top - gw_top
                 rel_coords = (rel_left, rel_top)
+                
+                # Log the exact coordinates for debugging
+                print(f"Selection region: abs({abs_left},{abs_top},{abs_right},{abs_bottom}) rel({rel_left},{rel_top})")
             
             # Emit signal with selected region and relative coordinates
             self.region_selected.emit((abs_left, abs_top, abs_right, abs_bottom, rel_coords))
@@ -1166,6 +1186,46 @@ class RegionSelectorOverlay(QMainWindow):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
             self.close()
+    
+    def update_position(self):
+        """Update the position of the overlay to match the game window"""
+        if not self.game_window or not WINDOWS_SUPPORT:
+            return
+            
+        try:
+            # Get current game window position
+            win_left, win_top, win_right, win_bottom = win32gui.GetWindowRect(self.game_window)
+            
+            # Only update if game window has moved
+            if (win_left, win_top, win_right, win_bottom) != self.game_window_rect:
+                # Store new game window rect
+                self.game_window_rect = (win_left, win_top, win_right, win_bottom)
+                
+                # Get the client area
+                client_rect = win32gui.GetClientRect(self.game_window)
+                client_left, client_top = win32gui.ClientToScreen(self.game_window, (0, 0))
+                client_right, client_bottom = win32gui.ClientToScreen(
+                    self.game_window, 
+                    (client_rect[2], client_rect[3])
+                )
+                
+                # Store client rect
+                self.client_rect = (client_left, client_top, client_right, client_bottom)
+                
+                # Use Win32 to position it exactly like the tracking loop
+                self.hwnd = self.winId().__int__()
+                win32gui.SetWindowPos(
+                    self.hwnd,
+                    win32con.HWND_TOPMOST,  # Keep it topmost
+                    client_left, client_top,  # Position at client area
+                    client_right - client_left, client_bottom - client_top,  # Size to match client area
+                    win32con.SWP_SHOWWINDOW  # Show the window
+                )
+                return True
+        except Exception as e:
+            print(f"Error updating overlay position: {e}")
+        
+        return False
     
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -1307,7 +1367,7 @@ class RegionSelectorOverlay(QMainWindow):
             abs_top = self.y() + top
             
             # Show position coordinates
-            coord_text = f"position: ({abs_left},{abs_top})"
+            coord_text = f"({abs_left},{abs_top})"
             
             # Calculate text position
             text_y = bottom + int(15 * self.dpi_scale)
@@ -1358,6 +1418,10 @@ class RegionSelectorOverlay(QMainWindow):
         # Stop the cursor update timer
         if hasattr(self, 'cursor_update_timer') and self.cursor_update_timer.isActive():
             self.cursor_update_timer.stop()
+            
+        # Stop the position update timer
+        if hasattr(self, 'position_update_timer') and self.position_update_timer.isActive():
+            self.position_update_timer.stop()
         
         # Accept the event to close the window
         event.accept()
@@ -2609,20 +2673,12 @@ class OverlayAutoFisher(QMainWindow):
                 self.add_log("Cannot start region selection: Game window not found")
                 return
         
-        # Get the current screen's DPI scale for proper sizing
-        dpi_scale = self.get_dpi_scale()
-        
-        # Log screen information
-        current_screen = self.get_current_screen()
-        if current_screen:
-            self.add_log(f"Using screen: {current_screen.name()} with scale factor: {dpi_scale:.2f}")
-        
         # Calculate region dimensions based on 1.5:1 ratio
         width = int(size * 1.5)
         height = size
         
-        # Note: We don't scale width/height here because RegionSelectorOverlay 
-        # will apply DPI scaling internally based on the target screen
+        # Log the exact dimensions that will be used
+        self.add_log(f"Selection region will be exactly {width}x{height} pixels")
         
         # Remember if we were minimized
         was_minimized = self.is_minimized
@@ -2657,20 +2713,9 @@ class OverlayAutoFisher(QMainWindow):
             if rel_coords:
                 self.region_rel_coords = rel_coords
                 
-                # Store the current DPI scale for future reference
-                # This will be used to adjust the region when moving between monitors with different DPI
-                current_screen = None
-                point = QPoint(left, top)
-                for screen in QApplication.screens():
-                    if screen.geometry().contains(point):
-                        current_screen = screen
-                        break
-                
-                if current_screen:
-                    self.original_region_dpi_scale = current_screen.devicePixelRatio()
-                    self.add_log(f"Region selected on screen with scale factor: {self.original_region_dpi_scale:.2f}")
-                else:
-                    self.original_region_dpi_scale = 1.0
+                # Log the exact coordinates
+                self.add_log(f"Region set to exact coordinates: ({left},{top}) to ({right},{bottom})")
+                self.add_log(f"Region dimensions: {right-left}x{bottom-top} pixels")
                 
                 self.add_log(f"Region will track with game window at offset {rel_coords}")
                 
@@ -2684,7 +2729,6 @@ class OverlayAutoFisher(QMainWindow):
             # Old style, just absolute coordinates
             self.detector.region = region_data
             self.region_rel_coords = None
-            self.original_region_dpi_scale = 1.0
         
         # Safely unpack region coordinates
         if self.detector.region is not None:
@@ -3240,31 +3284,6 @@ class OverlayAutoFisher(QMainWindow):
             old_left, old_top, old_right, old_bottom = self.detector.region
             width = old_right - old_left
             height = old_bottom - old_top
-            
-            # Get the DPI scale of the screen containing the game window
-            game_window_screen = None
-            game_window_dpi_scale = 1.0
-            
-            # Find the screen containing the game window
-            game_window_point = QPoint(win_left, win_top)
-            for screen in QApplication.screens():
-                if screen.geometry().contains(game_window_point):
-                    game_window_screen = screen
-                    game_window_dpi_scale = screen.devicePixelRatio()
-                    break
-            
-            # Apply DPI scaling to the relative coordinates if needed
-            # This ensures the region is positioned correctly on different DPI screens
-            if game_window_screen:
-                # Get the DPI scale when the region was originally selected
-                original_dpi_scale = getattr(self, 'original_region_dpi_scale', 1.0)
-                
-                # If the current DPI scale is different from the original, adjust the relative coordinates
-                if abs(game_window_dpi_scale - original_dpi_scale) > 0.01:  # Small threshold to avoid floating point issues
-                    # Scale the relative coordinates based on the ratio of the DPI scales
-                    dpi_ratio = game_window_dpi_scale / original_dpi_scale
-                    rel_left = int(rel_left * dpi_ratio)
-                    rel_top = int(rel_top * dpi_ratio)
             
             # Calculate new region position based on game window
             new_left = win_left + rel_left
