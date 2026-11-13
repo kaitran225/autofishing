@@ -1,0 +1,4 @@
+.prototype/
+AutoFisher.exe
+__pycache__/
+*.pyc

@@ -1,0 +1,29 @@
+{
+  "hue_bands": [
+    {"h_min": 130, "h_max": 180, "s_min": 40, "s_max": 255, "v_min": 65, "v_max": 255},
+    {"h_min": 0, "h_max": 15, "s_min": 60, "s_max": 255, "v_min": 75, "v_max": 255},
+    {"h_min": 165, "h_max": 180, "s_min": 55, "s_max": 255, "v_min": 70, "v_max": 255},
+    {"h_min": 32, "h_max": 92, "s_min": 55, "s_max": 255, "v_min": 80, "v_max": 255},
+    {"h_min": 8, "h_max": 32, "s_min": 75, "s_max": 255, "v_min": 100, "v_max": 255},
+    {"h_min": 12, "h_max": 50, "s_min": 50, "s_max": 255, "v_min": 175, "v_max": 255},
+    {"h_min": 0, "h_max": 180, "s_min": 15, "s_max": 65, "v_min": 195, "v_max": 255}
+  ],
+  "v_norm_floor": 55,
+  "clahe_clip": 2.0,
+  "clahe_grid": 8,
+  "saliency_blur_small": 15,
+  "saliency_blur_large": 41,
+  "saliency_weight": 1.0,
+  "pyramid_scales": [1.0, 0.5, 0.25],
+  "min_detection_score": 0.35,
+  "dot_circularity_min": 0.4,
+  "stem_elongation_min": 1.5,
+  "group_max_gap_frac": 0.4,
+  "group_align_tolerance": 0.35,
+  "max_blob_area_ratio": 0.20,
+  "min_component_area": 30,
+  "max_pole_aspect": 8.0,
+  "dim_factor": 0.38,
+  "dilate_px": 3,
+  "blur_sigma": 1.2
+}
